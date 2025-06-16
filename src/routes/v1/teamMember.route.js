@@ -17,4 +17,4 @@ router
   .patch(validate(teamMemberValidation.updateTeamMember), teamMemberController.updateTeamMember)
   .delete(validate(teamMemberValidation.deleteTeamMember), teamMemberController.deleteTeamMember);
 
-export default router; 
+export default router;

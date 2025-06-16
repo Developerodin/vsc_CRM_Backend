@@ -1,7 +1,20 @@
 import httpStatus from 'http-status';
-
+import mongoose from 'mongoose';
 import ApiError from '../utils/ApiError.js';
 import TeamMember from '../models/teamMember.model.js';
+import Activity from '../models/activity.model.js';
+
+/**
+ * Validate if all skill IDs exist in the activities collection
+ * @param {string[]} skillIds
+ * @returns {Promise<boolean>}
+ */
+const validateSkills = async (skillIds) => {
+  // Find all activities with the given IDs
+  const activities = await Activity.find({ _id: { $in: skillIds } });
+  // Check if we found all the activities (no duplicates or invalid IDs)
+  return activities.length === skillIds.length;
+};
 
 /**
  * Create a team member
@@ -15,7 +28,11 @@ const createTeamMember = async (teamMemberBody) => {
   if (await TeamMember.isPhoneTaken(teamMemberBody.phone)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
-  return TeamMember.create(teamMemberBody);
+  if (!(await validateSkills(teamMemberBody.skills))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'All skills must be valid activities');
+  }
+  const teamMember = await TeamMember.create(teamMemberBody);
+  return teamMember.populate('skills');
 };
 
 /**
@@ -28,7 +45,10 @@ const createTeamMember = async (teamMemberBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryTeamMembers = async (filter, options) => {
-  const teamMembers = await TeamMember.paginate(filter, options);
+  const teamMembers = await TeamMember.paginate(filter, {
+    ...options,
+    populate: 'skills'
+  });
   return teamMembers;
 };
 
@@ -38,7 +58,7 @@ const queryTeamMembers = async (filter, options) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberById = async (id) => {
-  return TeamMember.findById(id);
+  return TeamMember.findById(id).populate('skills');
 };
 
 /**
@@ -47,7 +67,7 @@ const getTeamMemberById = async (id) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberByPhone = async (phone) => {
-  return TeamMember.findOne({ phone });
+  return TeamMember.findOne({ phone }).populate('skills');
 };
 
 /**
@@ -56,7 +76,7 @@ const getTeamMemberByPhone = async (phone) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberByEmail = async (email) => {
-  return TeamMember.findOne({ email });
+  return TeamMember.findOne({ email }).populate('skills');
 };
 
 /**
@@ -76,9 +96,14 @@ const updateTeamMemberById = async (teamMemberId, updateBody) => {
   if (updateBody.phone && (await TeamMember.isPhoneTaken(updateBody.phone, teamMemberId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
+  if (updateBody.skills) {
+    if (!(await validateSkills(updateBody.skills))) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'All skills must be valid activities');
+    }
+  }
   Object.assign(teamMember, updateBody);
   await teamMember.save();
-  return teamMember;
+  return teamMember.populate('skills');
 };
 
 /**

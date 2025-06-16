@@ -10,7 +10,7 @@ const createTeamMember = catchAsync(async (req, res) => {
 });
 
 const getTeamMembers = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'email', 'phone', 'branch']);
+  const filter = pick(req.query, ['name', 'email', 'phone', 'branch', 'city', 'state', 'country', 'pinCode']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await teamMemberService.queryTeamMembers(filter, options);
   res.send(result);

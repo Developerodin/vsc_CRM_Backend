@@ -1,9 +1,10 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
 
-const createTeamMember = {
+const createBranch = {
   body: Joi.object().keys({
     name: Joi.string().required(),
+    branchHead: Joi.string(),
     email: Joi.string().required().email(),
     phone: Joi.string().required(),
     address: Joi.string().required(),
@@ -11,42 +12,40 @@ const createTeamMember = {
     state: Joi.string().required(),
     country: Joi.string().required(),
     pinCode: Joi.string().required(),
-    branch: Joi.string().required(),
     sortOrder: Joi.number().required(),
-    skills: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
   }),
 };
 
-const getTeamMembers = {
+const getBranches = {
   query: Joi.object().keys({
     name: Joi.string(),
+    branchHead: Joi.string(),
     email: Joi.string(),
     phone: Joi.string(),
-    branch: Joi.string(),
     city: Joi.string(),
     state: Joi.string(),
     country: Joi.string(),
     pinCode: Joi.string(),
-    skills: Joi.array().items(Joi.string().custom(objectId)),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
   }),
 };
 
-const getTeamMember = {
+const getBranch = {
   params: Joi.object().keys({
-    teamMemberId: Joi.string().custom(objectId),
+    branchId: Joi.string().custom(objectId),
   }),
 };
 
-const updateTeamMember = {
+const updateBranch = {
   params: Joi.object().keys({
-    teamMemberId: Joi.required().custom(objectId),
+    branchId: Joi.required().custom(objectId),
   }),
   body: Joi.object()
     .keys({
       name: Joi.string(),
+      branchHead: Joi.string(),
       email: Joi.string().email(),
       phone: Joi.string(),
       address: Joi.string(),
@@ -54,23 +53,21 @@ const updateTeamMember = {
       state: Joi.string(),
       country: Joi.string(),
       pinCode: Joi.string(),
-      branch: Joi.string(),
       sortOrder: Joi.number(),
-      skills: Joi.array().items(Joi.string().custom(objectId)).min(1),
     })
     .min(1),
 };
 
-const deleteTeamMember = {
+const deleteBranch = {
   params: Joi.object().keys({
-    teamMemberId: Joi.string().custom(objectId),
+    branchId: Joi.string().custom(objectId),
   }),
 };
 
 export {
-  createTeamMember,
-  getTeamMembers,
-  getTeamMember,
-  updateTeamMember,
-  deleteTeamMember,
+  createBranch,
+  getBranches,
+  getBranch,
+  updateBranch,
+  deleteBranch,
 }; 

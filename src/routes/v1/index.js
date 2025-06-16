@@ -2,6 +2,8 @@ import express from 'express';
 import authRoute from './auth.route.js';
 import userRoute from './user.route.js';
 import teamMemberRoute from './teamMember.route.js';
+import activityRoute from './activity.route.js';
+import branchRoute from './branch.route.js';
 import docsRoute from './docs.route.js';
 import config from '../../config/config.js';
 
@@ -19,6 +21,14 @@ const defaultRoutes = [
   {
     path: '/team-members',
     route: teamMemberRoute,
+  },
+  {
+    path: '/activities',
+    route: activityRoute,
+  },
+  {
+    path: '/branches',
+    route: branchRoute,
   },
 ];
 

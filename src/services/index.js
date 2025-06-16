@@ -3,8 +3,12 @@
 // export { default as tokenService } from './token.service.js';
 // export { default as userService } from './user.service.js';
 import * as teamMemberService from './teamMember.service.js';
+import * as activityService from './activity.service.js';
+import * as branchService from './branch.service.js';
 
 export {
   teamMemberService,
+  activityService,
+  branchService,
 };
 

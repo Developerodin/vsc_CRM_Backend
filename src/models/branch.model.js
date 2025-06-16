@@ -3,24 +3,17 @@ import validator from 'validator';
 import toJSON from './plugins/toJSON.plugin.js';
 import paginate from './plugins/paginate.plugin.js';
 
-
-const teamMemberSchema = mongoose.Schema(
+const branchSchema = mongoose.Schema(
   {
     name: {
       type: String,
       required: true,
       trim: true,
     },
-    phone: {
-      type: String,
-      required: true,
+    branchHead: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TeamMember',
       trim: true,
-      unique: true,
-      validate(value) {
-        if (!validator.isMobilePhone(value, 'any')) {
-          throw new Error('Invalid phone number');
-        }
-      },
     },
     email: {
       type: String,
@@ -31,6 +24,17 @@ const teamMemberSchema = mongoose.Schema(
       validate(value) {
         if (!validator.isEmail(value)) {
           throw new Error('Invalid email');
+        }
+      },
+    },
+    phone: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      validate(value) {
+        if (!validator.isMobilePhone(value, 'any')) {
+          throw new Error('Invalid phone number');
         }
       },
     },
@@ -64,19 +68,10 @@ const teamMemberSchema = mongoose.Schema(
         }
       },
     },
-    branch: {
-      type: String,
-      required: true,
-    },
     sortOrder: {
       type: Number,
       required: true,
     },
-    skills: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Activity',
-      required: true
-    }]
   },
   {
     timestamps: true,
@@ -84,34 +79,34 @@ const teamMemberSchema = mongoose.Schema(
 );
 
 // add plugin that converts mongoose to json
-teamMemberSchema.plugin(toJSON);
-teamMemberSchema.plugin(paginate);
+branchSchema.plugin(toJSON);
+branchSchema.plugin(paginate);
 
 /**
  * Check if email is taken
- * @param {string} email - The user's email
- * @param {ObjectId} [excludeUserId] - The id of the user to be excluded
+ * @param {string} email - The branch's email
+ * @param {ObjectId} [excludeBranchId] - The id of the branch to be excluded
  * @returns {Promise<boolean>}
  */
-teamMemberSchema.statics.isEmailTaken = async function (email, excludeUserId) {
-  const teamMember = await this.findOne({ email, _id: { $ne: excludeUserId } });
-  return !!teamMember;
+branchSchema.statics.isEmailTaken = async function (email, excludeBranchId) {
+  const branch = await this.findOne({ email, _id: { $ne: excludeBranchId } });
+  return !!branch;
 };
 
 /**
  * Check if phone is taken
- * @param {string} phone - The user's phone
- * @param {ObjectId} [excludeUserId] - The id of the user to be excluded
+ * @param {string} phone - The branch's phone
+ * @param {ObjectId} [excludeBranchId] - The id of the branch to be excluded
  * @returns {Promise<boolean>}
  */
-teamMemberSchema.statics.isPhoneTaken = async function (phone, excludeUserId) {
-  const teamMember = await this.findOne({ phone, _id: { $ne: excludeUserId } });
-  return !!teamMember;
+branchSchema.statics.isPhoneTaken = async function (phone, excludeBranchId) {
+  const branch = await this.findOne({ phone, _id: { $ne: excludeBranchId } });
+  return !!branch;
 };
 
 /**
- * @typedef TeamMember
+ * @typedef Branch
  */
-const TeamMember = mongoose.model('TeamMember', teamMemberSchema);
+const Branch = mongoose.model('Branch', branchSchema);
 
-export default TeamMember;
+export default Branch; 
