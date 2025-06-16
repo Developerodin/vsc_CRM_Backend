@@ -3,59 +3,59 @@ import { objectId } from './custom.validation.js';
 
 const createTeamMember = {
   body: Joi.object().keys({
-    name: Joi.string().required(),
-    email: Joi.string().required().email(),
-    phone: Joi.string().required(),
-    address: Joi.string().required(),
-    city: Joi.string().required(),
-    state: Joi.string().required(),
-    country: Joi.string().required(),
-    pinCode: Joi.string().required(),
+    name: Joi.string().required().trim(),
+    email: Joi.string().required().email().lowercase().trim(),
+    phone: Joi.string().required().trim().pattern(/^\+?[1-9]\d{1,14}$/),
+    address: Joi.string().required().trim(),
+    city: Joi.string().required().trim(),
+    state: Joi.string().required().trim(),
+    country: Joi.string().required().trim(),
+    pinCode: Joi.string().required().trim().pattern(/^[0-9]{5,6}$/),
     branch: Joi.string().custom(objectId).required(),
-    sortOrder: Joi.number().required(),
+    sortOrder: Joi.number().required().min(0),
     skills: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
   }),
 };
 
 const getTeamMembers = {
   query: Joi.object().keys({
-    name: Joi.string(),
-    email: Joi.string(),
-    phone: Joi.string(),
+    name: Joi.string().trim(),
+    email: Joi.string().email().trim(),
+    phone: Joi.string().trim(),
     branch: Joi.string().custom(objectId),
-    city: Joi.string(),
-    state: Joi.string(),
-    country: Joi.string(),
-    pinCode: Joi.string(),
+    city: Joi.string().trim(),
+    state: Joi.string().trim(),
+    country: Joi.string().trim(),
+    pinCode: Joi.string().trim(),
     skills: Joi.array().items(Joi.string().custom(objectId)),
     sortBy: Joi.string(),
-    limit: Joi.number().integer(),
-    page: Joi.number().integer(),
+    limit: Joi.number().integer().min(1),
+    page: Joi.number().integer().min(1),
   }),
 };
 
 const getTeamMember = {
   params: Joi.object().keys({
-    teamMemberId: Joi.string().custom(objectId),
+    teamMemberId: Joi.string().custom(objectId).required(),
   }),
 };
 
 const updateTeamMember = {
   params: Joi.object().keys({
-    teamMemberId: Joi.required().custom(objectId),
+    teamMemberId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object()
     .keys({
-      name: Joi.string(),
-      email: Joi.string().email(),
-      phone: Joi.string(),
-      address: Joi.string(),
-      city: Joi.string(),
-      state: Joi.string(),
-      country: Joi.string(),
-      pinCode: Joi.string(),
+      name: Joi.string().trim(),
+      email: Joi.string().email().lowercase().trim(),
+      phone: Joi.string().trim().pattern(/^\+?[1-9]\d{1,14}$/),
+      address: Joi.string().trim(),
+      city: Joi.string().trim(),
+      state: Joi.string().trim(),
+      country: Joi.string().trim(),
+      pinCode: Joi.string().trim().pattern(/^[0-9]{5,6}$/),
       branch: Joi.string().custom(objectId),
-      sortOrder: Joi.number(),
+      sortOrder: Joi.number().min(0),
       skills: Joi.array().items(Joi.string().custom(objectId)).min(1),
     })
     .min(1),
@@ -63,7 +63,7 @@ const updateTeamMember = {
 
 const deleteTeamMember = {
   params: Joi.object().keys({
-    teamMemberId: Joi.string().custom(objectId),
+    teamMemberId: Joi.string().custom(objectId).required(),
   }),
 };
 

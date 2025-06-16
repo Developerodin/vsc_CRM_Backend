@@ -25,8 +25,7 @@ const createGroup = async (groupBody) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'All clients must be valid');
   }
   const group = await Group.create(groupBody);
-  await group.populate('clients');
-  return group;
+  return group.populate('clients');
 };
 
 /**
@@ -72,8 +71,7 @@ const updateGroupById = async (groupId, updateBody) => {
   }
   Object.assign(group, updateBody);
   await group.save();
-  await group.populate('clients');
-  return group;
+  return group.populate('clients');
 };
 
 /**
@@ -87,10 +85,96 @@ const deleteGroupById = async (groupId) => {
   return group;
 };
 
+/**
+ * Add client to group
+ * @param {ObjectId} groupId
+ * @param {ObjectId} clientId
+ * @returns {Promise<Group>}
+ */
+const addClientToGroup = async (groupId, clientId) => {
+  const group = await getGroupById(groupId);
+  const client = await Client.findById(clientId);
+  
+  if (!client) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+
+  if (group.clients.includes(clientId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Client already in group');
+  }
+
+  group.clients.push(clientId);
+  group.numberOfClients = group.clients.length;
+  await group.save();
+  
+  return group.populate('clients');
+};
+
+/**
+ * Remove client from group
+ * @param {ObjectId} groupId
+ * @param {ObjectId} clientId
+ * @returns {Promise<Group>}
+ */
+const removeClientFromGroup = async (groupId, clientId) => {
+  try {
+    // First check if the group exists
+    const group = await Group.findById(groupId).populate('clients');
+    if (!group) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Group not found');
+    }
+
+    // Check if the client exists
+    const client = await Client.findById(clientId);
+    if (!client) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+    }
+
+    // Convert clientId to string for comparison
+    const clientIdStr = clientId.toString();
+    
+    // Log the current clients in the group for debugging
+    console.log('Current clients in group:', group.clients.map(c => c._id.toString()));
+    console.log('Attempting to remove client:', clientIdStr);
+    
+    // Check if client exists in the group
+    const clientExists = group.clients.some(id => id._id.toString() === clientIdStr);
+    
+    if (!clientExists) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Client not found in group');
+    }
+
+    // Remove client from the group
+    group.clients = group.clients.filter(id => id._id.toString() !== clientIdStr);
+    group.numberOfClients = group.clients.length;
+    
+    await group.save();
+    return group.populate('clients');
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Error removing client from group');
+  }
+};
+
+/**
+ * Get clients by group id
+ * @param {ObjectId} groupId
+ * @returns {Promise<Client[]>}
+ */
+const getClientsByGroup = async (groupId) => {
+  const group = await getGroupById(groupId);
+  return group.clients;
+};
+
 export {
   createGroup,
   queryGroups,
   getGroupById,
   updateGroupById,
   deleteGroupById,
+  addClientToGroup,
+  removeClientFromGroup,
+  getClientsByGroup,
 }; 

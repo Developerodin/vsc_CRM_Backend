@@ -63,11 +63,6 @@ const clientSchema = mongoose.Schema(
         }
       },
     },
-    groups: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Group',
-      required: true
-    }],
     sortOrder: {
       type: Number,
       required: true,

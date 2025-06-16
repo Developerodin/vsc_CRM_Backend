@@ -1,19 +1,6 @@
 import httpStatus from 'http-status';
-import { Client, Group } from '../models/index.js';
+import { Client } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
-
-/**
- * Validate if all group IDs exist
- * @param {string[]} groupIds
- * @returns {Promise<boolean>}
- */
-const validateGroups = async (groupIds) => {
-  if(typeof groupIds === 'string') {
-    groupIds = [groupIds];
-  }
-  const groups = await Group.find({ _id: { $in: groupIds } });
-  return groups.length === groupIds.length;
-};
 
 /**
  * Create a client
@@ -27,11 +14,8 @@ const createClient = async (clientBody) => {
   if (await Client.isPhoneTaken(clientBody.phone)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
-  if (!(await validateGroups(clientBody.groups))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'All groups must be valid');
-  }
   const client = await Client.create(clientBody);
-  return client.populate('groups');
+  return client;
 };
 
 /**
@@ -44,10 +28,7 @@ const createClient = async (clientBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryClients = async (filter, options) => {
-  const clients = await Client.paginate(filter, {
-    ...options,
-    populate: 'groups',
-  });
+  const clients = await Client.paginate(filter, options);
   return clients;
 };
 
@@ -57,7 +38,7 @@ const queryClients = async (filter, options) => {
  * @returns {Promise<Client>}
  */
 const getClientById = async (id) => {
-  const client = await Client.findById(id).populate('groups');
+  const client = await Client.findById(id);
   if (!client) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
   }
@@ -81,12 +62,9 @@ const updateClientById = async (clientId, updateBody) => {
   if (updateBody.phone && (await Client.isPhoneTaken(updateBody.phone, clientId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
-  if (updateBody.groups && !(await validateGroups(updateBody.groups))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'All groups must be valid');
-  }
   Object.assign(client, updateBody);
   await client.save();
-  return client.populate('groups');
+  return client;
 };
 
 /**

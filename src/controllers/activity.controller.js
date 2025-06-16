@@ -11,6 +11,12 @@ const createActivity = catchAsync(async (req, res) => {
 
 const getActivities = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['name']);
+  // Remove empty string filters
+  Object.keys(filter).forEach((key) => {
+    if (filter[key] === '') {
+      delete filter[key];
+    }
+  });
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await activityService.queryActivities(filter, options);
   res.send(result);

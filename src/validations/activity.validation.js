@@ -10,22 +10,22 @@ const createActivity = {
 
 const getActivities = {
   query: Joi.object().keys({
-    name: Joi.string(),
-    sortBy: Joi.string(),
-    limit: Joi.number().integer(),
-    page: Joi.number().integer(),
+    name: Joi.string().allow(''),
+    sortBy: Joi.string().pattern(/^[a-zA-Z]+:(asc|desc)$/),
+    limit: Joi.number().integer().min(1).default(10),
+    page: Joi.number().integer().min(1).default(1),
   }),
 };
 
 const getActivity = {
   params: Joi.object().keys({
-    activityId: Joi.string().custom(objectId),
+    activityId: Joi.string().custom(objectId).required(),
   }),
 };
 
 const updateActivity = {
   params: Joi.object().keys({
-    activityId: Joi.required().custom(objectId),
+    activityId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object()
     .keys({
@@ -37,7 +37,7 @@ const updateActivity = {
 
 const deleteActivity = {
   params: Joi.object().keys({
-    activityId: Joi.string().custom(objectId),
+    activityId: Joi.string().custom(objectId).required(),
   }),
 };
 

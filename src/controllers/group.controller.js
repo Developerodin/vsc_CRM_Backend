@@ -34,10 +34,28 @@ const deleteGroup = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const addClientToGroup = catchAsync(async (req, res) => {
+  const group = await groupService.addClientToGroup(req.params.groupId, req.body.clientId);
+  res.send(group);
+});
+
+const removeClientFromGroup = catchAsync(async (req, res) => {
+  const group = await groupService.removeClientFromGroup(req.params.groupId, req.params.clientId);
+  res.send(group);
+});
+
+const getClientsByGroup = catchAsync(async (req, res) => {
+  const clients = await groupService.getClientsByGroup(req.params.groupId);
+  res.send(clients);
+});
+
 export {
   createGroup,
   getGroups,
   getGroup,
   updateGroup,
   deleteGroup,
+  addClientToGroup,
+  removeClientFromGroup,
+  getClientsByGroup,
 }; 

@@ -46,10 +46,28 @@ const deleteGroup = {
   }),
 };
 
+const addClientToGroup = {
+  params: Joi.object().keys({
+    groupId: Joi.string().custom(objectId),
+  }),
+  body: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+const removeClientFromGroup = {
+  params: Joi.object().keys({
+    groupId: Joi.string().custom(objectId).required(),
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 export default {
   createGroup,
   getGroups,
   getGroup,
   updateGroup,
   deleteGroup,
+  addClientToGroup,
+  removeClientFromGroup,
 }; 

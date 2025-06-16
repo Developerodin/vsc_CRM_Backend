@@ -11,7 +11,6 @@ const createClient = {
     state: Joi.string().required(),
     country: Joi.string().required(),
     pinCode: Joi.string().required(),
-    groups: Joi.array().items(Joi.custom(objectId)).required(),
     sortOrder: Joi.number().required(),
   }),
 };
@@ -25,7 +24,6 @@ const getClients = {
     state: Joi.string(),
     country: Joi.string(),
     pinCode: Joi.string(),
-    groups: Joi.string().custom(objectId),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -52,7 +50,6 @@ const updateClient = {
       state: Joi.string(),
       country: Joi.string(),
       pinCode: Joi.string(),
-      groups: Joi.array().items(Joi.custom(objectId)),
       sortOrder: Joi.number(),
     })
     .min(1),

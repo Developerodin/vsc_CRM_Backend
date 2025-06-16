@@ -17,4 +17,13 @@ router
   .patch(validate(groupValidation.updateGroup), groupController.updateGroup)
   .delete(validate(groupValidation.deleteGroup), groupController.deleteGroup);
 
+router
+  .route('/:groupId/clients')
+  .get(validate(groupValidation.getGroup), groupController.getClientsByGroup)
+  .post(validate(groupValidation.addClientToGroup), groupController.addClientToGroup);
+
+router
+  .route('/:groupId/clients/:clientId')
+  .delete(validate(groupValidation.removeClientFromGroup), groupController.removeClientFromGroup);
+
 export default router; 

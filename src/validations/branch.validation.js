@@ -4,7 +4,7 @@ import { objectId } from './custom.validation.js';
 const createBranch = {
   body: Joi.object().keys({
     name: Joi.string().required(),
-    branchHead: Joi.string().custom(objectId),
+    branchHead: Joi.string().required(),
     email: Joi.string().required().email(),
     phone: Joi.string().required(),
     address: Joi.string().required(),
@@ -19,7 +19,7 @@ const createBranch = {
 const getBranches = {
   query: Joi.object().keys({
     name: Joi.string(),
-    branchHead: Joi.string().custom(objectId),
+    branchHead: Joi.string(),
     email: Joi.string(),
     phone: Joi.string(),
     city: Joi.string(),
@@ -45,7 +45,7 @@ const updateBranch = {
   body: Joi.object()
     .keys({
       name: Joi.string(),
-      branchHead: Joi.string().custom(objectId),
+      branchHead: Joi.string(),
       email: Joi.string().email(),
       phone: Joi.string(),
       address: Joi.string(),

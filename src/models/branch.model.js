@@ -11,8 +11,8 @@ const branchSchema = mongoose.Schema(
       trim: true,
     },
     branchHead: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'TeamMember',
+      type: String,
+      required: true,
       trim: true,
     },
     email: {

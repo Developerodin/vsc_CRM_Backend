@@ -11,13 +11,19 @@ import Branch from '../models/branch.model.js';
  * @returns {Promise<boolean>}
  */
 const validateSkills = async (skillIds) => {
-  if(typeof skillIds === 'string') {
-    skillIds = [skillIds];
+  if (!Array.isArray(skillIds)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Skills must be an array');
+  }
+  if (skillIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'At least one skill is required');
   }
   // Find all activities with the given IDs
   const activities = await Activity.find({ _id: { $in: skillIds } });
   // Check if we found all the activities (no duplicates or invalid IDs)
-  return activities.length === skillIds.length;
+  if (activities.length !== skillIds.length) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'One or more skills are invalid');
+  }
+  return true;
 };
 
 /**
@@ -26,8 +32,14 @@ const validateSkills = async (skillIds) => {
  * @returns {Promise<boolean>}
  */
 const validateBranch = async (branchId) => {
+  if (!mongoose.Types.ObjectId.isValid(branchId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid branch ID format');
+  }
   const branch = await Branch.findById(branchId);
-  return !!branch;
+  if (!branch) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Branch not found');
+  }
+  return true;
 };
 
 /**
@@ -42,12 +54,9 @@ const createTeamMember = async (teamMemberBody) => {
   if (await TeamMember.isPhoneTaken(teamMemberBody.phone)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
-  if (!(await validateSkills(teamMemberBody.skills))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'All skills must be valid activities');
-  }
-  if (!(await validateBranch(teamMemberBody.branch))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Branch must be valid');
-  }
+  await validateSkills(teamMemberBody.skills);
+  await validateBranch(teamMemberBody.branch);
+  
   const teamMember = await TeamMember.create(teamMemberBody);
   return teamMember.populate(['skills', 'branch']);
 };
@@ -65,6 +74,7 @@ const queryTeamMembers = async (filter, options) => {
   const teamMembers = await TeamMember.paginate(filter, {
     ...options,
     populate: 'skills,branch',
+    sortBy: options.sortBy || 'sortOrder:asc',
   });
   return teamMembers;
 };
@@ -75,7 +85,14 @@ const queryTeamMembers = async (filter, options) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberById = async (id) => {
-  return TeamMember.findById(id).populate(['skills', 'branch']);
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid team member ID format');
+  }
+  const teamMember = await TeamMember.findById(id).populate(['skills', 'branch']);
+  if (!teamMember) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
+  }
+  return teamMember;
 };
 
 /**
@@ -84,7 +101,11 @@ const getTeamMemberById = async (id) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberByPhone = async (phone) => {
-  return TeamMember.findOne({ phone }).populate(['skills', 'branch']);
+  const teamMember = await TeamMember.findOne({ phone }).populate(['skills', 'branch']);
+  if (!teamMember) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
+  }
+  return teamMember;
 };
 
 /**
@@ -93,7 +114,11 @@ const getTeamMemberByPhone = async (phone) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberByEmail = async (email) => {
-  return TeamMember.findOne({ email }).populate(['skills', 'branch']);
+  const teamMember = await TeamMember.findOne({ email }).populate(['skills', 'branch']);
+  if (!teamMember) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
+  }
+  return teamMember;
 };
 
 /**
@@ -104,21 +129,20 @@ const getTeamMemberByEmail = async (email) => {
  */
 const updateTeamMemberById = async (teamMemberId, updateBody) => {
   const teamMember = await getTeamMemberById(teamMemberId);
-  if (!teamMember) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
-  }
+  
   if (updateBody.email && (await TeamMember.isEmailTaken(updateBody.email, teamMemberId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
   }
   if (updateBody.phone && (await TeamMember.isPhoneTaken(updateBody.phone, teamMemberId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
-  if (updateBody.skills && !(await validateSkills(updateBody.skills))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'All skills must be valid activities');
+  if (updateBody.skills) {
+    await validateSkills(updateBody.skills);
   }
-  if (updateBody.branch && !(await validateBranch(updateBody.branch))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Branch must be valid');
+  if (updateBody.branch) {
+    await validateBranch(updateBody.branch);
   }
+  
   Object.assign(teamMember, updateBody);
   await teamMember.save();
   return teamMember.populate(['skills', 'branch']);
@@ -131,10 +155,7 @@ const updateTeamMemberById = async (teamMemberId, updateBody) => {
  */
 const deleteTeamMemberById = async (teamMemberId) => {
   const teamMember = await getTeamMemberById(teamMemberId);
-  if (!teamMember) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
-  }
-  await teamMember.remove();
+  await teamMember.deleteOne();
   return teamMember;
 };
 
