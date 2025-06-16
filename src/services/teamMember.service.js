@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import ApiError from '../utils/ApiError.js';
 import TeamMember from '../models/teamMember.model.js';
 import Activity from '../models/activity.model.js';
+import Branch from '../models/branch.model.js';
 
 /**
  * Validate if all skill IDs exist in the activities collection
@@ -10,10 +11,23 @@ import Activity from '../models/activity.model.js';
  * @returns {Promise<boolean>}
  */
 const validateSkills = async (skillIds) => {
+  if(typeof skillIds === 'string') {
+    skillIds = [skillIds];
+  }
   // Find all activities with the given IDs
   const activities = await Activity.find({ _id: { $in: skillIds } });
   // Check if we found all the activities (no duplicates or invalid IDs)
   return activities.length === skillIds.length;
+};
+
+/**
+ * Validate if branch ID exists
+ * @param {string} branchId
+ * @returns {Promise<boolean>}
+ */
+const validateBranch = async (branchId) => {
+  const branch = await Branch.findById(branchId);
+  return !!branch;
 };
 
 /**
@@ -31,8 +45,11 @@ const createTeamMember = async (teamMemberBody) => {
   if (!(await validateSkills(teamMemberBody.skills))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'All skills must be valid activities');
   }
+  if (!(await validateBranch(teamMemberBody.branch))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Branch must be valid');
+  }
   const teamMember = await TeamMember.create(teamMemberBody);
-  return teamMember.populate('skills');
+  return teamMember.populate(['skills', 'branch']);
 };
 
 /**
@@ -47,7 +64,7 @@ const createTeamMember = async (teamMemberBody) => {
 const queryTeamMembers = async (filter, options) => {
   const teamMembers = await TeamMember.paginate(filter, {
     ...options,
-    populate: 'skills'
+    populate: 'skills,branch',
   });
   return teamMembers;
 };
@@ -58,7 +75,7 @@ const queryTeamMembers = async (filter, options) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberById = async (id) => {
-  return TeamMember.findById(id).populate('skills');
+  return TeamMember.findById(id).populate(['skills', 'branch']);
 };
 
 /**
@@ -67,7 +84,7 @@ const getTeamMemberById = async (id) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberByPhone = async (phone) => {
-  return TeamMember.findOne({ phone }).populate('skills');
+  return TeamMember.findOne({ phone }).populate(['skills', 'branch']);
 };
 
 /**
@@ -76,7 +93,7 @@ const getTeamMemberByPhone = async (phone) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberByEmail = async (email) => {
-  return TeamMember.findOne({ email }).populate('skills');
+  return TeamMember.findOne({ email }).populate(['skills', 'branch']);
 };
 
 /**
@@ -96,14 +113,15 @@ const updateTeamMemberById = async (teamMemberId, updateBody) => {
   if (updateBody.phone && (await TeamMember.isPhoneTaken(updateBody.phone, teamMemberId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
-  if (updateBody.skills) {
-    if (!(await validateSkills(updateBody.skills))) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'All skills must be valid activities');
-    }
+  if (updateBody.skills && !(await validateSkills(updateBody.skills))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'All skills must be valid activities');
+  }
+  if (updateBody.branch && !(await validateBranch(updateBody.branch))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Branch must be valid');
   }
   Object.assign(teamMember, updateBody);
   await teamMember.save();
-  return teamMember.populate('skills');
+  return teamMember.populate(['skills', 'branch']);
 };
 
 /**

@@ -3,8 +3,7 @@ import validator from 'validator';
 import toJSON from './plugins/toJSON.plugin.js';
 import paginate from './plugins/paginate.plugin.js';
 
-
-const teamMemberSchema = mongoose.Schema(
+const clientSchema = mongoose.Schema(
   {
     name: {
       type: String,
@@ -64,20 +63,15 @@ const teamMemberSchema = mongoose.Schema(
         }
       },
     },
-    branch: {
+    groups: [{
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Branch',
-      required: true,
-    },
+      ref: 'Group',
+      required: true
+    }],
     sortOrder: {
       type: Number,
       required: true,
-    },
-    skills: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Activity',
-      required: true
-    }]
+    }
   },
   {
     timestamps: true,
@@ -85,34 +79,34 @@ const teamMemberSchema = mongoose.Schema(
 );
 
 // add plugin that converts mongoose to json
-teamMemberSchema.plugin(toJSON);
-teamMemberSchema.plugin(paginate);
+clientSchema.plugin(toJSON);
+clientSchema.plugin(paginate);
 
 /**
  * Check if email is taken
- * @param {string} email - The user's email
- * @param {ObjectId} [excludeUserId] - The id of the user to be excluded
+ * @param {string} email - The client's email
+ * @param {ObjectId} [excludeClientId] - The id of the client to be excluded
  * @returns {Promise<boolean>}
  */
-teamMemberSchema.statics.isEmailTaken = async function (email, excludeUserId) {
-  const teamMember = await this.findOne({ email, _id: { $ne: excludeUserId } });
-  return !!teamMember;
+clientSchema.statics.isEmailTaken = async function (email, excludeClientId) {
+  const client = await this.findOne({ email, _id: { $ne: excludeClientId } });
+  return !!client;
 };
 
 /**
  * Check if phone is taken
- * @param {string} phone - The user's phone
- * @param {ObjectId} [excludeUserId] - The id of the user to be excluded
+ * @param {string} phone - The client's phone
+ * @param {ObjectId} [excludeClientId] - The id of the client to be excluded
  * @returns {Promise<boolean>}
  */
-teamMemberSchema.statics.isPhoneTaken = async function (phone, excludeUserId) {
-  const teamMember = await this.findOne({ phone, _id: { $ne: excludeUserId } });
-  return !!teamMember;
+clientSchema.statics.isPhoneTaken = async function (phone, excludeClientId) {
+  const client = await this.findOne({ phone, _id: { $ne: excludeClientId } });
+  return !!client;
 };
 
 /**
- * @typedef TeamMember
+ * @typedef Client
  */
-const TeamMember = mongoose.model('TeamMember', teamMemberSchema);
+const Client = mongoose.model('Client', clientSchema);
 
-export default TeamMember;
+export default Client; 

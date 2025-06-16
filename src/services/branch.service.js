@@ -1,6 +1,16 @@
 import httpStatus from 'http-status';
+import { Branch, TeamMember } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
-import Branch from '../models/branch.model.js';
+
+/**
+ * Validate if team member ID exists
+ * @param {string} teamMemberId
+ * @returns {Promise<boolean>}
+ */
+const validateTeamMember = async (teamMemberId) => {
+  const teamMember = await TeamMember.findById(teamMemberId);
+  return !!teamMember;
+};
 
 /**
  * Create a branch
@@ -14,8 +24,11 @@ const createBranch = async (branchBody) => {
   if (await Branch.isPhoneTaken(branchBody.phone)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
+  if (branchBody.branchHead && !(await validateTeamMember(branchBody.branchHead))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Branch head must be a valid team member');
+  }
   const branch = await Branch.create(branchBody);
-  return branch;
+  return branch.populate('branchHead');
 };
 
 /**
@@ -28,7 +41,10 @@ const createBranch = async (branchBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryBranches = async (filter, options) => {
-  const branches = await Branch.paginate(filter, options);
+  const branches = await Branch.paginate(filter, {
+    ...options,
+    populate: 'branchHead',
+  });
   return branches;
 };
 
@@ -38,7 +54,11 @@ const queryBranches = async (filter, options) => {
  * @returns {Promise<Branch>}
  */
 const getBranchById = async (id) => {
-  return Branch.findById(id);
+  const branch = await Branch.findById(id).populate('branchHead');
+  if (!branch) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
+  }
+  return branch;
 };
 
 /**
@@ -47,7 +67,11 @@ const getBranchById = async (id) => {
  * @returns {Promise<Branch>}
  */
 const getBranchByEmail = async (email) => {
-  return Branch.findOne({ email });
+  const branch = await Branch.findOne({ email }).populate('branchHead');
+  if (!branch) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
+  }
+  return branch;
 };
 
 /**
@@ -56,7 +80,11 @@ const getBranchByEmail = async (email) => {
  * @returns {Promise<Branch>}
  */
 const getBranchByPhone = async (phone) => {
-  return Branch.findOne({ phone });
+  const branch = await Branch.findOne({ phone }).populate('branchHead');
+  if (!branch) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
+  }
+  return branch;
 };
 
 /**
@@ -76,9 +104,12 @@ const updateBranchById = async (branchId, updateBody) => {
   if (updateBody.phone && (await Branch.isPhoneTaken(updateBody.phone, branchId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
+  if (updateBody.branchHead && !(await validateTeamMember(updateBody.branchHead))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Branch head must be a valid team member');
+  }
   Object.assign(branch, updateBody);
   await branch.save();
-  return branch;
+  return branch.populate('branchHead');
 };
 
 /**

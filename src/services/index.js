@@ -5,10 +5,14 @@
 import * as teamMemberService from './teamMember.service.js';
 import * as activityService from './activity.service.js';
 import * as branchService from './branch.service.js';
+import * as clientService from './client.service.js';
+import * as groupService from './group.service.js';
 
 export {
   teamMemberService,
   activityService,
   branchService,
+  clientService,
+  groupService,
 };
 

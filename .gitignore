@@ -10,3 +10,7 @@ yarn-error.log
 
 # Code coverage
 coverage
+
+
+# Postman Collections
+/postman

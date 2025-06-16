@@ -8,7 +8,8 @@ import Activity from '../models/activity.model.js';
  * @returns {Promise<Activity>}
  */
 const createActivity = async (activityBody) => {
-  return Activity.create(activityBody);
+  const activity = await Activity.create(activityBody);
+  return activity;
 };
 
 /**
@@ -31,7 +32,11 @@ const queryActivities = async (filter, options) => {
  * @returns {Promise<Activity>}
  */
 const getActivityById = async (id) => {
-  return Activity.findById(id);
+  const activity = await Activity.findById(id);
+  if (!activity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
+  }
+  return activity;
 };
 
 /**

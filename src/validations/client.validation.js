@@ -1,73 +1,73 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
 
-const createBranch = {
+const createClient = {
   body: Joi.object().keys({
     name: Joi.string().required(),
-    branchHead: Joi.string().custom(objectId),
-    email: Joi.string().required().email(),
     phone: Joi.string().required(),
+    email: Joi.string().required().email(),
     address: Joi.string().required(),
     city: Joi.string().required(),
     state: Joi.string().required(),
     country: Joi.string().required(),
     pinCode: Joi.string().required(),
+    groups: Joi.array().items(Joi.custom(objectId)).required(),
     sortOrder: Joi.number().required(),
   }),
 };
 
-const getBranches = {
+const getClients = {
   query: Joi.object().keys({
     name: Joi.string(),
-    branchHead: Joi.string().custom(objectId),
     email: Joi.string(),
     phone: Joi.string(),
     city: Joi.string(),
     state: Joi.string(),
     country: Joi.string(),
     pinCode: Joi.string(),
+    groups: Joi.string().custom(objectId),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
   }),
 };
 
-const getBranch = {
+const getClient = {
   params: Joi.object().keys({
-    branchId: Joi.string().custom(objectId),
+    clientId: Joi.string().custom(objectId),
   }),
 };
 
-const updateBranch = {
+const updateClient = {
   params: Joi.object().keys({
-    branchId: Joi.required().custom(objectId),
+    clientId: Joi.required().custom(objectId),
   }),
   body: Joi.object()
     .keys({
       name: Joi.string(),
-      branchHead: Joi.string().custom(objectId),
-      email: Joi.string().email(),
       phone: Joi.string(),
+      email: Joi.string().email(),
       address: Joi.string(),
       city: Joi.string(),
       state: Joi.string(),
       country: Joi.string(),
       pinCode: Joi.string(),
+      groups: Joi.array().items(Joi.custom(objectId)),
       sortOrder: Joi.number(),
     })
     .min(1),
 };
 
-const deleteBranch = {
+const deleteClient = {
   params: Joi.object().keys({
-    branchId: Joi.string().custom(objectId),
+    clientId: Joi.string().custom(objectId),
   }),
 };
 
-export {
-  createBranch,
-  getBranches,
-  getBranch,
-  updateBranch,
-  deleteBranch,
+export default {
+  createClient,
+  getClients,
+  getClient,
+  updateClient,
+  deleteClient,
 }; 
