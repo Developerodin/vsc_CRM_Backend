@@ -28,7 +28,15 @@ const createClient = async (clientBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryClients = async (filter, options) => {
-  const clients = await Client.paginate(filter, options);
+  // Create a new filter object to avoid modifying the original
+  const mongoFilter = { ...filter };
+  
+  // If name filter exists, convert it to case-insensitive regex
+  if (mongoFilter.name) {
+    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  }
+
+  const clients = await Client.paginate(mongoFilter, options);
   return clients;
 };
 

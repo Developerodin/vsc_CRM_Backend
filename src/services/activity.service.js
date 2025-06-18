@@ -22,7 +22,11 @@ const createActivity = async (activityBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryActivities = async (filter, options) => {
-  const activities = await Activity.paginate(filter, options);
+  const mongoFilter = { ...filter };
+  if (mongoFilter.name) {
+    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  }
+  const activities = await Activity.paginate(mongoFilter, options);
   return activities;
 };
 

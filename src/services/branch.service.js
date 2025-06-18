@@ -27,7 +27,15 @@ const createBranch = async (branchBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryBranches = async (filter, options) => {
-  const branches = await Branch.paginate(filter, options);
+  // Create a new filter object to avoid modifying the original
+  const mongoFilter = { ...filter };
+  
+  // If name filter exists, convert it to case-insensitive regex
+  if (mongoFilter.name) {
+    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  }
+
+  const branches = await Branch.paginate(mongoFilter, options);
   return branches;
 };
 
