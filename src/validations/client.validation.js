@@ -61,10 +61,34 @@ const deleteClient = {
   }),
 };
 
+const bulkImportClients = {
+  body: Joi.object().keys({
+    clients: Joi.array()
+      .items(
+        Joi.object().keys({
+          id: Joi.string().custom(objectId).optional(),
+          name: Joi.string().required(),
+          phone: Joi.string().required(),
+          email: Joi.string().required().email(),
+          address: Joi.string().required(),
+          city: Joi.string().required(),
+          state: Joi.string().required(),
+          country: Joi.string().required(),
+          pinCode: Joi.string().required(),
+          sortOrder: Joi.number().required(),
+        })
+      )
+      .min(1)
+      .max(500)
+      .required(),
+  }),
+};
+
 export default {
   createClient,
   getClients,
   getClient,
   updateClient,
   deleteClient,
+  bulkImportClients,
 }; 

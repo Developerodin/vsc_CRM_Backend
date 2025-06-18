@@ -34,10 +34,16 @@ const deleteBranch = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const bulkImportBranches = catchAsync(async (req, res) => {
+  const result = await branchService.bulkImportBranches(req.body.branches);
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createBranch,
   getBranches,
   getBranch,
   updateBranch,
   deleteBranch,
+  bulkImportBranches,
 };

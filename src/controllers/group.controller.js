@@ -49,6 +49,11 @@ const getClientsByGroup = catchAsync(async (req, res) => {
   res.send(clients);
 });
 
+const bulkImportGroups = catchAsync(async (req, res) => {
+  const result = await groupService.bulkImportGroups(req.body.groups);
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createGroup,
   getGroups,
@@ -58,4 +63,5 @@ export {
   addClientToGroup,
   removeClientFromGroup,
   getClientsByGroup,
+  bulkImportGroups,
 }; 

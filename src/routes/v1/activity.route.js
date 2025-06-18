@@ -12,6 +12,10 @@ router
   .get(validate(activityValidation.getActivities), activityController.getActivities);
 
 router
+  .route('/bulk-import')
+  .post(validate(activityValidation.bulkImportActivities), activityController.bulkImportActivities);
+
+router
   .route('/:activityId')
   .get(validate(activityValidation.getActivity), activityController.getActivity)
   .patch(validate(activityValidation.updateActivity), activityController.updateActivity)

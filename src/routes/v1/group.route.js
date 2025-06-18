@@ -12,6 +12,10 @@ router
   .get(validate(groupValidation.getGroups), groupController.getGroups);
 
 router
+  .route('/bulk-import')
+  .post(validate(groupValidation.bulkImportGroups), groupController.bulkImportGroups);
+
+router
   .route('/:groupId')
   .get(validate(groupValidation.getGroup), groupController.getGroup)
   .patch(validate(groupValidation.updateGroup), groupController.updateGroup)

@@ -176,6 +176,134 @@ const getClientsByGroup = async (groupId) => {
   return group.clients;
 };
 
+/**
+ * Bulk import groups (create and update)
+ * @param {Array} groups - Array of group objects with optional id for updates
+ * @returns {Promise<Object>} - Result with created and updated counts
+ */
+const bulkImportGroups = async (groups) => {
+  const results = {
+    created: 0,
+    updated: 0,
+    errors: [],
+  };
+
+  // Separate groups for creation and update
+  const toCreate = groups.filter((group) => !group.id);
+  const toUpdate = groups.filter((group) => group.id);
+
+  // Handle bulk creation
+  if (toCreate.length > 0) {
+    try {
+      // Validate client IDs for all groups to be created
+      const allClientIds = toCreate.reduce((ids, group) => {
+        if (group.clients && group.clients.length > 0) {
+          ids.push(...group.clients);
+        }
+        return ids;
+      }, []);
+
+      if (allClientIds.length > 0) {
+        const uniqueClientIds = [...new Set(allClientIds)];
+        const validClients = await Client.find({ _id: { $in: uniqueClientIds } });
+        const validClientIds = validClients.map(client => client._id.toString());
+
+        // Check for invalid client IDs
+        const invalidClientIds = uniqueClientIds.filter(id => !validClientIds.includes(id));
+        if (invalidClientIds.length > 0) {
+          invalidClientIds.forEach((invalidId) => {
+            const groupsWithInvalidClient = toCreate.filter(group => 
+              group.clients && group.clients.includes(invalidId)
+            );
+            groupsWithInvalidClient.forEach((group, index) => {
+              results.errors.push({
+                index: toCreate.indexOf(group),
+                error: `Invalid client ID: ${invalidId}`,
+                data: group,
+              });
+            });
+          });
+        }
+
+        // Remove groups with invalid client IDs from creation
+        const validGroups = toCreate.filter(group => 
+          !group.clients || group.clients.every(clientId => validClientIds.includes(clientId))
+        );
+
+        if (validGroups.length > 0) {
+          const createdGroups = await Group.insertMany(validGroups, {
+            ordered: false,
+            rawResult: true,
+          });
+          results.created = createdGroups.insertedCount || validGroups.length;
+        }
+      } else {
+        // No client IDs to validate, proceed with creation
+        const createdGroups = await Group.insertMany(toCreate, {
+          ordered: false,
+          rawResult: true,
+        });
+        results.created = createdGroups.insertedCount || toCreate.length;
+      }
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.created = (error.insertedDocs && error.insertedDocs.length) || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Creation failed',
+            data: toCreate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  // Handle bulk updates
+  if (toUpdate.length > 0) {
+    const updateOps = toUpdate.map((group) => ({
+      updateOne: {
+        filter: { _id: group.id },
+        update: {
+          $set: {
+            name: group.name,
+            numberOfClients: group.numberOfClients || 0,
+            clients: group.clients || [],
+            sortOrder: group.sortOrder,
+          },
+        },
+        upsert: false,
+      },
+    }));
+
+    try {
+      const updateResult = await Group.bulkWrite(updateOps, {
+        ordered: false, // Continue processing even if some fail
+      });
+      results.updated = updateResult.modifiedCount || 0;
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.updated = error.modifiedCount || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Update failed',
+            data: toUpdate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return results;
+};
+
 export {
   createGroup,
   queryGroups,
@@ -185,4 +313,5 @@ export {
   addClientToGroup,
   removeClientFromGroup,
   getClientsByGroup,
+  bulkImportGroups,
 }; 

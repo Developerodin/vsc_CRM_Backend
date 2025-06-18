@@ -12,6 +12,10 @@ router
   .get(validate(teamMemberValidation.getTeamMembers), teamMemberController.getTeamMembers);
 
 router
+  .route('/bulk-import')
+  .post(validate(teamMemberValidation.bulkImportTeamMembers), teamMemberController.bulkImportTeamMembers);
+
+router
   .route('/:teamMemberId')
   .get(validate(teamMemberValidation.getTeamMember), teamMemberController.getTeamMember)
   .patch(validate(teamMemberValidation.updateTeamMember), teamMemberController.updateTeamMember)

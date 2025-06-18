@@ -40,10 +40,9 @@ const deleteActivity = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
-export {
-  createActivity,
-  getActivities,
-  getActivity,
-  updateActivity,
-  deleteActivity,
-}; 
+const bulkImportActivities = catchAsync(async (req, res) => {
+  const result = await activityService.bulkImportActivities(req.body.activities);
+  res.status(httpStatus.OK).send(result);
+});
+
+export { createActivity, getActivities, getActivity, updateActivity, deleteActivity, bulkImportActivities }; 

@@ -41,10 +41,20 @@ const deleteActivity = {
   }),
 };
 
-export {
-  createActivity,
-  getActivities,
-  getActivity,
-  updateActivity,
-  deleteActivity,
-}; 
+const bulkImportActivities = {
+  body: Joi.object().keys({
+    activities: Joi.array()
+      .items(
+        Joi.object().keys({
+          id: Joi.string().custom(objectId).optional(),
+          name: Joi.string().required(),
+          sortOrder: Joi.number().required(),
+        })
+      )
+      .min(1)
+      .max(1000)
+      .required(),
+  }),
+};
+
+export { createActivity, getActivities, getActivity, updateActivity, deleteActivity, bulkImportActivities }; 
