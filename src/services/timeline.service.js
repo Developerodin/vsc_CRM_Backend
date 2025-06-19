@@ -296,6 +296,7 @@ const bulkImportTimelines = async (timelines) => {
           $set: {
             activity: timeline.activity,
             client: timeline.client,
+            status: timeline.status,
             frequency: timeline.frequency,
             frequencyCount: timeline.frequencyCount,
             udin: timeline.udin,

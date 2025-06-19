@@ -14,6 +14,11 @@ const timelineSchema = mongoose.Schema(
       ref: 'Client',
       required: true,
     },
+    status: {
+      type: String,
+      enum: ['pending', 'completed', 'cancelled', 'ongoing'],
+      required: false,
+    },
     frequency: {
       type: String,
       enum: ['daily', 'alternate day', 'weekly', 'monthly', 'quarterly', 'yearly'],
