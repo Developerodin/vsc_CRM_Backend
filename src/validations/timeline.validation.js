@@ -5,7 +5,7 @@ const createTimeline = {
   body: Joi.object().keys({
     activity: Joi.string().custom(objectId).required(),
     client: Joi.string().custom(objectId).required(),
-    status: Joi.string().valid('pending', 'completed', 'cancelled', 'ongoing').required(),
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').required(),
     frequency: Joi.string().valid('daily', 'alternate day', 'weekly', 'monthly', 'quarterly', 'yearly').required(),
     frequencyCount: Joi.string().valid('once', 'twice').required(),
     udin: Joi.string().trim(),
@@ -19,7 +19,7 @@ const getTimelines = {
   query: Joi.object().keys({
     activity: Joi.string().custom(objectId),
     client: Joi.string().custom(objectId),
-    status: Joi.string().valid('pending', 'completed', 'cancelled', 'ongoing'),
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
     frequency: Joi.string().valid('daily', 'alternate day', 'weekly', 'monthly', 'quarterly', 'yearly'),
     frequencyCount: Joi.string().valid('once', 'twice'),
     udin: Joi.string(),
@@ -45,7 +45,7 @@ const updateTimeline = {
     .keys({
       activity: Joi.string().custom(objectId),
       client: Joi.string().custom(objectId),
-      status: Joi.string().valid('pending', 'completed', 'cancelled', 'ongoing'),
+      status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
       frequency: Joi.string().valid('daily', 'alternate day', 'weekly', 'monthly', 'quarterly', 'yearly'),
       frequencyCount: Joi.string().valid('once', 'twice'),
       udin: Joi.string().trim(),
@@ -70,7 +70,7 @@ const bulkImportTimelines = {
           id: Joi.string().custom(objectId).optional(),
           activity: Joi.string().custom(objectId).required(),
           client: Joi.string().custom(objectId).required(),
-          status: Joi.string().valid('pending', 'completed', 'cancelled', 'ongoing'),
+          status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
           frequency: Joi.string().valid('daily', 'alternate day', 'weekly', 'monthly', 'quarterly', 'yearly').required(),
           frequencyCount: Joi.string().valid('once', 'twice').required(),
           udin: Joi.string().trim(),
