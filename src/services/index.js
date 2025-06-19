@@ -7,6 +7,7 @@ import * as activityService from './activity.service.js';
 import * as branchService from './branch.service.js';
 import * as clientService from './client.service.js';
 import * as groupService from './group.service.js';
+import * as timelineService from './timeline.service.js';
 
 export {
   teamMemberService,
@@ -14,5 +15,6 @@ export {
   branchService,
   clientService,
   groupService,
+  timelineService,
 };
 
