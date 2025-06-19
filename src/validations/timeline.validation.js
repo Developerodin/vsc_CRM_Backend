@@ -7,10 +7,10 @@ const createTimeline = {
     client: Joi.string().custom(objectId).required(),
     frequency: Joi.string().valid('daily', 'alternate day', 'weekly', 'monthly', 'quarterly', 'yearly').required(),
     frequencyCount: Joi.string().valid('once', 'twice').required(),
-    udin: Joi.string().required().trim(),
-    turnover: Joi.number().required(),
+    udin: Joi.string().trim(),
+    turnover: Joi.number(),
     assignedMember: Joi.string().custom(objectId).required(),
-    dueDate: Joi.date().required(),
+    dueDate: Joi.date(),
   }),
 };
 

@@ -26,12 +26,12 @@ const timelineSchema = mongoose.Schema(
     },
     udin: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     turnover: {
       type: Number,
-      required: true,
+      required: false,
     },
     assignedMember: {
       type: mongoose.Schema.Types.ObjectId,
@@ -40,7 +40,7 @@ const timelineSchema = mongoose.Schema(
     },
     dueDate: {
       type: Date,
-      required: true,
+      required: false,
     },
   },
   {
