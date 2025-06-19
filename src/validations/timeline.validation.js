@@ -5,7 +5,7 @@ const createTimeline = {
   body: Joi.object().keys({
     activity: Joi.string().custom(objectId).required(),
     client: Joi.string().custom(objectId).required(),
-    status: Joi.string().valid('pending', 'completed', 'cancelled', 'ongoing'),
+    status: Joi.string().valid('pending', 'completed', 'cancelled', 'ongoing').required(),
     frequency: Joi.string().valid('daily', 'alternate day', 'weekly', 'monthly', 'quarterly', 'yearly').required(),
     frequencyCount: Joi.string().valid('once', 'twice').required(),
     udin: Joi.string().trim(),

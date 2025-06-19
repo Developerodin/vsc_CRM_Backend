@@ -17,7 +17,7 @@ const timelineSchema = mongoose.Schema(
     status: {
       type: String,
       enum: ['pending', 'completed', 'cancelled', 'ongoing'],
-      required: false,
+      required: true,
     },
     frequency: {
       type: String,
