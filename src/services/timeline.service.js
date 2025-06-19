@@ -83,14 +83,43 @@ const createTimeline = async (timelineBody) => {
  */
 const queryTimelines = async (filter, options) => {
   const mongoFilter = { ...filter };
-  
-  // If udin filter exists, convert it to case-insensitive regex
-  if (mongoFilter.udin) {
-    mongoFilter.udin = { $regex: mongoFilter.udin, $options: 'i' };
+
+  if (mongoFilter.status === '') {
+    delete mongoFilter.status;
+  }
+
+  if (mongoFilter.activityName === '') {
+    delete mongoFilter.activityName;
+  }
+
+  // Handle activity name filtering
+  if (mongoFilter.activityName) {
+    // Find activities that match the name filter
+    const activities = await Activity.find({
+      name: { $regex: mongoFilter.activityName, $options: 'i' }
+    }).select('_id');
+    
+    // Get the activity IDs
+    const activityIds = activities.map(activity => activity._id);
+    
+    // If no activities found, return empty result
+    if (activityIds.length === 0) {
+      return {
+        results: [],
+        page: options.page || 1,
+        limit: options.limit || 10,
+        totalPages: 0,
+        totalResults: 0,
+      };
+    }
+    
+    // Replace activityName filter with activity ID filter
+    mongoFilter.activity = { $in: activityIds };
+    delete mongoFilter.activityName;
   }
 
   const timelines = await Timeline.paginate(mongoFilter, {
-    sortBy: options.sortBy || 'dueDate:asc',
+    sortBy: options.sortBy || 'createdAt:desc',
     limit: options.limit,
     page: options.page,
     populate: 'activity,client,assignedMember',
