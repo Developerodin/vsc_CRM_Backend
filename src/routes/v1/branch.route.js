@@ -12,6 +12,10 @@ router
   .get(validate(branchValidation.getBranches), branchController.getBranches);
 
 router
+  .route('/bulk-import')
+  .post(validate(branchValidation.bulkImportBranches), branchController.bulkImportBranches);
+
+router
   .route('/:branchId')
   .get(validate(branchValidation.getBranch), branchController.getBranch)
   .patch(validate(branchValidation.updateBranch), branchController.updateBranch)

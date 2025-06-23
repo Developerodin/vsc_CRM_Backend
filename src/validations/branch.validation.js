@@ -4,7 +4,7 @@ import { objectId } from './custom.validation.js';
 const createBranch = {
   body: Joi.object().keys({
     name: Joi.string().required(),
-    branchHead: Joi.string().required(),
+    branchHead: Joi.string(),
     email: Joi.string().required().email(),
     phone: Joi.string().required(),
     address: Joi.string().required(),
@@ -45,7 +45,7 @@ const updateBranch = {
   body: Joi.object()
     .keys({
       name: Joi.string(),
-      branchHead: Joi.string(),
+      branchHead: Joi.string().allow(''),
       email: Joi.string().email(),
       phone: Joi.string(),
       address: Joi.string(),
@@ -64,10 +64,28 @@ const deleteBranch = {
   }),
 };
 
-export {
-  createBranch,
-  getBranches,
-  getBranch,
-  updateBranch,
-  deleteBranch,
-}; 
+const bulkImportBranches = {
+  body: Joi.object().keys({
+    branches: Joi.array()
+      .items(
+        Joi.object().keys({
+          id: Joi.string().custom(objectId).optional(),
+          name: Joi.string().required(),
+          branchHead: Joi.string().allow('', null),
+          email: Joi.string().required().email(),
+          phone: Joi.string().required(),
+          address: Joi.string().required(),
+          city: Joi.string().required(),
+          state: Joi.string().required(),
+          country: Joi.string().required(),
+          pinCode: Joi.string().required(),
+          sortOrder: Joi.number().required(),
+        })
+      )
+      .min(1)
+      .max(500)
+      .required(),
+  }),
+};
+
+export { createBranch, getBranches, getBranch, updateBranch, deleteBranch, bulkImportBranches }; 

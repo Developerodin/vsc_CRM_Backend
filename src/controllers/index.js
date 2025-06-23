@@ -6,6 +6,7 @@ import * as branchController from './branch.controller.js';
 import * as clientController from './client.controller.js';
 import * as groupController from './group.controller.js';
 import * as roleController from './role.controller.js';
+import * as timelineController from './timeline.controller.js';
 
 export {
   authController,
@@ -16,5 +17,6 @@ export {
   clientController,
   groupController,
   roleController,
+  timelineController,
 };
 

@@ -7,6 +7,7 @@ import branchRoute from './branch.route.js';
 import clientRoute from './client.route.js';
 import groupRoute from './group.route.js';
 import roleRoute from './role.route.js';
+import timelineRoute from './timeline.route.js';
 import docsRoute from './docs.route.js';
 import config from '../../config/config.js';
 
@@ -44,6 +45,10 @@ const defaultRoutes = [
   {
     path: '/roles',
     route: roleRoute,
+  },
+  {
+    path: '/timelines',
+    route: timelineRoute,
   },
 ];
 

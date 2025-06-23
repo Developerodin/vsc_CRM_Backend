@@ -28,7 +28,15 @@ const createClient = async (clientBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryClients = async (filter, options) => {
-  const clients = await Client.paginate(filter, options);
+  // Create a new filter object to avoid modifying the original
+  const mongoFilter = { ...filter };
+  
+  // If name filter exists, convert it to case-insensitive regex
+  if (mongoFilter.name) {
+    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  }
+
+  const clients = await Client.paginate(mongoFilter, options);
   return clients;
 };
 
@@ -81,10 +89,136 @@ const deleteClientById = async (clientId) => {
   return client;
 };
 
-export {
-  createClient,
-  queryClients,
-  getClientById,
-  updateClientById,
-  deleteClientById,
-}; 
+/**
+ * Bulk import clients (create and update)
+ * @param {Array} clients - Array of client objects with optional id for updates
+ * @returns {Promise<Object>} - Result with created and updated counts
+ */
+const bulkImportClients = async (clients) => {
+  const results = {
+    created: 0,
+    updated: 0,
+    errors: [],
+  };
+
+  // Separate clients for creation and update
+  const toCreate = clients.filter((client) => !client.id);
+  const toUpdate = clients.filter((client) => client.id);
+
+  // Handle bulk creation with unique field validation
+  if (toCreate.length > 0) {
+    try {
+      // Validate unique fields before bulk insert
+      const emailValidationPromises = toCreate.map(async (client, index) => {
+        if (await Client.isEmailTaken(client.email)) {
+          return { index, field: 'email', value: client.email };
+        }
+        return null;
+      });
+
+      const phoneValidationPromises = toCreate.map(async (client, index) => {
+        if (await Client.isPhoneTaken(client.phone)) {
+          return { index, field: 'phone', value: client.phone };
+        }
+        return null;
+      });
+
+      const [emailErrors, phoneErrors] = await Promise.all([
+        Promise.all(emailValidationPromises),
+        Promise.all(phoneValidationPromises),
+      ]);
+
+      const validationErrors = [...emailErrors, ...phoneErrors].filter(Boolean);
+      
+      if (validationErrors.length > 0) {
+        validationErrors.forEach((error) => {
+          results.errors.push({
+            index: error.index,
+            error: `${error.field} already taken: ${error.value}`,
+            data: toCreate[error.index],
+          });
+        });
+        // Remove clients with validation errors from creation
+        const validClients = toCreate.filter((_, index) =>
+          !validationErrors.some((error) => error.index === index)
+        );
+        
+        if (validClients.length > 0) {
+          const createdClients = await Client.insertMany(validClients, {
+            ordered: false,
+            rawResult: true,
+          });
+          results.created = createdClients.insertedCount || validClients.length;
+        }
+      } else {
+        const createdClients = await Client.insertMany(toCreate, {
+          ordered: false,
+          rawResult: true,
+        });
+        results.created = createdClients.insertedCount || toCreate.length;
+      }
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.created = (error.insertedDocs && error.insertedDocs.length) || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Creation failed',
+            data: toCreate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  // Handle bulk updates
+  if (toUpdate.length > 0) {
+    const updateOps = toUpdate.map((client) => ({
+      updateOne: {
+        filter: { _id: client.id },
+        update: {
+          $set: {
+            name: client.name,
+            phone: client.phone,
+            email: client.email,
+            address: client.address,
+            city: client.city,
+            state: client.state,
+            country: client.country,
+            pinCode: client.pinCode,
+            sortOrder: client.sortOrder,
+          },
+        },
+        upsert: false,
+      },
+    }));
+
+    try {
+      const updateResult = await Client.bulkWrite(updateOps, {
+        ordered: false, // Continue processing even if some fail
+      });
+      results.updated = updateResult.modifiedCount || 0;
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.updated = error.modifiedCount || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Update failed',
+            data: toUpdate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return results;
+};
+
+export { createClient, queryClients, getClientById, updateClientById, deleteClientById, bulkImportClients }; 

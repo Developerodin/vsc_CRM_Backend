@@ -39,8 +39,21 @@ const paginate = (schema) => {
     const countPromise = this.countDocuments(filter).exec();
     let docsPromise = this.find(filter).sort(sort).skip(skip).limit(limit);
 
-    if (options.populate) {
+    if (options.populate && typeof options.populate === 'string') {
       options.populate.split(',').forEach((populateOption) => {
+        docsPromise = docsPromise.populate(
+          populateOption
+            .split('.')
+            .reverse()
+            .reduce((a, b) => ({ path: b, populate: a }))
+        );
+      });
+    } else if (options.populate && Array.isArray(options.populate)) {
+      // If populate is an array, convert it to string format for the plugin
+      const populateString = options.populate.map(p => 
+        typeof p === 'string' ? p : p.path
+      ).join(',');
+      populateString.split(',').forEach((populateOption) => {
         docsPromise = docsPromise.populate(
           populateOption
             .split('.')

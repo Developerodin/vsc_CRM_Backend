@@ -22,7 +22,11 @@ const createActivity = async (activityBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryActivities = async (filter, options) => {
-  const activities = await Activity.paginate(filter, options);
+  const mongoFilter = { ...filter };
+  if (mongoFilter.name) {
+    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  }
+  const activities = await Activity.paginate(mongoFilter, options);
   return activities;
 };
 
@@ -69,10 +73,80 @@ const deleteActivityById = async (activityId) => {
   return activity;
 };
 
-export {
-  createActivity,
-  queryActivities,
-  getActivityById,
-  updateActivityById,
-  deleteActivityById,
-}; 
+/**
+ * Bulk import activities (create and update)
+ * @param {Array} activities - Array of activity objects with optional id for updates
+ * @returns {Promise<Object>} - Result with created and updated counts
+ */
+const bulkImportActivities = async (activities) => {
+  const results = {
+    created: 0,
+    updated: 0,
+    errors: [],
+  };
+
+  // Separate activities for creation and update
+  const toCreate = activities.filter((activity) => !activity.id);
+  const toUpdate = activities.filter((activity) => activity.id);
+
+  // Handle bulk creation
+  if (toCreate.length > 0) {
+    try {
+      const createdActivities = await Activity.insertMany(toCreate, {
+        ordered: false, // Continue processing even if some fail
+        rawResult: true,
+      });
+      results.created = createdActivities.insertedCount || toCreate.length;
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.created = (error.insertedDocs && error.insertedDocs.length) || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Creation failed',
+            data: toCreate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  // Handle bulk updates
+  if (toUpdate.length > 0) {
+    const updateOps = toUpdate.map((activity) => ({
+      updateOne: {
+        filter: { _id: activity.id },
+        update: { $set: { name: activity.name, sortOrder: activity.sortOrder } },
+        upsert: false,
+      },
+    }));
+
+    try {
+      const updateResult = await Activity.bulkWrite(updateOps, {
+        ordered: false, // Continue processing even if some fail
+      });
+      results.updated = updateResult.modifiedCount || 0;
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.updated = error.modifiedCount || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Update failed',
+            data: toUpdate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return results;
+};
+
+export { createActivity, queryActivities, getActivityById, updateActivityById, deleteActivityById, bulkImportActivities }; 

@@ -12,6 +12,10 @@ router
   .get(validate(clientValidation.getClients), clientController.getClients);
 
 router
+  .route('/bulk-import')
+  .post(validate(clientValidation.bulkImportClients), clientController.bulkImportClients);
+
+router
   .route('/:clientId')
   .get(validate(clientValidation.getClient), clientController.getClient)
   .patch(validate(clientValidation.updateClient), clientController.updateClient)

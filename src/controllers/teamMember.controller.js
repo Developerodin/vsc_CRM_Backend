@@ -34,10 +34,16 @@ const deleteTeamMember = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const bulkImportTeamMembers = catchAsync(async (req, res) => {
+  const result = await teamMemberService.bulkImportTeamMembers(req.body.teamMembers);
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createTeamMember,
   getTeamMembers,
   getTeamMember,
   updateTeamMember,
   deleteTeamMember,
+  bulkImportTeamMembers,
 }; 

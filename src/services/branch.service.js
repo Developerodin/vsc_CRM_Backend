@@ -27,7 +27,15 @@ const createBranch = async (branchBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryBranches = async (filter, options) => {
-  const branches = await Branch.paginate(filter, options);
+  // Create a new filter object to avoid modifying the original
+  const mongoFilter = { ...filter };
+  
+  // If name filter exists, convert it to case-insensitive regex
+  if (mongoFilter.name) {
+    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  }
+
+  const branches = await Branch.paginate(mongoFilter, options);
   return branches;
 };
 
@@ -106,6 +114,139 @@ const deleteBranchById = async (branchId) => {
   return branch;
 };
 
+/**
+ * Bulk import branches (create and update)
+ * @param {Array} branches - Array of branch objects with optional id for updates
+ * @returns {Promise<Object>} - Result with created and updated counts
+ */
+const bulkImportBranches = async (branches) => {
+  const results = {
+    created: 0,
+    updated: 0,
+    errors: [],
+  };
+
+  // Separate branches for creation and update
+  const toCreate = branches.filter((branch) => !branch.id);
+  const toUpdate = branches.filter((branch) => branch.id);
+
+  // Handle bulk creation with unique field validation
+  if (toCreate.length > 0) {
+    try {
+      // Validate unique fields before bulk insert
+      const emailValidationPromises = toCreate.map(async (branch, index) => {
+        if (await Branch.isEmailTaken(branch.email)) {
+          return { index, field: 'email', value: branch.email };
+        }
+        return null;
+      });
+
+      const phoneValidationPromises = toCreate.map(async (branch, index) => {
+        if (await Branch.isPhoneTaken(branch.phone)) {
+          return { index, field: 'phone', value: branch.phone };
+        }
+        return null;
+      });
+
+      const [emailErrors, phoneErrors] = await Promise.all([
+        Promise.all(emailValidationPromises),
+        Promise.all(phoneValidationPromises),
+      ]);
+
+      const validationErrors = [...emailErrors, ...phoneErrors].filter(Boolean);
+      
+      if (validationErrors.length > 0) {
+        validationErrors.forEach((error) => {
+          results.errors.push({
+            index: error.index,
+            error: `${error.field} already taken: ${error.value}`,
+            data: toCreate[error.index],
+          });
+        });
+        // Remove branches with validation errors from creation
+        const validBranches = toCreate.filter((_, index) => 
+          !validationErrors.some(error => error.index === index)
+        );
+        
+        if (validBranches.length > 0) {
+          const createdBranches = await Branch.insertMany(validBranches, {
+            ordered: false,
+            rawResult: true,
+          });
+          results.created = createdBranches.insertedCount || validBranches.length;
+        }
+      } else {
+        const createdBranches = await Branch.insertMany(toCreate, {
+          ordered: false,
+          rawResult: true,
+        });
+        results.created = createdBranches.insertedCount || toCreate.length;
+      }
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.created = (error.insertedDocs && error.insertedDocs.length) || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Creation failed',
+            data: toCreate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  // Handle bulk updates
+  if (toUpdate.length > 0) {
+    const updateOps = toUpdate.map((branch) => ({
+      updateOne: {
+        filter: { _id: branch.id },
+        update: {
+          $set: {
+            name: branch.name,
+            branchHead: branch.branchHead,
+            email: branch.email,
+            phone: branch.phone,
+            address: branch.address,
+            city: branch.city,
+            state: branch.state,
+            country: branch.country,
+            pinCode: branch.pinCode,
+            sortOrder: branch.sortOrder,
+          },
+        },
+        upsert: false,
+      },
+    }));
+
+    try {
+      const updateResult = await Branch.bulkWrite(updateOps, {
+        ordered: false, // Continue processing even if some fail
+      });
+      results.updated = updateResult.modifiedCount || 0;
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.updated = error.modifiedCount || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Update failed',
+            data: toUpdate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return results;
+};
+
 export {
   createBranch,
   queryBranches,
@@ -114,4 +255,5 @@ export {
   getBranchByPhone,
   updateBranchById,
   deleteBranchById,
+  bulkImportBranches,
 }; 

@@ -34,10 +34,16 @@ const deleteClient = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const bulkImportClients = catchAsync(async (req, res) => {
+  const result = await clientService.bulkImportClients(req.body.clients);
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createClient,
   getClients,
   getClient,
   updateClient,
   deleteClient,
+  bulkImportClients,
 }; 

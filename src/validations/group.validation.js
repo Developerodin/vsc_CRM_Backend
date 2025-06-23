@@ -62,6 +62,24 @@ const removeClientFromGroup = {
   }),
 };
 
+const bulkImportGroups = {
+  body: Joi.object().keys({
+    groups: Joi.array()
+      .items(
+        Joi.object().keys({
+          id: Joi.string().custom(objectId).optional(),
+          name: Joi.string().required(),
+          numberOfClients: Joi.number().default(0),
+          clients: Joi.array().items(Joi.custom(objectId)).default([]),
+          sortOrder: Joi.number().required(),
+        })
+      )
+      .min(1)
+      .max(500)
+      .required(),
+  }),
+};
+
 export default {
   createGroup,
   getGroups,
@@ -70,4 +88,5 @@ export default {
   deleteGroup,
   addClientToGroup,
   removeClientFromGroup,
+  bulkImportGroups,
 }; 

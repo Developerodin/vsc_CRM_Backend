@@ -12,7 +12,6 @@ const branchSchema = mongoose.Schema(
     },
     branchHead: {
       type: String,
-      required: true,
       trim: true,
     },
     email: {

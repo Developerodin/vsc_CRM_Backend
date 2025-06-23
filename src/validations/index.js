@@ -6,6 +6,7 @@ import * as branchValidation from './branch.validation.js';
 import * as clientValidation from './client.validation.js';
 import * as groupValidation from './group.validation.js';
 import * as roleValidation from './role.validation.js';
+import * as timelineValidation from './timeline.validation.js';
 
 export {
   authValidation,
@@ -16,4 +17,5 @@ export {
   clientValidation,
   groupValidation,
   roleValidation,
+  timelineValidation,
 };

@@ -67,10 +67,36 @@ const deleteTeamMember = {
   }),
 };
 
+const bulkImportTeamMembers = {
+  body: Joi.object().keys({
+    teamMembers: Joi.array()
+      .items(
+        Joi.object().keys({
+          id: Joi.string().custom(objectId).optional(),
+          name: Joi.string().required().trim(),
+          email: Joi.string().required().email().lowercase().trim(),
+          phone: Joi.string().required().trim().pattern(/^\+?[1-9]\d{1,14}$/),
+          address: Joi.string().required().trim(),
+          city: Joi.string().required().trim(),
+          state: Joi.string().required().trim(),
+          country: Joi.string().required().trim(),
+          pinCode: Joi.string().required().trim().pattern(/^[0-9]{5,6}$/),
+          branch: Joi.string().custom(objectId).required(),
+          sortOrder: Joi.number().required().min(0),
+          skills: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
+        })
+      )
+      .min(1)
+      .max(300)
+      .required(),
+  }),
+};
+
 export {
   createTeamMember,
   getTeamMembers,
   getTeamMember,
   updateTeamMember,
   deleteTeamMember,
+  bulkImportTeamMembers,
 }; 

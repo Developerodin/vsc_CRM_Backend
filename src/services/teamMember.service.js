@@ -71,7 +71,15 @@ const createTeamMember = async (teamMemberBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryTeamMembers = async (filter, options) => {
-  const teamMembers = await TeamMember.paginate(filter, {
+  // Create a new filter object to avoid modifying the original
+  const mongoFilter = { ...filter };
+  
+  // If name filter exists, convert it to case-insensitive regex
+  if (mongoFilter.name) {
+    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  }
+
+  const teamMembers = await TeamMember.paginate(mongoFilter, {
     ...options,
     populate: 'skills,branch',
     sortBy: options.sortBy || 'sortOrder:asc',
@@ -159,6 +167,191 @@ const deleteTeamMemberById = async (teamMemberId) => {
   return teamMember;
 };
 
+/**
+ * Bulk import team members (create and update)
+ * @param {Array} teamMembers - Array of team member objects with optional id for updates
+ * @returns {Promise<Object>} - Result with created and updated counts
+ */
+const bulkImportTeamMembers = async (teamMembers) => {
+  const results = {
+    created: 0,
+    updated: 0,
+    errors: [],
+  };
+
+  // Separate team members for creation and update
+  const toCreate = teamMembers.filter((teamMember) => !teamMember.id);
+  const toUpdate = teamMembers.filter((teamMember) => teamMember.id);
+
+  // Handle bulk creation with validation
+  if (toCreate.length > 0) {
+    try {
+      // Validate unique fields before bulk insert
+      const emailValidationPromises = toCreate.map(async (teamMember, index) => {
+        if (await TeamMember.isEmailTaken(teamMember.email)) {
+          return { index, field: 'email', value: teamMember.email };
+        }
+        return null;
+      });
+
+      const phoneValidationPromises = toCreate.map(async (teamMember, index) => {
+        if (await TeamMember.isPhoneTaken(teamMember.phone)) {
+          return { index, field: 'phone', value: teamMember.phone };
+        }
+        return null;
+      });
+
+      const [emailErrors, phoneErrors] = await Promise.all([
+        Promise.all(emailValidationPromises),
+        Promise.all(phoneValidationPromises),
+      ]);
+
+      const validationErrors = [...emailErrors, ...phoneErrors].filter(Boolean);
+
+      // Validate branch and skills for all team members to be created
+      const allBranchIds = toCreate.map(tm => tm.branch);
+      const allSkillIds = toCreate.reduce((ids, tm) => {
+        if (tm.skills && tm.skills.length > 0) {
+          ids.push(...tm.skills);
+        }
+        return ids;
+      }, []);
+
+      const uniqueBranchIds = [...new Set(allBranchIds)];
+      const uniqueSkillIds = [...new Set(allSkillIds)];
+
+      // Validate branches
+      const validBranches = await Branch.find({ _id: { $in: uniqueBranchIds } });
+      const validBranchIds = validBranches.map((branch) => branch._id.toString());
+      const invalidBranchIds = uniqueBranchIds.filter((id) => !validBranchIds.includes(id));
+
+      // Validate skills
+      const validSkills = await Activity.find({ _id: { $in: uniqueSkillIds } });
+      const validSkillIds = validSkills.map((skill) => skill._id.toString());
+      const invalidSkillIds = uniqueSkillIds.filter((id) => !validSkillIds.includes(id));
+
+      // Add validation errors for invalid branches and skills
+      if (invalidBranchIds.length > 0) {
+        invalidBranchIds.forEach((invalidBranchId) => {
+          const teamMembersWithInvalidBranch = toCreate.filter((tm) => tm.branch === invalidBranchId);
+          teamMembersWithInvalidBranch.forEach((tm) => {
+            validationErrors.push({
+              index: toCreate.indexOf(tm),
+              field: 'branch',
+              value: invalidBranchId,
+            });
+          });
+        });
+      }
+
+      if (invalidSkillIds.length > 0) {
+        invalidSkillIds.forEach((invalidSkillId) => {
+          const teamMembersWithInvalidSkill = toCreate.filter((tm) =>
+            tm.skills && tm.skills.includes(invalidSkillId)
+          );
+          teamMembersWithInvalidSkill.forEach((tm) => {
+            validationErrors.push({
+              index: toCreate.indexOf(tm),
+              field: 'skills',
+              value: invalidSkillId,
+            });
+          });
+        });
+      }
+
+      if (validationErrors.length > 0) {
+        validationErrors.forEach((error) => {
+          results.errors.push({
+            index: error.index,
+            error: `${error.field} already taken or invalid: ${error.value}`,
+            data: toCreate[error.index],
+          });
+        });
+        // Remove team members with validation errors from creation
+        const validTeamMembers = toCreate.filter((_, index) =>
+          !validationErrors.some(error => error.index === index)
+        );
+
+        if (validTeamMembers.length > 0) {
+          const createdTeamMembers = await TeamMember.insertMany(validTeamMembers, {
+            ordered: false,
+            rawResult: true,
+          });
+          results.created = createdTeamMembers.insertedCount || validTeamMembers.length;
+        }
+      } else {
+        const createdTeamMembers = await TeamMember.insertMany(toCreate, {
+          ordered: false,
+          rawResult: true,
+        });
+        results.created = createdTeamMembers.insertedCount || toCreate.length;
+      }
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.created = (error.insertedDocs && error.insertedDocs.length) || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Creation failed',
+            data: toCreate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  // Handle bulk updates
+  if (toUpdate.length > 0) {
+    const updateOps = toUpdate.map((teamMember) => ({
+      updateOne: {
+        filter: { _id: teamMember.id },
+        update: {
+          $set: {
+            name: teamMember.name,
+            email: teamMember.email,
+            phone: teamMember.phone,
+            address: teamMember.address,
+            city: teamMember.city,
+            state: teamMember.state,
+            country: teamMember.country,
+            pinCode: teamMember.pinCode,
+            branch: teamMember.branch,
+            sortOrder: teamMember.sortOrder,
+            skills: teamMember.skills,
+          },
+        },
+        upsert: false,
+      },
+    }));
+
+    try {
+      const updateResult = await TeamMember.bulkWrite(updateOps, {
+        ordered: false, // Continue processing even if some fail
+      });
+      results.updated = updateResult.modifiedCount || 0;
+    } catch (error) {
+      if (error.writeErrors) {
+        // Handle partial failures
+        results.updated = error.modifiedCount || 0;
+        error.writeErrors.forEach((writeError) => {
+          results.errors.push({
+            index: writeError.index,
+            error: writeError.err.errmsg || 'Update failed',
+            data: toUpdate[writeError.index],
+          });
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return results;
+};
+
 export {
   createTeamMember,
   queryTeamMembers,
@@ -167,4 +360,5 @@ export {
   getTeamMemberByPhone,
   updateTeamMemberById,
   deleteTeamMemberById,
+  bulkImportTeamMembers,
 }; 
