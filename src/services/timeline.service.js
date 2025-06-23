@@ -100,6 +100,15 @@ const validateFrequencyConfig = (frequency, frequencyConfig) => {
       }
       break;
     case 'Quarterly':
+      if (!frequencyConfig.quarterlyMonths || frequencyConfig.quarterlyMonths.length === 0) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Quarterly frequency, quarterlyMonths array is required');
+      }
+      if (frequencyConfig.quarterlyMonths.length !== 4) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Quarterly frequency, quarterlyMonths must have exactly 4 months');
+      }
+      if (!frequencyConfig.quarterlyDay || frequencyConfig.quarterlyDay < 1 || frequencyConfig.quarterlyDay > 31) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Quarterly frequency, quarterlyDay (1-31) is required');
+      }
       if (!frequencyConfig.quarterlyTime || !/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/.test(frequencyConfig.quarterlyTime)) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'For Quarterly frequency, quarterlyTime in format "HH:MM AM/PM" is required');
       }
@@ -122,6 +131,71 @@ const validateFrequencyConfig = (frequency, frequencyConfig) => {
 };
 
 /**
+ * Clean frequency configuration to keep only relevant fields based on frequency type
+ * @param {string} frequency
+ * @param {Object} frequencyConfig
+ * @returns {Object} - Cleaned frequency configuration
+ */
+const cleanFrequencyConfig = (frequency, frequencyConfig) => {
+  if (!frequencyConfig) return frequencyConfig;
+
+  const cleanedConfig = {};
+
+  switch (frequency) {
+    case 'Hourly':
+      if (frequencyConfig.hourlyInterval) {
+        cleanedConfig.hourlyInterval = frequencyConfig.hourlyInterval;
+      }
+      break;
+    case 'Daily':
+      if (frequencyConfig.dailyTime) {
+        cleanedConfig.dailyTime = frequencyConfig.dailyTime;
+      }
+      break;
+    case 'Weekly':
+      if (frequencyConfig.weeklyDays && frequencyConfig.weeklyDays.length > 0) {
+        cleanedConfig.weeklyDays = frequencyConfig.weeklyDays;
+      }
+      if (frequencyConfig.weeklyTime) {
+        cleanedConfig.weeklyTime = frequencyConfig.weeklyTime;
+      }
+      break;
+    case 'Monthly':
+      if (frequencyConfig.monthlyDay) {
+        cleanedConfig.monthlyDay = frequencyConfig.monthlyDay;
+      }
+      if (frequencyConfig.monthlyTime) {
+        cleanedConfig.monthlyTime = frequencyConfig.monthlyTime;
+      }
+      break;
+    case 'Quarterly':
+      if (frequencyConfig.quarterlyMonths && frequencyConfig.quarterlyMonths.length > 0) {
+        cleanedConfig.quarterlyMonths = frequencyConfig.quarterlyMonths;
+      }
+      if (frequencyConfig.quarterlyDay) {
+        cleanedConfig.quarterlyDay = frequencyConfig.quarterlyDay;
+      }
+      if (frequencyConfig.quarterlyTime) {
+        cleanedConfig.quarterlyTime = frequencyConfig.quarterlyTime;
+      }
+      break;
+    case 'Yearly':
+      if (frequencyConfig.yearlyMonth) {
+        cleanedConfig.yearlyMonth = frequencyConfig.yearlyMonth;
+      }
+      if (frequencyConfig.yearlyDate) {
+        cleanedConfig.yearlyDate = frequencyConfig.yearlyDate;
+      }
+      if (frequencyConfig.yearlyTime) {
+        cleanedConfig.yearlyTime = frequencyConfig.yearlyTime;
+      }
+      break;
+  }
+
+  return cleanedConfig;
+};
+
+/**
  * Create a timeline
  * @param {Object} timelineBody
  * @returns {Promise<Timeline>}
@@ -132,7 +206,13 @@ const createTimeline = async (timelineBody) => {
   await validateTeamMember(timelineBody.assignedMember);
   validateFrequencyConfig(timelineBody.frequency, timelineBody.frequencyConfig);
   
-  const timeline = await Timeline.create(timelineBody);
+  // Clean frequency configuration to keep only relevant fields
+  const cleanedTimelineBody = {
+    ...timelineBody,
+    frequencyConfig: cleanFrequencyConfig(timelineBody.frequency, timelineBody.frequencyConfig)
+  };
+  
+  const timeline = await Timeline.create(cleanedTimelineBody);
   return timeline.populate([
     { path: 'activity', select: 'name' },
     { path: 'clients', select: 'name email' },
@@ -243,6 +323,12 @@ const updateTimelineById = async (timelineId, updateBody) => {
     validateFrequencyConfig(updateBody.frequency, updateBody.frequencyConfig);
   }
   
+  // Clean frequency configuration if it's being updated
+  if (updateBody.frequencyConfig) {
+    const frequency = updateBody.frequency || timeline.frequency;
+    updateBody.frequencyConfig = cleanFrequencyConfig(frequency, updateBody.frequencyConfig);
+  }
+  
   Object.assign(timeline, updateBody);
   await timeline.save();
   return timeline.populate([
@@ -282,6 +368,13 @@ const bulkImportTimelines = async (timelines) => {
   // Handle bulk creation with validation
   if (toCreate.length > 0) {
     try {
+      // Clean frequency configuration for all timelines to be created
+      toCreate.forEach((timeline) => {
+        if (timeline.frequencyConfig) {
+          timeline.frequencyConfig = cleanFrequencyConfig(timeline.frequency, timeline.frequencyConfig);
+        }
+      });
+
       // Validate all references for timelines to be created
       const allActivityIds = toCreate.map(t => t.activity);
       const allClientIds = toCreate.flatMap(t => t.clients);
@@ -408,6 +501,13 @@ const bulkImportTimelines = async (timelines) => {
 
   // Handle bulk updates
   if (toUpdate.length > 0) {
+    // Clean frequency configuration for all timelines to be updated
+    toUpdate.forEach((timeline) => {
+      if (timeline.frequencyConfig) {
+        timeline.frequencyConfig = cleanFrequencyConfig(timeline.frequency, timeline.frequencyConfig);
+      }
+    });
+
     const updateOps = toUpdate.map((timeline) => ({
       updateOne: {
         filter: { _id: timeline.id },

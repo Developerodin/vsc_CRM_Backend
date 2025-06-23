@@ -69,10 +69,17 @@ Replaced `frequencyCount` with `frequencyConfig` object that changes based on fr
 {
   "frequency": "Quarterly",
   "frequencyConfig": {
+    "quarterlyMonths": ["January", "April", "July", "October"],
+    "quarterlyDay": 15,
     "quarterlyTime": "03:00 PM"
   }
 }
 ```
+
+**Quarterly Month Options:**
+- **Standard Quarters**: `["January", "April", "July", "October"]` (Q1, Q2, Q3, Q4)
+- **Custom Quarters**: Any combination of months in sets of 3 (e.g., `["February", "May", "August", "November"]`)
+- **Multiple Quarters**: Can select multiple sets of 3 months (e.g., `["January", "April", "July", "October", "March", "June", "September", "December"]`)
 
 #### Yearly
 ```json
@@ -111,6 +118,27 @@ POST /v1/timelines
 }
 ```
 
+### Create Quarterly Timeline
+```javascript
+POST /v1/timelines
+{
+  "activity": "507f1f77bcf86cd799439011",
+  "clients": ["507f1f77bcf86cd799439012"],
+  "status": "pending",
+  "frequency": "Quarterly",
+  "frequencyConfig": {
+    "quarterlyMonths": ["January", "April", "July", "October"],
+    "quarterlyDay": 15,
+    "quarterlyTime": "10:00 AM"
+  },
+  "udin": "UDIN789012",
+  "turnover": 75000,
+  "assignedMember": "507f1f77bcf86cd799439014",
+  "startDate": "2024-01-01T00:00:00.000Z",
+  "endDate": "2025-12-31T23:59:59.000Z"
+}
+```
+
 ### Update Timeline
 ```javascript
 PATCH /v1/timelines/:timelineId
@@ -119,6 +147,20 @@ PATCH /v1/timelines/:timelineId
   "frequency": "Daily",
   "frequencyConfig": {
     "dailyTime": "10:30 AM"
+  },
+  "status": "ongoing"
+}
+```
+
+### Update Quarterly Timeline
+```javascript
+PATCH /v1/timelines/:timelineId
+{
+  "frequency": "Quarterly",
+  "frequencyConfig": {
+    "quarterlyMonths": ["February", "May", "August", "November"],
+    "quarterlyDay": 20,
+    "quarterlyTime": "02:00 PM"
   },
   "status": "ongoing"
 }
@@ -136,7 +178,7 @@ GET /v1/timelines?client=507f1f77bcf86cd799439012&frequency=Weekly&status=pendin
 - **Daily**: `dailyTime` must match format "HH:MM AM/PM"
 - **Weekly**: `weeklyDays` array required, `weeklyTime` required
 - **Monthly**: `monthlyDay` 1-31, `monthlyTime` required
-- **Quarterly**: `quarterlyTime` required
+- **Quarterly**: `quarterlyMonths` array required (must be in sets of 3), `quarterlyDay` 1-31, `quarterlyTime` required
 - **Yearly**: `yearlyMonth`, `yearlyDate` 1-31, `yearlyTime` required
 
 ### Client Validation

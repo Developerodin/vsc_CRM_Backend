@@ -35,6 +35,15 @@ const validateFrequencyConfig = (frequency, frequencyConfig) => {
       }
       break;
     case 'Quarterly':
+      if (!frequencyConfig.quarterlyMonths || frequencyConfig.quarterlyMonths.length === 0) {
+        throw new Error('For Quarterly frequency, quarterlyMonths array is required');
+      }
+      if (frequencyConfig.quarterlyMonths.length !== 4) {
+        throw new Error('For Quarterly frequency, quarterlyMonths must have exactly 4 months');
+      }
+      if (!frequencyConfig.quarterlyDay || frequencyConfig.quarterlyDay < 1 || frequencyConfig.quarterlyDay > 31) {
+        throw new Error('For Quarterly frequency, quarterlyDay (1-31) is required');
+      }
       if (!frequencyConfig.quarterlyTime || !/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/.test(frequencyConfig.quarterlyTime)) {
         throw new Error('For Quarterly frequency, quarterlyTime in format "HH:MM AM/PM" is required');
       }

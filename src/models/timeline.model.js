@@ -39,7 +39,16 @@ const frequencyConfigSchema = mongoose.Schema({
     match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/,
   },
   
-  // For Quarterly: At time [HH:MM AM/PM] (same as monthly for now)
+  // For Quarterly: On Months: [Jan, Apr, Jul, Oct] (or allow selection of custom months in sets of 3)
+  quarterlyMonths: [{
+    type: String,
+    enum: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+  }],
+  quarterlyDay: {
+    type: Number,
+    min: 1,
+    max: 31,
+  },
   quarterlyTime: {
     type: String,
     match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/,
