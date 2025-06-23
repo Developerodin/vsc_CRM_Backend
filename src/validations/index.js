@@ -5,6 +5,7 @@ import * as activityValidation from './activity.validation.js';
 import * as branchValidation from './branch.validation.js';
 import * as clientValidation from './client.validation.js';
 import * as groupValidation from './group.validation.js';
+import * as roleValidation from './role.validation.js';
 
 export {
   authValidation,
@@ -14,4 +15,5 @@ export {
   branchValidation,
   clientValidation,
   groupValidation,
+  roleValidation,
 };

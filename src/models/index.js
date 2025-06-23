@@ -5,6 +5,7 @@ import Activity from './activity.model.js';
 import Branch from './branch.model.js';
 import Client from './client.model.js';
 import Group from './group.model.js';
+import Role from './role.model.js';
 
-export { Token, User, TeamMember, Activity, Branch, Client, Group };
+export { Token, User, TeamMember, Activity, Branch, Client, Group, Role };
 

@@ -1,18 +1,28 @@
 import passport from 'passport';
 import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
-import { roleRights } from '../config/roles.js';
-
+import { hasPermission } from '../services/role.service.js';
 
 const verifyCallback = (req, resolve, reject, requiredRights) => async (err, user, info) => {
   if (err || info || !user) {
     return reject(new ApiError(httpStatus.UNAUTHORIZED, 'Please authenticate'));
   }
+  
+  // Populate the user's role to get permissions
+  await user.populate('role');
   req.user = user;
 
   if (requiredRights.length) {
-    const userRights = roleRights.get(user.role);
-    const hasRequiredRights = requiredRights.every((requiredRight) => userRights.includes(requiredRight));
+    // Check if user has a role
+    if (!user.role) {
+      return reject(new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned'));
+    }
+
+    // Check if user has all required permissions
+    const hasRequiredRights = requiredRights.every((requiredRight) => 
+      hasPermission(user.role, requiredRight)
+    );
+    
     if (!hasRequiredRights && req.params.userId !== user.id) {
       return reject(new ApiError(httpStatus.FORBIDDEN, 'Forbidden'));
     }

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import validator from 'validator';
 import bcrypt from 'bcryptjs';
 // import { toJSON, paginate } from './plugins.js';
-import { roles } from '../config/roles.js';
+// import { roles } from '../config/roles.js';
 import toJSON from './plugins/toJSON.plugin.js';
 import paginate from './plugins/paginate.plugin.js';
 
@@ -38,9 +38,14 @@ const userSchema = mongoose.Schema(
       private: true, // used by the toJSON plugin
     },
     role: {
-      type: String,
-      enum: roles,
-      default: 'user',
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Role',
+      required: true,
+    },
+    // Branch assignment for the user
+    assignedBranch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
     },
     isEmailVerified: {
       type: Boolean,
