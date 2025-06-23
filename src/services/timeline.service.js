@@ -23,17 +23,24 @@ const validateActivity = async (activityId) => {
 };
 
 /**
- * Validate if client ID exists
- * @param {string} clientId
+ * Validate if client IDs exist
+ * @param {Array} clientIds
  * @returns {Promise<boolean>}
  */
-const validateClient = async (clientId) => {
-  if (!mongoose.Types.ObjectId.isValid(clientId)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid client ID format');
+const validateClients = async (clientIds) => {
+  if (!Array.isArray(clientIds) || clientIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'At least one client is required');
   }
-  const client = await Client.findById(clientId);
-  if (!client) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Client not found');
+  
+  for (const clientId of clientIds) {
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid client ID format');
+    }
+  }
+  
+  const clients = await Client.find({ _id: { $in: clientIds } });
+  if (clients.length !== clientIds.length) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'One or more clients not found');
   }
   return true;
 };
@@ -55,19 +62,80 @@ const validateTeamMember = async (teamMemberId) => {
 };
 
 /**
+ * Validate frequency configuration based on frequency type
+ * @param {string} frequency
+ * @param {Object} frequencyConfig
+ * @returns {Promise<boolean>}
+ */
+const validateFrequencyConfig = (frequency, frequencyConfig) => {
+  if (!frequencyConfig) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'frequencyConfig is required');
+  }
+
+  switch (frequency) {
+    case 'Hourly':
+      if (!frequencyConfig.hourlyInterval || frequencyConfig.hourlyInterval < 1 || frequencyConfig.hourlyInterval > 24) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Hourly frequency, hourlyInterval (1-24) is required');
+      }
+      break;
+    case 'Daily':
+      if (!frequencyConfig.dailyTime || !/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/.test(frequencyConfig.dailyTime)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Daily frequency, dailyTime in format "HH:MM AM/PM" is required');
+      }
+      break;
+    case 'Weekly':
+      if (!frequencyConfig.weeklyDays || frequencyConfig.weeklyDays.length === 0) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Weekly frequency, weeklyDays array is required');
+      }
+      if (!frequencyConfig.weeklyTime || !/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/.test(frequencyConfig.weeklyTime)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Weekly frequency, weeklyTime in format "HH:MM AM/PM" is required');
+      }
+      break;
+    case 'Monthly':
+      if (!frequencyConfig.monthlyDay || frequencyConfig.monthlyDay < 1 || frequencyConfig.monthlyDay > 31) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Monthly frequency, monthlyDay (1-31) is required');
+      }
+      if (!frequencyConfig.monthlyTime || !/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/.test(frequencyConfig.monthlyTime)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Monthly frequency, monthlyTime in format "HH:MM AM/PM" is required');
+      }
+      break;
+    case 'Quarterly':
+      if (!frequencyConfig.quarterlyTime || !/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/.test(frequencyConfig.quarterlyTime)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Quarterly frequency, quarterlyTime in format "HH:MM AM/PM" is required');
+      }
+      break;
+    case 'Yearly':
+      if (!frequencyConfig.yearlyMonth) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Yearly frequency, yearlyMonth is required');
+      }
+      if (!frequencyConfig.yearlyDate || frequencyConfig.yearlyDate < 1 || frequencyConfig.yearlyDate > 31) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Yearly frequency, yearlyDate (1-31) is required');
+      }
+      if (!frequencyConfig.yearlyTime || !/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/.test(frequencyConfig.yearlyTime)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'For Yearly frequency, yearlyTime in format "HH:MM AM/PM" is required');
+      }
+      break;
+    default:
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid frequency type');
+  }
+  return true;
+};
+
+/**
  * Create a timeline
  * @param {Object} timelineBody
  * @returns {Promise<Timeline>}
  */
 const createTimeline = async (timelineBody) => {
   await validateActivity(timelineBody.activity);
-  await validateClient(timelineBody.client);
+  await validateClients(timelineBody.clients);
   await validateTeamMember(timelineBody.assignedMember);
+  validateFrequencyConfig(timelineBody.frequency, timelineBody.frequencyConfig);
   
   const timeline = await Timeline.create(timelineBody);
   return timeline.populate([
     { path: 'activity', select: 'name' },
-    { path: 'client', select: 'name email' },
+    { path: 'clients', select: 'name email' },
     { path: 'assignedMember', select: 'name email' }
   ]);
 };
@@ -118,11 +186,17 @@ const queryTimelines = async (filter, options) => {
     delete mongoFilter.activityName;
   }
 
+  // Handle client filtering - if client filter exists, find timelines that contain this client
+  if (mongoFilter.client) {
+    mongoFilter.clients = mongoFilter.client;
+    delete mongoFilter.client;
+  }
+
   const timelines = await Timeline.paginate(mongoFilter, {
     sortBy: options.sortBy || 'createdAt:desc',
     limit: options.limit,
     page: options.page,
-    populate: 'activity,client,assignedMember',
+    populate: 'activity,clients,assignedMember',
   });
   return timelines;
 };
@@ -138,7 +212,7 @@ const getTimelineById = async (id) => {
   }
   const timeline = await Timeline.findById(id).populate([
     { path: 'activity', select: 'name' },
-    { path: 'client', select: 'name email' },
+    { path: 'clients', select: 'name email' },
     { path: 'assignedMember', select: 'name email' }
   ]);
   if (!timeline) {
@@ -159,18 +233,21 @@ const updateTimelineById = async (timelineId, updateBody) => {
   if (updateBody.activity) {
     await validateActivity(updateBody.activity);
   }
-  if (updateBody.client) {
-    await validateClient(updateBody.client);
+  if (updateBody.clients) {
+    await validateClients(updateBody.clients);
   }
   if (updateBody.assignedMember) {
     await validateTeamMember(updateBody.assignedMember);
+  }
+  if (updateBody.frequency && updateBody.frequencyConfig) {
+    validateFrequencyConfig(updateBody.frequency, updateBody.frequencyConfig);
   }
   
   Object.assign(timeline, updateBody);
   await timeline.save();
   return timeline.populate([
     { path: 'activity', select: 'name' },
-    { path: 'client', select: 'name email' },
+    { path: 'clients', select: 'name email' },
     { path: 'assignedMember', select: 'name email' }
   ]);
 };
@@ -207,7 +284,7 @@ const bulkImportTimelines = async (timelines) => {
     try {
       // Validate all references for timelines to be created
       const allActivityIds = toCreate.map(t => t.activity);
-      const allClientIds = toCreate.map(t => t.client);
+      const allClientIds = toCreate.flatMap(t => t.clients);
       const allTeamMemberIds = toCreate.map(t => t.assignedMember);
 
       const uniqueActivityIds = [...new Set(allActivityIds)];
@@ -248,11 +325,11 @@ const bulkImportTimelines = async (timelines) => {
 
       if (invalidClientIds.length > 0) {
         invalidClientIds.forEach((invalidId) => {
-          const timelinesWithInvalidClient = toCreate.filter(t => t.client === invalidId);
+          const timelinesWithInvalidClient = toCreate.filter(t => t.clients.includes(invalidId));
           timelinesWithInvalidClient.forEach((t) => {
             validationErrors.push({
               index: toCreate.indexOf(t),
-              field: 'client',
+              field: 'clients',
               value: invalidId,
             });
           });
@@ -271,6 +348,19 @@ const bulkImportTimelines = async (timelines) => {
           });
         });
       }
+
+      // Validate frequency configurations
+      toCreate.forEach((timeline, index) => {
+        try {
+          validateFrequencyConfig(timeline.frequency, timeline.frequencyConfig);
+        } catch (error) {
+          validationErrors.push({
+            index,
+            field: 'frequencyConfig',
+            value: error.message,
+          });
+        }
+      });
 
       if (validationErrors.length > 0) {
         validationErrors.forEach((error) => {
@@ -324,14 +414,15 @@ const bulkImportTimelines = async (timelines) => {
         update: {
           $set: {
             activity: timeline.activity,
-            client: timeline.client,
+            clients: timeline.clients,
             status: timeline.status,
             frequency: timeline.frequency,
-            frequencyCount: timeline.frequencyCount,
+            frequencyConfig: timeline.frequencyConfig,
             udin: timeline.udin,
             turnover: timeline.turnover,
             assignedMember: timeline.assignedMember,
-            dueDate: timeline.dueDate,
+            startDate: timeline.startDate,
+            endDate: timeline.endDate,
           },
         },
         upsert: false,
