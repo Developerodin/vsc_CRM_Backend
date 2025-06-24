@@ -55,10 +55,10 @@ const frequencyConfigSchema = mongoose.Schema({
   },
   
   // For Yearly: On [Month] [Date] and At time [HH:MM AM/PM]
-  yearlyMonth: {
+  yearlyMonth:[{
     type: String,
     enum: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
-  },
+  }],
   yearlyDate: {
     type: Number,
     min: 1,
@@ -77,11 +77,11 @@ const timelineSchema = mongoose.Schema(
       ref: 'Activity',
       required: true,
     },
-    clients: [{
+    client: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Client',
       required: true,
-    }],
+    },
     status: {
       type: String,
       enum: ['pending', 'completed', 'delayed', 'ongoing'],

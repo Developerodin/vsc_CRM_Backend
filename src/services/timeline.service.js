@@ -23,24 +23,17 @@ const validateActivity = async (activityId) => {
 };
 
 /**
- * Validate if client IDs exist
- * @param {Array} clientIds
+ * Validate if client ID exists
+ * @param {string} clientId
  * @returns {Promise<boolean>}
  */
-const validateClients = async (clientIds) => {
-  if (!Array.isArray(clientIds) || clientIds.length === 0) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'At least one client is required');
+const validateClient = async (clientId) => {
+  if (!mongoose.Types.ObjectId.isValid(clientId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid client ID format');
   }
-  
-  for (const clientId of clientIds) {
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid client ID format');
-    }
-  }
-  
-  const clients = await Client.find({ _id: { $in: clientIds } });
-  if (clients.length !== clientIds.length) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'One or more clients not found');
+  const client = await Client.findById(clientId);
+  if (!client) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Client not found');
   }
   return true;
 };
@@ -196,13 +189,12 @@ const cleanFrequencyConfig = (frequency, frequencyConfig) => {
 };
 
 /**
- * Create a timeline
+ * Create timeline(s) - handles both single client and multiple clients
  * @param {Object} timelineBody
- * @returns {Promise<Timeline>}
+ * @returns {Promise<Timeline|Array<Timeline>>}
  */
 const createTimeline = async (timelineBody) => {
   await validateActivity(timelineBody.activity);
-  await validateClients(timelineBody.clients);
   await validateTeamMember(timelineBody.assignedMember);
   validateFrequencyConfig(timelineBody.frequency, timelineBody.frequencyConfig);
   
@@ -211,13 +203,35 @@ const createTimeline = async (timelineBody) => {
     ...timelineBody,
     frequencyConfig: cleanFrequencyConfig(timelineBody.frequency, timelineBody.frequencyConfig)
   };
+
+  // Ensure client is always an array
+  let clientArray = timelineBody.client;
+  if (!Array.isArray(clientArray)) {
+    clientArray = [clientArray];
+  }
+
+  // Validate all clients
+  for (const clientId of clientArray) {
+    await validateClient(clientId);
+  }
+
+  // Create separate timeline entries for each client
+  const timelinesToCreate = clientArray.map(clientId => ({
+    ...cleanedTimelineBody,
+    client: clientId
+  }));
+
+  const createdTimelines = await Timeline.insertMany(timelinesToCreate);
   
-  const timeline = await Timeline.create(cleanedTimelineBody);
-  return timeline.populate([
+  // Populate all created timelines
+  const populatedTimelines = await Timeline.populate(createdTimelines, [
     { path: 'activity', select: 'name' },
-    { path: 'clients', select: 'name email' },
+    { path: 'client', select: 'name email' },
     { path: 'assignedMember', select: 'name email' }
   ]);
+
+  // Return single timeline if only one client, array if multiple clients
+  return clientArray.length === 1 ? populatedTimelines[0] : populatedTimelines;
 };
 
 /**
@@ -266,17 +280,11 @@ const queryTimelines = async (filter, options) => {
     delete mongoFilter.activityName;
   }
 
-  // Handle client filtering - if client filter exists, find timelines that contain this client
-  if (mongoFilter.client) {
-    mongoFilter.clients = mongoFilter.client;
-    delete mongoFilter.client;
-  }
-
   const timelines = await Timeline.paginate(mongoFilter, {
     sortBy: options.sortBy || 'createdAt:desc',
     limit: options.limit,
     page: options.page,
-    populate: 'activity,clients,assignedMember',
+    populate: 'activity,client,assignedMember',
   });
   return timelines;
 };
@@ -292,7 +300,7 @@ const getTimelineById = async (id) => {
   }
   const timeline = await Timeline.findById(id).populate([
     { path: 'activity', select: 'name' },
-    { path: 'clients', select: 'name email' },
+    { path: 'client', select: 'name email' },
     { path: 'assignedMember', select: 'name email' }
   ]);
   if (!timeline) {
@@ -313,8 +321,8 @@ const updateTimelineById = async (timelineId, updateBody) => {
   if (updateBody.activity) {
     await validateActivity(updateBody.activity);
   }
-  if (updateBody.clients) {
-    await validateClients(updateBody.clients);
+  if (updateBody.client) {
+    await validateClient(updateBody.client);
   }
   if (updateBody.assignedMember) {
     await validateTeamMember(updateBody.assignedMember);
@@ -333,7 +341,7 @@ const updateTimelineById = async (timelineId, updateBody) => {
   await timeline.save();
   return timeline.populate([
     { path: 'activity', select: 'name' },
-    { path: 'clients', select: 'name email' },
+    { path: 'client', select: 'name email' },
     { path: 'assignedMember', select: 'name email' }
   ]);
 };
@@ -368,17 +376,46 @@ const bulkImportTimelines = async (timelines) => {
   // Handle bulk creation with validation
   if (toCreate.length > 0) {
     try {
+      // Expand timelines with multiple clients into separate entries
+      const expandedTimelines = [];
+      
+      toCreate.forEach((timeline, originalIndex) => {
+        if (timeline.clients && Array.isArray(timeline.clients)) {
+          // Create separate timeline entry for each client
+          timeline.clients.forEach((clientId) => {
+            const expandedTimeline = {
+              ...timeline,
+              client: clientId, // Single client reference
+              originalIndex, // Keep track of original index for error reporting
+            };
+            delete expandedTimeline.clients; // Remove the clients array
+            expandedTimelines.push(expandedTimeline);
+          });
+        } else {
+          // Single client or no clients specified
+          const expandedTimeline = {
+            ...timeline,
+            originalIndex,
+          };
+          if (timeline.client) {
+            expandedTimeline.client = timeline.client;
+          }
+          delete expandedTimeline.clients;
+          expandedTimelines.push(expandedTimeline);
+        }
+      });
+
       // Clean frequency configuration for all timelines to be created
-      toCreate.forEach((timeline) => {
+      expandedTimelines.forEach((timeline) => {
         if (timeline.frequencyConfig) {
           timeline.frequencyConfig = cleanFrequencyConfig(timeline.frequency, timeline.frequencyConfig);
         }
       });
 
       // Validate all references for timelines to be created
-      const allActivityIds = toCreate.map(t => t.activity);
-      const allClientIds = toCreate.flatMap(t => t.clients);
-      const allTeamMemberIds = toCreate.map(t => t.assignedMember);
+      const allActivityIds = expandedTimelines.map(t => t.activity);
+      const allClientIds = expandedTimelines.map(t => t.client);
+      const allTeamMemberIds = expandedTimelines.map(t => t.assignedMember);
 
       const uniqueActivityIds = [...new Set(allActivityIds)];
       const uniqueClientIds = [...new Set(allClientIds)];
@@ -405,10 +442,10 @@ const bulkImportTimelines = async (timelines) => {
       // Add validation errors for invalid references
       if (invalidActivityIds.length > 0) {
         invalidActivityIds.forEach((invalidId) => {
-          const timelinesWithInvalidActivity = toCreate.filter(t => t.activity === invalidId);
+          const timelinesWithInvalidActivity = expandedTimelines.filter(t => t.activity === invalidId);
           timelinesWithInvalidActivity.forEach((t) => {
             validationErrors.push({
-              index: toCreate.indexOf(t),
+              index: t.originalIndex,
               field: 'activity',
               value: invalidId,
             });
@@ -418,11 +455,11 @@ const bulkImportTimelines = async (timelines) => {
 
       if (invalidClientIds.length > 0) {
         invalidClientIds.forEach((invalidId) => {
-          const timelinesWithInvalidClient = toCreate.filter(t => t.clients.includes(invalidId));
+          const timelinesWithInvalidClient = expandedTimelines.filter(t => t.client === invalidId);
           timelinesWithInvalidClient.forEach((t) => {
             validationErrors.push({
-              index: toCreate.indexOf(t),
-              field: 'clients',
+              index: t.originalIndex,
+              field: 'client',
               value: invalidId,
             });
           });
@@ -431,10 +468,10 @@ const bulkImportTimelines = async (timelines) => {
 
       if (invalidTeamMemberIds.length > 0) {
         invalidTeamMemberIds.forEach((invalidId) => {
-          const timelinesWithInvalidTeamMember = toCreate.filter(t => t.assignedMember === invalidId);
+          const timelinesWithInvalidTeamMember = expandedTimelines.filter(t => t.assignedMember === invalidId);
           timelinesWithInvalidTeamMember.forEach((t) => {
             validationErrors.push({
-              index: toCreate.indexOf(t),
+              index: t.originalIndex,
               field: 'assignedMember',
               value: invalidId,
             });
@@ -443,12 +480,12 @@ const bulkImportTimelines = async (timelines) => {
       }
 
       // Validate frequency configurations
-      toCreate.forEach((timeline, index) => {
+      expandedTimelines.forEach((timeline) => {
         try {
           validateFrequencyConfig(timeline.frequency, timeline.frequencyConfig);
         } catch (error) {
           validationErrors.push({
-            index,
+            index: timeline.originalIndex,
             field: 'frequencyConfig',
             value: error.message,
           });
@@ -464,23 +501,27 @@ const bulkImportTimelines = async (timelines) => {
           });
         });
         // Remove timelines with validation errors from creation
-        const validTimelines = toCreate.filter((_, index) =>
-          !validationErrors.some(error => error.index === index)
+        const validTimelines = expandedTimelines.filter((timeline) =>
+          !validationErrors.some(error => error.index === timeline.originalIndex)
         );
 
         if (validTimelines.length > 0) {
-          const createdTimelines = await Timeline.insertMany(validTimelines, {
+          // Remove originalIndex before inserting
+          const timelinesToInsert = validTimelines.map(({ originalIndex, ...timeline }) => timeline);
+          const createdTimelines = await Timeline.insertMany(timelinesToInsert, {
             ordered: false,
             rawResult: true,
           });
-          results.created = createdTimelines.insertedCount || validTimelines.length;
+          results.created = createdTimelines.insertedCount || timelinesToInsert.length;
         }
       } else {
-        const createdTimelines = await Timeline.insertMany(toCreate, {
+        // Remove originalIndex before inserting
+        const timelinesToInsert = expandedTimelines.map(({ originalIndex, ...timeline }) => timeline);
+        const createdTimelines = await Timeline.insertMany(timelinesToInsert, {
           ordered: false,
           rawResult: true,
         });
-        results.created = createdTimelines.insertedCount || toCreate.length;
+        results.created = createdTimelines.insertedCount || timelinesToInsert.length;
       }
     } catch (error) {
       if (error.writeErrors) {
@@ -514,7 +555,7 @@ const bulkImportTimelines = async (timelines) => {
         update: {
           $set: {
             activity: timeline.activity,
-            clients: timeline.clients,
+            client: timeline.client,
             status: timeline.status,
             frequency: timeline.frequency,
             frequencyConfig: timeline.frequencyConfig,

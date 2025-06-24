@@ -67,7 +67,7 @@ const validateFrequencyConfig = (frequency, frequencyConfig) => {
 const createTimeline = {
   body: Joi.object().keys({
     activity: Joi.string().custom(objectId).required(),
-    clients: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
+    client: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
     status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').required(),
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').required(),
     frequencyConfig: Joi.object().required(),
@@ -113,7 +113,7 @@ const updateTimeline = {
   body: Joi.object()
     .keys({
       activity: Joi.string().custom(objectId),
-      clients: Joi.array().items(Joi.string().custom(objectId)).min(1),
+      client: Joi.array().items(Joi.string().custom(objectId)).min(1),
       status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
       frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
       frequencyConfig: Joi.object(),
