@@ -113,7 +113,7 @@ const updateTimeline = {
   body: Joi.object()
     .keys({
       activity: Joi.string().custom(objectId),
-      client: Joi.array().items(Joi.string().custom(objectId)).min(1),
+      client: Joi.string().custom(objectId),
       status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
       frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
       frequencyConfig: Joi.object(),
