@@ -7,66 +7,77 @@ const clientSchema = mongoose.Schema(
   {
     name: {
       type: String,
-      required: true,
       trim: true,
     },
     phone: {
       type: String,
-      required: true,
       trim: true,
-      unique: true,
       validate(value) {
-        if (!validator.isMobilePhone(value, 'any')) {
+        if (value && !validator.isMobilePhone(value, 'any')) {
           throw new Error('Invalid phone number');
         }
       },
     },
     email: {
       type: String,
-      required: true,
-      unique: true,
       trim: true,
       lowercase: true,
       validate(value) {
-        if (!validator.isEmail(value)) {
+        if (value && !validator.isEmail(value)) {
           throw new Error('Invalid email');
+        }
+      },
+    },
+    email2: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      validate(value) {
+        if (value && !validator.isEmail(value)) {
+          throw new Error('Invalid email2');
         }
       },
     },
     address: {
       type: String,
-      required: true,
       trim: true,
     },
-    city: {
+    district: {
       type: String,
-      required: true,
       trim: true,
     },
     state: {
       type: String,
-      required: true,
       trim: true,
     },
     country: {
       type: String,
-      required: true,
       trim: true,
     },
-    pinCode: {
+    fNo: {
       type: String,
-      required: true,
+      trim: true,
+    },
+    pan: {
+      type: String,
       trim: true,
       validate(value) {
-        if (!validator.isPostalCode(value, 'any')) {
-          throw new Error('Invalid pin code');
+        if (value && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(value)) {
+          throw new Error('Invalid PAN format');
+        }
+      },
+    },
+    dob: {
+      type: Date,
+      validate(value) {
+        if (value && value > new Date()) {
+          throw new Error('Date of birth cannot be in the future');
         }
       },
     },
     sortOrder: {
       type: Number,
-      required: true,
-    }
+    },
   },
   {
     timestamps: true,

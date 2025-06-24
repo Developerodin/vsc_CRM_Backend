@@ -10,7 +10,7 @@ const createClient = catchAsync(async (req, res) => {
 });
 
 const getClients = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'email', 'phone', 'city', 'state', 'country', 'pinCode']);
+  const filter = pick(req.query, ['name', 'email', 'phone', 'district', 'state', 'country', 'fNo', 'pan']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await clientService.queryClients(filter, options);
   res.send(result);
