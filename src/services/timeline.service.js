@@ -254,6 +254,128 @@ const queryTimelines = async (filter, options) => {
     delete mongoFilter.activityName;
   }
 
+  // Handle "Today" filter
+  if (mongoFilter.today === 'true') {
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    
+    mongoFilter.$or = [
+      { startDate: { $gte: startOfDay, $lte: endOfDay } },
+      { endDate: { $gte: startOfDay, $lte: endOfDay } },
+      { 
+        $and: [
+          { startDate: { $lte: startOfDay } },
+          { endDate: { $gte: endOfDay } }
+        ]
+      }
+    ];
+    delete mongoFilter.today;
+  } else if (mongoFilter.today === 'false' || mongoFilter.today === '') {
+    delete mongoFilter.today;
+  }
+
+  // Handle date range filtering
+  if (mongoFilter.startDate || mongoFilter.endDate) {
+    const startDateValue = mongoFilter.startDate;
+    const endDateValue = mongoFilter.endDate;
+    
+    console.log('=== DATE FILTERING DEBUG ===');
+    console.log('startDateValue:', startDateValue);
+    console.log('endDateValue:', endDateValue);
+    
+    // Build date filter conditions
+    const dateConditions = [];
+    
+    if (startDateValue) {
+      // Parse the date string properly to avoid timezone issues
+      const [year, month, day] = startDateValue.split('-').map(Number);
+      
+      // Validate the date
+      const tempDate = new Date(year, month - 1, day);
+      if (tempDate.getFullYear() !== year || tempDate.getMonth() !== month - 1 || tempDate.getDate() !== day) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid startDate: ${startDateValue}. Please use YYYY-MM-DD format.`);
+      }
+      
+      const startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+      
+      console.log('Filter startDate:', startDate);
+      console.log('Filter startDate ISO:', startDate.toISOString());
+      
+      // For startDate filter: timeline should start on or after the specified date
+      // Only include timelines that have a startDate field and it's >= the filter date
+      dateConditions.push({
+        $and: [
+          { startDate: { $exists: true } },
+          { startDate: { $ne: null } },
+          { startDate: { $gte: startDate } }
+        ]
+      });
+    }
+    
+    if (endDateValue) {
+      // Parse the date string properly to avoid timezone issues
+      const [year, month, day] = endDateValue.split('-').map(Number);
+      
+      // Validate the date
+      const tempDate = new Date(year, month - 1, day);
+      if (tempDate.getFullYear() !== year || tempDate.getMonth() !== month - 1 || tempDate.getDate() !== day) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid endDate: ${endDateValue}. Please use YYYY-MM-DD format.`);
+      }
+      
+      const endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
+      
+      console.log('Filter endDate:', endDate);
+      console.log('Filter endDate ISO:', endDate.toISOString());
+      
+      // For endDate filter: timeline should end on or before the specified date
+      // Only include timelines that have an endDate field and it's <= the filter date
+      dateConditions.push({
+        $and: [
+          { endDate: { $exists: true } },
+          { endDate: { $ne: null } },
+          { endDate: { $lte: endDate } }
+        ]
+      });
+    }
+    
+    // If both startDate and endDate are provided, use $and to combine them
+    if (startDateValue && endDateValue) {
+      const [startYear, startMonth, startDay] = startDateValue.split('-').map(Number);
+      const startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+      
+      const [endYear, endMonth, endDay] = endDateValue.split('-').map(Number);
+      const endDate = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+      
+      mongoFilter.$and = [
+        { startDate: { $exists: true } },
+        { startDate: { $ne: null } },
+        { startDate: { $gte: startDate } },
+        { endDate: { $exists: true } },
+        { endDate: { $ne: null } },
+        { endDate: { $lte: endDate } }
+      ];
+      
+      console.log('Combined date filter:', JSON.stringify(mongoFilter.$and, null, 2));
+    } else {
+      // If only one date is provided, use $or for the conditions
+      if (mongoFilter.$or) {
+        const existingOrFilter = mongoFilter.$or;
+        mongoFilter.$or = [
+          ...existingOrFilter,
+          ...dateConditions
+        ];
+      } else {
+        mongoFilter.$or = dateConditions;
+      }
+      
+      console.log('Single date filter:', JSON.stringify(mongoFilter.$or, null, 2));
+    }
+    
+    delete mongoFilter.startDate;
+    delete mongoFilter.endDate;
+  }
+
   // Handle activity name filtering
   if (mongoFilter.activityName) {
     // Find activities that match the name filter

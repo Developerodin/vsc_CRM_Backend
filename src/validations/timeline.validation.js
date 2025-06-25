@@ -74,8 +74,8 @@ const createTimeline = {
     udin: Joi.string().trim().allow(''),
     turnover: Joi.number(),
     assignedMember: Joi.string().custom(objectId).required(),
-    startDate: Joi.date(),
-    endDate: Joi.date(),
+    startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
   }).custom((value, helpers) => {
     try {
       validateFrequencyConfig(value.frequency, value.frequencyConfig);
@@ -94,6 +94,9 @@ const getTimelines = {
     status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').allow(''),
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
     assignedMember: Joi.string().custom(objectId),
+    today: Joi.string().valid('true', 'false').allow(''),
+    startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
     sortBy: Joi.string(),
     limit: Joi.number().integer().min(1),
     page: Joi.number().integer().min(1),

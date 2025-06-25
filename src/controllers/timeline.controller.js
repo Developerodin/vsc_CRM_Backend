@@ -10,7 +10,7 @@ const createTimeline = catchAsync(async (req, res) => {
 });
 
 const getTimelines = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['activity', 'activityName', 'client', 'status', 'frequency', 'assignedMember']);
+  const filter = pick(req.query, ['activity', 'activityName', 'client', 'status', 'frequency', 'assignedMember', 'today', 'startDate', 'endDate']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await timelineService.queryTimelines(filter, options);
   res.send(result);
