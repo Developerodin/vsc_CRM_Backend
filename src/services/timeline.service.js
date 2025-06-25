@@ -264,6 +264,14 @@ const queryTimelines = async (filter, options, user) => {
     delete mongoFilter.activityName;
   }
 
+  if(mongoFilter.startDate === '') {
+    delete mongoFilter.startDate;
+  }
+  
+  if(mongoFilter.endDate === '') {
+    delete mongoFilter.endDate;
+  }
+
   // Apply branch filtering based on user's access
   if (user && user.role) {
     // If specific branch is requested in filter
@@ -294,16 +302,26 @@ const queryTimelines = async (filter, options, user) => {
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
     
-    mongoFilter.$or = [
-      { startDate: { $gte: startOfDay, $lte: endOfDay } },
-      { endDate: { $gte: startOfDay, $lte: endOfDay } },
-      { 
+    const dateConditions = [];
+
+    if(mongoFilter.startDate && mongoFilter.endDate) {
+      dateConditions.push({
         $and: [
-          { startDate: { $lte: startOfDay } },
-          { endDate: { $gte: endOfDay } }
+          { startDate: { $lte: endOfDay } },
+          { endDate: { $gte: startOfDay } }
         ]
-      }
-    ];
+      });
+    } else if(mongoFilter.startDate && !mongoFilter.endDate) {
+      dateConditions.push({
+        startDate: { $lte: endOfDay }
+      });
+    } else if(!mongoFilter.startDate && mongoFilter.endDate) {
+      dateConditions.push({
+        endDate: { $gte: startOfDay }
+      });
+    }
+
+    if(dateConditions.length > 0) mongoFilter.$or = dateConditions;
     delete mongoFilter.today;
   } else if (mongoFilter.today === 'false' || mongoFilter.today === '') {
     delete mongoFilter.today;
@@ -311,8 +329,8 @@ const queryTimelines = async (filter, options, user) => {
 
   // Handle date range filtering
   if (mongoFilter.startDate || mongoFilter.endDate) {
-    const startDateValue = mongoFilter.startDate;
-    const endDateValue = mongoFilter.endDate;
+    const startDateValue = mongoFilter?.startDate?.toISOString();
+    const endDateValue = mongoFilter?.endDate?.toISOString();
     
     console.log('=== DATE FILTERING DEBUG ===');
     console.log('startDateValue:', startDateValue);
@@ -323,7 +341,16 @@ const queryTimelines = async (filter, options, user) => {
     
     if (startDateValue) {
       // Parse the date string properly to avoid timezone issues
-      const [year, month, day] = startDateValue.split('-').map(Number);
+      let year, month, day;
+      
+      if (startDateValue.includes('T')) {
+        // Handle ISO format: "2024-01-15T10:30:00Z" or "2024-01-15T10:30:00.000Z"
+        const datePart = startDateValue.split('T')[0];
+        [year, month, day] = datePart.split('-').map(Number);
+      } else {
+        // Handle simple format: "2024-01-15"
+        [year, month, day] = startDateValue.split('-').map(Number);
+      }
       
       // Validate the date
       const tempDate = new Date(year, month - 1, day);
@@ -349,7 +376,16 @@ const queryTimelines = async (filter, options, user) => {
     
     if (endDateValue) {
       // Parse the date string properly to avoid timezone issues
-      const [year, month, day] = endDateValue.split('-').map(Number);
+      let year, month, day;
+      
+      if (endDateValue.includes('T')) {
+        // Handle ISO format: "2024-01-15T10:30:00Z" or "2024-01-15T10:30:00.000Z"
+        const datePart = endDateValue.split('T')[0];
+        [year, month, day] = datePart.split('-').map(Number);
+      } else {
+        // Handle simple format: "2024-01-15"
+        [year, month, day] = endDateValue.split('-').map(Number);
+      }
       
       // Validate the date
       const tempDate = new Date(year, month - 1, day);
@@ -375,10 +411,24 @@ const queryTimelines = async (filter, options, user) => {
     
     // If both startDate and endDate are provided, use $and to combine them
     if (startDateValue && endDateValue) {
-      const [startYear, startMonth, startDay] = startDateValue.split('-').map(Number);
-      const startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+      let startYear, startMonth, startDay;
+      let endYear, endMonth, endDay;
       
-      const [endYear, endMonth, endDay] = endDateValue.split('-').map(Number);
+      if (startDateValue.includes('T')) {
+        const startDatePart = startDateValue.split('T')[0];
+        [startYear, startMonth, startDay] = startDatePart.split('-').map(Number);
+      } else {
+        [startYear, startMonth, startDay] = startDateValue.split('-').map(Number);
+      }
+      
+      if (endDateValue.includes('T')) {
+        const endDatePart = endDateValue.split('T')[0];
+        [endYear, endMonth, endDay] = endDatePart.split('-').map(Number);
+      } else {
+        [endYear, endMonth, endDay] = endDateValue.split('-').map(Number);
+      }
+      
+      const startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
       const endDate = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
       
       mongoFilter.$and = [
