@@ -10,13 +10,6 @@ import { hasBranchAccess, getUserBranchIds } from './role.service.js';
  * @returns {Promise<Client>}
  */
 const createClient = async (clientBody, user = null) => {
-  if (clientBody.email && (await Client.isEmailTaken(clientBody.email))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
-  }
-  if (clientBody.phone && (await Client.isPhoneTaken(clientBody.phone))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
-  }
-  
   // Validate branch access if user is provided
   if (user && user.role && clientBody.branch) {
     if (!hasBranchAccess(user.role, clientBody.branch)) {
@@ -100,12 +93,6 @@ const updateClientById = async (clientId, updateBody, user = null) => {
   if (!client) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
   }
-  if (updateBody.email && (await Client.isEmailTaken(updateBody.email, clientId))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
-  }
-  if (updateBody.phone && (await Client.isPhoneTaken(updateBody.phone, clientId))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
-  }
   
   // Validate branch access if user is provided and branch is being updated
   if (user && user.role && updateBody.branch) {
@@ -134,7 +121,7 @@ const deleteClientById = async (clientId) => {
 };
 
 /**
- * Bulk import clients (create and update) - Optimized for large datasets with duplicate email and phone handling
+ * Bulk import clients (create and update) - Allows duplicate emails and phones
  * @param {Array} clients - Array of client objects with optional id for updates
  * @returns {Promise<Object>} - Result with created and updated counts
  */
@@ -152,119 +139,39 @@ const bulkImportClients = async (clients) => {
   const toCreate = clients.filter((client) => !client.id);
   const toUpdate = clients.filter((client) => client.id);
 
-  // Process creation in batches with duplicate email and phone handling
+  // Process creation in batches - allow duplicates
   if (toCreate.length > 0) {
     for (let i = 0; i < toCreate.length; i += BATCH_SIZE) {
       const batch = toCreate.slice(i, i + BATCH_SIZE);
 
       try {
-        // Use individual inserts to handle duplicate emails and phones gracefully
-        const insertPromises = batch.map(async (client, batchIndex) => {
-          try {
-            const newClient = await Client.create(client);
-            return { success: true, client: newClient };
-          } catch (error) {
-            const globalIndex = i + batchIndex;
-            if (error.code === 11000) {
-              // Duplicate key error - handle both email and phone duplicates
-              if (error.message.includes('email')) {
-                // Duplicate email - try to find existing client and update
-                try {
-                  const existingClient = await Client.findOne({ email: client.email });
-                  if (existingClient) {
-                    // Update existing client with new data
-                    Object.assign(existingClient, {
-                      name: client.name || existingClient.name,
-                      phone: client.phone || existingClient.phone,
-                      email2: client.email2 || existingClient.email2,
-                      address: client.address || existingClient.address,
-                      district: client.district || existingClient.district,
-                      state: client.state || existingClient.state,
-                      country: client.country || existingClient.country,
-                      fNo: client.fNo || existingClient.fNo,
-                      pan: client.pan || existingClient.pan,
-                      dob: client.dob || existingClient.dob,
-                      branch: client.branch || existingClient.branch,
-                      sortOrder: client.sortOrder || existingClient.sortOrder,
-                    });
-                    await existingClient.save();
-                    return { success: true, updated: true, client: existingClient };
-                  }
-                } catch (updateError) {
-                  return { 
-                    success: false, 
-                    error: `Failed to update existing client with email: ${client.email}`,
-                    globalIndex 
-                  };
-                }
-              } else if (error.message.includes('phone')) {
-                // Duplicate phone - try to find existing client and update
-                try {
-                  const existingClient = await Client.findOne({ phone: client.phone });
-                  if (existingClient) {
-                    // Update existing client with new data
-                    Object.assign(existingClient, {
-                      name: client.name || existingClient.name,
-                      email: client.email || existingClient.email,
-                      email2: client.email2 || existingClient.email2,
-                      address: client.address || existingClient.address,
-                      district: client.district || existingClient.district,
-                      state: client.state || existingClient.state,
-                      country: client.country || existingClient.country,
-                      fNo: client.fNo || existingClient.fNo,
-                      pan: client.pan || existingClient.pan,
-                      dob: client.dob || existingClient.dob,
-                      branch: client.branch || existingClient.branch,
-                      sortOrder: client.sortOrder || existingClient.sortOrder,
-                    });
-                    await existingClient.save();
-                    return { success: true, updated: true, client: existingClient };
-                  }
-                } catch (updateError) {
-                  return { 
-                    success: false, 
-                    error: `Failed to update existing client with phone: ${client.phone}`,
-                    globalIndex 
-                  };
-                }
-              }
-            }
-            return { 
-              success: false, 
-              error: error.message || 'Creation failed',
-              globalIndex 
-            };
-          }
+        // Use bulk insert to create all clients, allowing duplicates
+        const insertResult = await Client.insertMany(batch, {
+          ordered: false, // Continue processing even if some fail
         });
-
-        const insertResults = await Promise.all(insertPromises);
-        
-        insertResults.forEach((result) => {
-          if (result.success) {
-            if (result.updated) {
-              results.updated++;
-            } else {
-              results.created++;
-            }
-          } else {
-            results.errors.push({
-              index: result.globalIndex,
-              error: result.error,
-              data: batch[result.globalIndex - i],
-            });
-          }
-        });
-
+        results.created += insertResult.length;
         results.totalProcessed += batch.length;
       } catch (error) {
-        // If batch completely fails, add all items as errors
-        batch.forEach((client, batchIndex) => {
-          results.errors.push({
-            index: i + batchIndex,
-            error: error.message || 'Creation failed',
-            data: client,
+        if (error.writeErrors) {
+          // Handle partial failures in batch
+          results.created += error.insertedCount || 0;
+          error.writeErrors.forEach((writeError) => {
+            results.errors.push({
+              index: i + writeError.index,
+              error: writeError.err.errmsg || 'Creation failed',
+              data: batch[writeError.index],
+            });
           });
-        });
+        } else {
+          // If batch completely fails, add all items as errors
+          batch.forEach((client, batchIndex) => {
+            results.errors.push({
+              index: i + batchIndex,
+              error: error.message || 'Creation failed',
+              data: client,
+            });
+          });
+        }
         results.totalProcessed += batch.length;
       }
     }
@@ -310,30 +217,11 @@ const bulkImportClients = async (clients) => {
           // Handle partial failures in batch
           results.updated += error.modifiedCount || 0;
           error.writeErrors.forEach((writeError) => {
-            const errorMessage = writeError.err.errmsg || 'Update failed';
-            
-            // Handle duplicate key errors gracefully for both email and phone
-            if (errorMessage.includes('duplicate key error')) {
-              let fieldType = 'unknown';
-              if (errorMessage.includes('email')) {
-                fieldType = 'email';
-              } else if (errorMessage.includes('phone')) {
-                fieldType = 'phone';
-              }
-              
-              results.errors.push({
-                index: i + writeError.index,
-                error: `${fieldType} already exists: ${batch[writeError.index]?.[fieldType] || 'unknown'}`,
-                data: batch[writeError.index],
-                type: `duplicate_${fieldType}`
-              });
-            } else {
-              results.errors.push({
-                index: i + writeError.index,
-                error: errorMessage,
-                data: batch[writeError.index],
-              });
-            }
+            results.errors.push({
+              index: i + writeError.index,
+              error: writeError.err.errmsg || 'Update failed',
+              data: batch[writeError.index],
+            });
           });
         } else {
           // If batch completely fails, add all items as errors

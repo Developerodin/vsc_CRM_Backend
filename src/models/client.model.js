@@ -94,28 +94,6 @@ clientSchema.plugin(toJSON);
 clientSchema.plugin(paginate);
 
 /**
- * Check if email is taken
- * @param {string} email - The client's email
- * @param {ObjectId} [excludeClientId] - The id of the client to be excluded
- * @returns {Promise<boolean>}
- */
-clientSchema.statics.isEmailTaken = async function (email, excludeClientId) {
-  const client = await this.findOne({ email, _id: { $ne: excludeClientId } });
-  return !!client;
-};
-
-/**
- * Check if phone is taken
- * @param {string} phone - The client's phone
- * @param {ObjectId} [excludeClientId] - The id of the client to be excluded
- * @returns {Promise<boolean>}
- */
-clientSchema.statics.isPhoneTaken = async function (phone, excludeClientId) {
-  const client = await this.findOne({ phone, _id: { $ne: excludeClientId } });
-  return !!client;
-};
-
-/**
  * @typedef Client
  */
 const Client = mongoose.model('Client', clientSchema);
