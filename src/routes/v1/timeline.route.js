@@ -8,17 +8,17 @@ const router = express.Router();
 
 router
   .route('/')
-  .post(validate(timelineValidation.createTimeline), timelineController.createTimeline)
-  .get(validate(timelineValidation.getTimelines), timelineController.getTimelines);
+  .post(auth('manageTimelines'), validate(timelineValidation.createTimeline), timelineController.createTimeline)
+  .get(auth('getTimelines'), validate(timelineValidation.getTimelines), timelineController.getTimelines);
 
 router
   .route('/bulk-import')
-  .post(validate(timelineValidation.bulkImportTimelines), timelineController.bulkImportTimelines);
+  .post(auth('manageTimelines'), validate(timelineValidation.bulkImportTimelines), timelineController.bulkImportTimelines);
 
 router
   .route('/:timelineId')
-  .get(validate(timelineValidation.getTimeline), timelineController.getTimeline)
-  .patch(validate(timelineValidation.updateTimeline), timelineController.updateTimeline)
-  .delete(validate(timelineValidation.deleteTimeline), timelineController.deleteTimeline);
+  .get(auth('getTimelines'), validate(timelineValidation.getTimeline), timelineController.getTimeline)
+  .patch(auth('manageTimelines'), validate(timelineValidation.updateTimeline), timelineController.updateTimeline)
+  .delete(auth('manageTimelines'), validate(timelineValidation.deleteTimeline), timelineController.deleteTimeline);
 
 export default router; 

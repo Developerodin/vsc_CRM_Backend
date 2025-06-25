@@ -1,45 +1,51 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
+import * as roleService from '../services/role.service.js';
+
+// Function to generate dynamic navigation permissions validation schema
+const generateNavigationPermissionsSchema = () => {
+  const availableNavigationPermissions = roleService.getAvailableNavigationPermissions();
+  const navigationKeys = {};
+  
+  Object.keys(availableNavigationPermissions).forEach(key => {
+    if (key === 'settings') {
+      const settingsChildren = availableNavigationPermissions[key].children || {};
+      const settingsKeys = {};
+      Object.keys(settingsChildren).forEach(childKey => {
+        settingsKeys[childKey] = Joi.boolean();
+      });
+      navigationKeys[key] = Joi.alternatives().try(
+        Joi.object().keys(settingsKeys),
+        Joi.string(),
+        Joi.boolean(),
+        Joi.any()
+      ).optional();
+    } else {
+      navigationKeys[key] = Joi.boolean();
+    }
+  });
+  
+  return Joi.object().keys(navigationKeys).optional();
+};
+
+// Function to generate dynamic API permissions validation schema
+const generateApiPermissionsSchema = () => {
+  const availableApiPermissions = roleService.getAvailableApiPermissions();
+  const apiKeys = {};
+  
+  Object.keys(availableApiPermissions).forEach(key => {
+    apiKeys[key] = Joi.boolean();
+  });
+  
+  return Joi.object().keys(apiKeys).optional();
+};
 
 const createRole = {
   body: Joi.object().keys({
     name: Joi.string().required().trim(),
     description: Joi.string().trim(),
-    navigationPermissions: Joi.object().keys({
-      dashboard: Joi.boolean(),
-      clients: Joi.boolean(),
-      groups: Joi.boolean(),
-      teams: Joi.boolean(),
-      timelines: Joi.boolean(),
-      analytics: Joi.boolean(),
-      settings: Joi.alternatives().try(
-        Joi.object().keys({
-          activities: Joi.boolean(),
-          branches: Joi.boolean(),
-          users: Joi.boolean(),
-          roles: Joi.boolean(),
-        }),
-        Joi.string(),
-        Joi.boolean(),
-        Joi.any()
-      ).optional(),
-    }).optional(),
-    apiPermissions: Joi.object().keys({
-      getUsers: Joi.boolean(),
-      manageUsers: Joi.boolean(),
-      getTeamMembers: Joi.boolean(),
-      manageTeamMembers: Joi.boolean(),
-      getActivities: Joi.boolean(),
-      manageActivities: Joi.boolean(),
-      getBranches: Joi.boolean(),
-      manageBranches: Joi.boolean(),
-      getClients: Joi.boolean(),
-      manageClients: Joi.boolean(),
-      getGroups: Joi.boolean(),
-      manageGroups: Joi.boolean(),
-      getRoles: Joi.boolean(),
-      manageRoles: Joi.boolean(),
-    }).optional(),
+    navigationPermissions: generateNavigationPermissionsSchema(),
+    apiPermissions: generateApiPermissionsSchema(),
     permissions: Joi.array().items(Joi.string()),
     branchAccess: Joi.array().items(Joi.string().custom(objectId)),
     allBranchesAccess: Joi.boolean(),
@@ -71,41 +77,8 @@ const updateRole = {
     .keys({
       name: Joi.string().trim(),
       description: Joi.string().trim(),
-      navigationPermissions: Joi.object().keys({
-        dashboard: Joi.boolean(),
-        clients: Joi.boolean(),
-        groups: Joi.boolean(),
-        teams: Joi.boolean(),
-        timelines: Joi.boolean(),
-        analytics: Joi.boolean(),
-        settings: Joi.alternatives().try(
-          Joi.object().keys({
-            activities: Joi.boolean(),
-            branches: Joi.boolean(),
-            users: Joi.boolean(),
-            roles: Joi.boolean(),
-          }),
-          Joi.string(),
-          Joi.boolean(),
-          Joi.any()
-        ).optional(),
-      }).optional(),
-      apiPermissions: Joi.object().keys({
-        getUsers: Joi.boolean(),
-        manageUsers: Joi.boolean(),
-        getTeamMembers: Joi.boolean(),
-        manageTeamMembers: Joi.boolean(),
-        getActivities: Joi.boolean(),
-        manageActivities: Joi.boolean(),
-        getBranches: Joi.boolean(),
-        manageBranches: Joi.boolean(),
-        getClients: Joi.boolean(),
-        manageClients: Joi.boolean(),
-        getGroups: Joi.boolean(),
-        manageGroups: Joi.boolean(),
-        getRoles: Joi.boolean(),
-        manageRoles: Joi.boolean(),
-      }).optional(),
+      navigationPermissions: generateNavigationPermissionsSchema(),
+      apiPermissions: generateApiPermissionsSchema(),
       permissions: Joi.array().items(Joi.string()),
       branchAccess: Joi.array().items(Joi.string().custom(objectId)),
       allBranchesAccess: Joi.boolean(),

@@ -49,6 +49,9 @@ const roleSchema = mongoose.Schema(
       // Group permissions
       getGroups: { type: Boolean, default: false },
       manageGroups: { type: Boolean, default: false },
+      // Timeline permissions
+      getTimelines: { type: Boolean, default: false },
+      manageTimelines: { type: Boolean, default: false },
       // Role permissions
       getRoles: { type: Boolean, default: false },
       manageRoles: { type: Boolean, default: false },

@@ -75,6 +75,11 @@ const clientSchema = mongoose.Schema(
         }
       },
     },
+    branch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      required: true,
+    },
     sortOrder: {
       type: Number,
     },

@@ -16,6 +16,20 @@ router.post('/reset-password', validate(authValidation.resetPassword), authContr
 router.post('/send-verification-email', auth(), authController.sendVerificationEmail);
 router.post('/verify-email', validate(authValidation.verifyEmail), authController.verifyEmail);
 
+// Test endpoint to verify authentication
+router
+  .route('/test')
+  .get(auth('getClients'), (req, res) => {
+    res.json({
+      message: 'Authentication successful!',
+      user: {
+        id: req.user._id,
+        email: req.user.email,
+        role: req.user.role ? req.user.role.name : 'No role'
+      }
+    });
+  });
+
 export default router;
 
 

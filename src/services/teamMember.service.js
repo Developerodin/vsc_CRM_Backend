@@ -4,6 +4,7 @@ import ApiError from '../utils/ApiError.js';
 import TeamMember from '../models/teamMember.model.js';
 import Activity from '../models/activity.model.js';
 import Branch from '../models/branch.model.js';
+import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
 /**
  * Validate if all skill IDs exist in the activities collection
@@ -45,9 +46,10 @@ const validateBranch = async (branchId) => {
 /**
  * Create a team member
  * @param {Object} teamMemberBody
+ * @param {Object} user - User object with role information (optional)
  * @returns {Promise<TeamMember>}
  */
-const createTeamMember = async (teamMemberBody) => {
+const createTeamMember = async (teamMemberBody, user = null) => {
   if (await TeamMember.isEmailTaken(teamMemberBody.email)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
   }
@@ -56,6 +58,13 @@ const createTeamMember = async (teamMemberBody) => {
   }
   await validateSkills(teamMemberBody.skills);
   await validateBranch(teamMemberBody.branch);
+  
+  // Validate branch access if user is provided
+  if (user && user.role && teamMemberBody.branch) {
+    if (!hasBranchAccess(user.role, teamMemberBody.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+  }
   
   const teamMember = await TeamMember.create(teamMemberBody);
   return teamMember.populate(['skills', 'branch']);
@@ -68,15 +77,40 @@ const createTeamMember = async (teamMemberBody) => {
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
  * @param {number} [options.limit] - Maximum number of results per page (default = 10)
  * @param {number} [options.page] - Current page (default = 1)
+ * @param {Object} user - User object with role information
  * @returns {Promise<QueryResult>}
  */
-const queryTeamMembers = async (filter, options) => {
+const queryTeamMembers = async (filter, options, user) => {
   // Create a new filter object to avoid modifying the original
   const mongoFilter = { ...filter };
   
   // If name filter exists, convert it to case-insensitive regex
   if (mongoFilter.name) {
     mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  }
+
+  // Apply branch filtering based on user's access
+  if (user && user.role) {
+    // If specific branch is requested in filter
+    if (mongoFilter.branch) {
+      // Check if user has access to this specific branch
+      if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    } else {
+      // Get user's allowed branch IDs
+      const allowedBranchIds = getUserBranchIds(user.role);
+      
+      if (allowedBranchIds === null) {
+        // User has access to all branches, no filtering needed
+      } else if (allowedBranchIds.length > 0) {
+        // Filter by user's allowed branches
+        mongoFilter.branch = { $in: allowedBranchIds };
+      } else {
+        // User has no branch access
+        throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+      }
+    }
   }
 
   const teamMembers = await TeamMember.paginate(mongoFilter, {
@@ -133,9 +167,10 @@ const getTeamMemberByEmail = async (email) => {
  * Update team member by id
  * @param {ObjectId} teamMemberId
  * @param {Object} updateBody
+ * @param {Object} user - User object with role information (optional)
  * @returns {Promise<TeamMember>}
  */
-const updateTeamMemberById = async (teamMemberId, updateBody) => {
+const updateTeamMemberById = async (teamMemberId, updateBody, user = null) => {
   const teamMember = await getTeamMemberById(teamMemberId);
   
   if (updateBody.email && (await TeamMember.isEmailTaken(updateBody.email, teamMemberId))) {
@@ -149,6 +184,13 @@ const updateTeamMemberById = async (teamMemberId, updateBody) => {
   }
   if (updateBody.branch) {
     await validateBranch(updateBody.branch);
+    
+    // Validate branch access if user is provided
+    if (user && user.role) {
+      if (!hasBranchAccess(user.role, updateBody.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    }
   }
   
   Object.assign(teamMember, updateBody);

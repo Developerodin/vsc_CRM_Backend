@@ -5,14 +5,16 @@ import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
 
 const createClient = catchAsync(async (req, res) => {
-  const client = await clientService.createClient(req.body);
+  const client = await clientService.createClient(req.body, req.user);
   res.status(httpStatus.CREATED).send(client);
 });
 
 const getClients = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'email', 'phone', 'district', 'state', 'country', 'fNo', 'pan']);
+  const filter = pick(req.query, ['name', 'email', 'phone', 'district', 'state', 'country', 'fNo', 'pan', 'branch']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await clientService.queryClients(filter, options);
+  
+  // Add branch filtering based on user's access
+  const result = await clientService.queryClients(filter, options, req.user);
   res.send(result);
 });
 
@@ -25,7 +27,7 @@ const getClient = catchAsync(async (req, res) => {
 });
 
 const updateClient = catchAsync(async (req, res) => {
-  const client = await clientService.updateClientById(req.params.clientId, req.body);
+  const client = await clientService.updateClientById(req.params.clientId, req.body, req.user);
   res.send(client);
 });
 

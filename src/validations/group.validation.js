@@ -6,6 +6,7 @@ const createGroup = {
     name: Joi.string().required(),
     numberOfClients: Joi.number().required(),
     clients: Joi.array().items(Joi.custom(objectId)),
+    branch: Joi.string().custom(objectId).required(),
     sortOrder: Joi.number().required(),
   }),
 };
@@ -14,6 +15,7 @@ const getGroups = {
   query: Joi.object().keys({
     name: Joi.string(),
     numberOfClients: Joi.number().integer(),
+    branch: Joi.string().custom(objectId),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -35,6 +37,7 @@ const updateGroup = {
       name: Joi.string(),
       numberOfClients: Joi.number(),
       clients: Joi.array().items(Joi.custom(objectId)),
+      branch: Joi.string().custom(objectId),
       sortOrder: Joi.number(),
     })
     .min(1),
@@ -71,6 +74,7 @@ const bulkImportGroups = {
           name: Joi.string().required(),
           numberOfClients: Joi.number().default(0),
           clients: Joi.array().items(Joi.custom(objectId)).default([]),
+          branch: Joi.string().custom(objectId).required(),
           sortOrder: Joi.number().required(),
         })
       )

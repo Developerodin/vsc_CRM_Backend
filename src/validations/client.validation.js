@@ -14,6 +14,7 @@ const createClient = {
     fNo: Joi.string(),
     pan: Joi.string().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/),
     dob: Joi.date().max('now'),
+    branch: Joi.string().custom(objectId).required(),
     sortOrder: Joi.number(),
   }),
 };
@@ -28,6 +29,7 @@ const getClients = {
     country: Joi.string(),
     fNo: Joi.string(),
     pan: Joi.string(),
+    branch: Joi.string().custom(objectId),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -57,6 +59,7 @@ const updateClient = {
       fNo: Joi.string(),
       pan: Joi.string().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/),
       dob: Joi.date().max('now'),
+      branch: Joi.string().custom(objectId),
       sortOrder: Joi.number(),
     })
     .min(1),
@@ -85,6 +88,7 @@ const bulkImportClients = {
           fNo: Joi.string(),
           pan: Joi.string().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/),
           dob: Joi.date().max('now'),
+          branch: Joi.string().custom(objectId).required(),
           sortOrder: Joi.number(),
         })
       )

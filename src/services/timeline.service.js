@@ -5,6 +5,7 @@ import Timeline from '../models/timeline.model.js';
 import Activity from '../models/activity.model.js';
 import Client from '../models/client.model.js';
 import TeamMember from '../models/teamMember.model.js';
+import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
 /**
  * Validate if activity ID exists
@@ -191,12 +192,20 @@ const cleanFrequencyConfig = (frequency, frequencyConfig) => {
 /**
  * Create timeline(s) - handles both single client and multiple clients
  * @param {Object} timelineBody
+ * @param {Object} user - User object with role information (optional)
  * @returns {Promise<Timeline|Array<Timeline>>}
  */
-const createTimeline = async (timelineBody) => {
+const createTimeline = async (timelineBody, user = null) => {
   await validateActivity(timelineBody.activity);
   await validateTeamMember(timelineBody.assignedMember);
   validateFrequencyConfig(timelineBody.frequency, timelineBody.frequencyConfig);
+  
+  // Validate branch access if user is provided
+  if (user && user.role && timelineBody.branch) {
+    if (!hasBranchAccess(user.role, timelineBody.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+  }
   
   // Clean frequency configuration to keep only relevant fields
   const cleanedTimelineBody = {
@@ -241,9 +250,10 @@ const createTimeline = async (timelineBody) => {
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
  * @param {number} [options.limit] - Maximum number of results per page (default = 10)
  * @param {number} [options.page] - Current page (default = 1)
+ * @param {Object} user - User object with role information
  * @returns {Promise<QueryResult>}
  */
-const queryTimelines = async (filter, options) => {
+const queryTimelines = async (filter, options, user) => {
   const mongoFilter = { ...filter };
 
   if (mongoFilter.status === '') {
@@ -252,6 +262,30 @@ const queryTimelines = async (filter, options) => {
 
   if (mongoFilter.activityName === '') {
     delete mongoFilter.activityName;
+  }
+
+  // Apply branch filtering based on user's access
+  if (user && user.role) {
+    // If specific branch is requested in filter
+    if (mongoFilter.branch) {
+      // Check if user has access to this specific branch
+      if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    } else {
+      // Get user's allowed branch IDs
+      const allowedBranchIds = getUserBranchIds(user.role);
+      
+      if (allowedBranchIds === null) {
+        // User has access to all branches, no filtering needed
+      } else if (allowedBranchIds.length > 0) {
+        // Filter by user's allowed branches
+        mongoFilter.branch = { $in: allowedBranchIds };
+      } else {
+        // User has no branch access
+        throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+      }
+    }
   }
 
   // Handle "Today" filter
@@ -435,10 +469,18 @@ const getTimelineById = async (id) => {
  * Update timeline by id
  * @param {ObjectId} timelineId
  * @param {Object} updateBody
+ * @param {Object} user - User object with role information (optional)
  * @returns {Promise<Timeline>}
  */
-const updateTimelineById = async (timelineId, updateBody) => {
+const updateTimelineById = async (timelineId, updateBody, user = null) => {
   const timeline = await getTimelineById(timelineId);
+  
+  // Validate branch access if user is provided and branch is being updated
+  if (user && user.role && updateBody.branch) {
+    if (!hasBranchAccess(user.role, updateBody.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+  }
   
   if (updateBody.activity) {
     await validateActivity(updateBody.activity);
@@ -451,6 +493,12 @@ const updateTimelineById = async (timelineId, updateBody) => {
   }
   if (updateBody.frequency && updateBody.frequencyConfig) {
     validateFrequencyConfig(updateBody.frequency, updateBody.frequencyConfig);
+  }
+  
+  // Validate frequency configuration if it's being updated
+  if (updateBody.frequencyConfig) {
+    const frequency = updateBody.frequency || timeline.frequency;
+    validateFrequencyConfig(frequency, updateBody.frequencyConfig);
   }
   
   // Clean frequency configuration if it's being updated
@@ -684,6 +732,7 @@ const bulkImportTimelines = async (timelines) => {
             udin: timeline.udin,
             turnover: timeline.turnover,
             assignedMember: timeline.assignedMember,
+            branch: timeline.branch,
             startDate: timeline.startDate,
             endDate: timeline.endDate,
           },

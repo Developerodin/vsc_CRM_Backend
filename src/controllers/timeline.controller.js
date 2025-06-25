@@ -5,14 +5,16 @@ import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
 
 const createTimeline = catchAsync(async (req, res) => {
-  const timeline = await timelineService.createTimeline(req.body);
+  const timeline = await timelineService.createTimeline(req.body, req.user);
   res.status(httpStatus.CREATED).send(timeline);
 });
 
 const getTimelines = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['activity', 'activityName', 'client', 'status', 'frequency', 'assignedMember', 'today', 'startDate', 'endDate']);
+  const filter = pick(req.query, ['activity', 'activityName', 'client', 'status', 'frequency', 'assignedMember', 'branch', 'today', 'startDate', 'endDate']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await timelineService.queryTimelines(filter, options);
+  
+  // Add branch filtering based on user's access
+  const result = await timelineService.queryTimelines(filter, options, req.user);
   res.send(result);
 });
 
@@ -25,7 +27,7 @@ const getTimeline = catchAsync(async (req, res) => {
 });
 
 const updateTimeline = catchAsync(async (req, res) => {
-  const timeline = await timelineService.updateTimelineById(req.params.timelineId, req.body);
+  const timeline = await timelineService.updateTimelineById(req.params.timelineId, req.body, req.user);
   res.send(timeline);
 });
 

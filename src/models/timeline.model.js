@@ -110,6 +110,11 @@ const timelineSchema = mongoose.Schema(
       ref: 'TeamMember',
       required: true,
     },
+    branch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      required: true,
+    },
     startDate: {
       type: Date,
       required: false,

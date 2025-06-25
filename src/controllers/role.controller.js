@@ -14,38 +14,30 @@ const createRole = catchAsync(async (req, res) => {
   if (req.body.permissions && Array.isArray(req.body.permissions)) {
     const permissionsArray = req.body.permissions;
     
-    // Initialize permission objects
-    const navigationPermissions = {
-      dashboard: false,
-      clients: false,
-      groups: false,
-      teams: false,
-      timelines: false,
-      analytics: false,
-      settings: {
-        activities: false,
-        branches: false,
-        users: false,
-        roles: false,
-      },
-    };
-
-    const apiPermissions = {
-      getUsers: false,
-      manageUsers: false,
-      getTeamMembers: false,
-      manageTeamMembers: false,
-      getActivities: false,
-      manageActivities: false,
-      getBranches: false,
-      manageBranches: false,
-      getClients: false,
-      manageClients: false,
-      getGroups: false,
-      manageGroups: false,
-      getRoles: false,
-      manageRoles: false,
-    };
+    // Get available permissions dynamically
+    const availableNavigationPermissions = roleService.getAvailableNavigationPermissions();
+    const availableApiPermissions = roleService.getAvailableApiPermissions();
+    
+    // Initialize permission objects with all available permissions set to false
+    const navigationPermissions = {};
+    const apiPermissions = {};
+    
+    // Initialize navigation permissions
+    Object.keys(availableNavigationPermissions).forEach(key => {
+      if (key === 'settings') {
+        navigationPermissions[key] = {};
+        Object.keys(availableNavigationPermissions[key].children || {}).forEach(childKey => {
+          navigationPermissions[key][childKey] = false;
+        });
+      } else {
+        navigationPermissions[key] = false;
+      }
+    });
+    
+    // Initialize API permissions
+    Object.keys(availableApiPermissions).forEach(key => {
+      apiPermissions[key] = false;
+    });
 
     // Set permissions to true based on the array
     permissionsArray.forEach(permission => {
@@ -56,7 +48,7 @@ const createRole = catchAsync(async (req, res) => {
       // Handle settings permissions
       else if (permission.startsWith('settings.')) {
         const settingKey = permission.split('.')[1];
-        if (navigationPermissions.settings.hasOwnProperty(settingKey)) {
+        if (navigationPermissions.settings && navigationPermissions.settings.hasOwnProperty(settingKey)) {
           navigationPermissions.settings[settingKey] = true;
         }
       }
@@ -77,44 +69,39 @@ const createRole = catchAsync(async (req, res) => {
   }
   // Handle direct navigationPermissions and apiPermissions (new format)
   else if (req.body.navigationPermissions || req.body.apiPermissions) {
+    // Get available permissions dynamically
+    const availableNavigationPermissions = roleService.getAvailableNavigationPermissions();
+    const availableApiPermissions = roleService.getAvailableApiPermissions();
+    
     // Ensure navigationPermissions has the correct structure
     if (req.body.navigationPermissions) {
       const navPerms = req.body.navigationPermissions;
-      roleBody.navigationPermissions = {
-        dashboard: navPerms.dashboard || false,
-        clients: navPerms.clients || false,
-        groups: navPerms.groups || false,
-        teams: navPerms.teams || false,
-        timelines: navPerms.timelines || false,
-        analytics: navPerms.analytics || false,
-        settings: {
-          activities: (navPerms.settings && typeof navPerms.settings === 'object') ? (navPerms.settings.activities || false) : false,
-          branches: (navPerms.settings && typeof navPerms.settings === 'object') ? (navPerms.settings.branches || false) : false,
-          users: (navPerms.settings && typeof navPerms.settings === 'object') ? (navPerms.settings.users || false) : false,
-          roles: (navPerms.settings && typeof navPerms.settings === 'object') ? (navPerms.settings.roles || false) : false,
-        },
-      };
+      roleBody.navigationPermissions = {};
+      
+      // Set all available navigation permissions
+      Object.keys(availableNavigationPermissions).forEach(key => {
+        if (key === 'settings') {
+          roleBody.navigationPermissions[key] = {};
+          Object.keys(availableNavigationPermissions[key].children || {}).forEach(childKey => {
+            roleBody.navigationPermissions[key][childKey] = 
+              (navPerms.settings && typeof navPerms.settings === 'object') ? 
+              (navPerms.settings[childKey] || false) : false;
+          });
+        } else {
+          roleBody.navigationPermissions[key] = navPerms[key] || false;
+        }
+      });
     }
 
     // Ensure apiPermissions has the correct structure
     if (req.body.apiPermissions) {
       const apiPerms = req.body.apiPermissions;
-      roleBody.apiPermissions = {
-        getUsers: apiPerms.getUsers || false,
-        manageUsers: apiPerms.manageUsers || false,
-        getTeamMembers: apiPerms.getTeamMembers || false,
-        manageTeamMembers: apiPerms.manageTeamMembers || false,
-        getActivities: apiPerms.getActivities || false,
-        manageActivities: apiPerms.manageActivities || false,
-        getBranches: apiPerms.getBranches || false,
-        manageBranches: apiPerms.manageBranches || false,
-        getClients: apiPerms.getClients || false,
-        manageClients: apiPerms.manageClients || false,
-        getGroups: apiPerms.getGroups || false,
-        manageGroups: apiPerms.manageGroups || false,
-        getRoles: apiPerms.getRoles || false,
-        manageRoles: apiPerms.manageRoles || false,
-      };
+      roleBody.apiPermissions = {};
+      
+      // Set all available API permissions
+      Object.keys(availableApiPermissions).forEach(key => {
+        roleBody.apiPermissions[key] = apiPerms[key] || false;
+      });
     }
   }
 
@@ -141,38 +128,30 @@ const updateRole = catchAsync(async (req, res) => {
   if (req.body.permissions && Array.isArray(req.body.permissions)) {
     const permissionsArray = req.body.permissions;
     
-    // Initialize permission objects
-    const navigationPermissions = {
-      dashboard: false,
-      clients: false,
-      groups: false,
-      teams: false,
-      timelines: false,
-      analytics: false,
-      settings: {
-        activities: false,
-        branches: false,
-        users: false,
-        roles: false,
-      },
-    };
-
-    const apiPermissions = {
-      getUsers: false,
-      manageUsers: false,
-      getTeamMembers: false,
-      manageTeamMembers: false,
-      getActivities: false,
-      manageActivities: false,
-      getBranches: false,
-      manageBranches: false,
-      getClients: false,
-      manageClients: false,
-      getGroups: false,
-      manageGroups: false,
-      getRoles: false,
-      manageRoles: false,
-    };
+    // Get available permissions dynamically
+    const availableNavigationPermissions = roleService.getAvailableNavigationPermissions();
+    const availableApiPermissions = roleService.getAvailableApiPermissions();
+    
+    // Initialize permission objects with all available permissions set to false
+    const navigationPermissions = {};
+    const apiPermissions = {};
+    
+    // Initialize navigation permissions
+    Object.keys(availableNavigationPermissions).forEach(key => {
+      if (key === 'settings') {
+        navigationPermissions[key] = {};
+        Object.keys(availableNavigationPermissions[key].children || {}).forEach(childKey => {
+          navigationPermissions[key][childKey] = false;
+        });
+      } else {
+        navigationPermissions[key] = false;
+      }
+    });
+    
+    // Initialize API permissions
+    Object.keys(availableApiPermissions).forEach(key => {
+      apiPermissions[key] = false;
+    });
 
     // Set permissions to true based on the array
     permissionsArray.forEach(permission => {
@@ -183,7 +162,7 @@ const updateRole = catchAsync(async (req, res) => {
       // Handle settings permissions
       else if (permission.startsWith('settings.')) {
         const settingKey = permission.split('.')[1];
-        if (navigationPermissions.settings.hasOwnProperty(settingKey)) {
+        if (navigationPermissions.settings && navigationPermissions.settings.hasOwnProperty(settingKey)) {
           navigationPermissions.settings[settingKey] = true;
         }
       }
@@ -204,44 +183,39 @@ const updateRole = catchAsync(async (req, res) => {
   }
   // Handle direct navigationPermissions and apiPermissions (new format)
   else if (req.body.navigationPermissions || req.body.apiPermissions) {
+    // Get available permissions dynamically
+    const availableNavigationPermissions = roleService.getAvailableNavigationPermissions();
+    const availableApiPermissions = roleService.getAvailableApiPermissions();
+    
     // Ensure navigationPermissions has the correct structure
     if (req.body.navigationPermissions) {
       const navPerms = req.body.navigationPermissions;
-      updateBody.navigationPermissions = {
-        dashboard: navPerms.dashboard || false,
-        clients: navPerms.clients || false,
-        groups: navPerms.groups || false,
-        teams: navPerms.teams || false,
-        timelines: navPerms.timelines || false,
-        analytics: navPerms.analytics || false,
-        settings: {
-          activities: (navPerms.settings && typeof navPerms.settings === 'object') ? (navPerms.settings.activities || false) : false,
-          branches: (navPerms.settings && typeof navPerms.settings === 'object') ? (navPerms.settings.branches || false) : false,
-          users: (navPerms.settings && typeof navPerms.settings === 'object') ? (navPerms.settings.users || false) : false,
-          roles: (navPerms.settings && typeof navPerms.settings === 'object') ? (navPerms.settings.roles || false) : false,
-        },
-      };
+      updateBody.navigationPermissions = {};
+      
+      // Set all available navigation permissions
+      Object.keys(availableNavigationPermissions).forEach(key => {
+        if (key === 'settings') {
+          updateBody.navigationPermissions[key] = {};
+          Object.keys(availableNavigationPermissions[key].children || {}).forEach(childKey => {
+            updateBody.navigationPermissions[key][childKey] = 
+              (navPerms.settings && typeof navPerms.settings === 'object') ? 
+              (navPerms.settings[childKey] || false) : false;
+          });
+        } else {
+          updateBody.navigationPermissions[key] = navPerms[key] || false;
+        }
+      });
     }
 
     // Ensure apiPermissions has the correct structure
     if (req.body.apiPermissions) {
       const apiPerms = req.body.apiPermissions;
-      updateBody.apiPermissions = {
-        getUsers: apiPerms.getUsers || false,
-        manageUsers: apiPerms.manageUsers || false,
-        getTeamMembers: apiPerms.getTeamMembers || false,
-        manageTeamMembers: apiPerms.manageTeamMembers || false,
-        getActivities: apiPerms.getActivities || false,
-        manageActivities: apiPerms.manageActivities || false,
-        getBranches: apiPerms.getBranches || false,
-        manageBranches: apiPerms.manageBranches || false,
-        getClients: apiPerms.getClients || false,
-        manageClients: apiPerms.manageClients || false,
-        getGroups: apiPerms.getGroups || false,
-        manageGroups: apiPerms.manageGroups || false,
-        getRoles: apiPerms.getRoles || false,
-        manageRoles: apiPerms.manageRoles || false,
-      };
+      updateBody.apiPermissions = {};
+      
+      // Set all available API permissions
+      Object.keys(availableApiPermissions).forEach(key => {
+        updateBody.apiPermissions[key] = apiPerms[key] || false;
+      });
     }
   }
 

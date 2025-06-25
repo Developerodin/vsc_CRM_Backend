@@ -5,14 +5,16 @@ import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
 
 const createTeamMember = catchAsync(async (req, res) => {
-  const teamMember = await teamMemberService.createTeamMember(req.body);
+  const teamMember = await teamMemberService.createTeamMember(req.body, req.user);
   res.status(httpStatus.CREATED).send(teamMember);
 });
 
 const getTeamMembers = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['name', 'email', 'phone', 'branch', 'city', 'state', 'country', 'pinCode']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await teamMemberService.queryTeamMembers(filter, options);
+  
+  // Add branch filtering based on user's access
+  const result = await teamMemberService.queryTeamMembers(filter, options, req.user);
   res.send(result);
 });
 
@@ -25,7 +27,7 @@ const getTeamMember = catchAsync(async (req, res) => {
 });
 
 const updateTeamMember = catchAsync(async (req, res) => {
-  const teamMember = await teamMemberService.updateTeamMemberById(req.params.teamMemberId, req.body);
+  const teamMember = await teamMemberService.updateTeamMemberById(req.params.teamMemberId, req.body, req.user);
   res.send(teamMember);
 });
 

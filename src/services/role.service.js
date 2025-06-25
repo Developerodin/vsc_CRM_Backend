@@ -293,6 +293,22 @@ const getAvailableApiPermissions = () => {
       group: 'groups',
     },
     
+    // Timeline Management
+    getTimelines: {
+      key: 'getTimelines',
+      title: 'View Timelines',
+      description: 'Can view timeline list and details',
+      category: 'timeline_management',
+      group: 'timelines',
+    },
+    manageTimelines: {
+      key: 'manageTimelines',
+      title: 'Manage Timelines',
+      description: 'Can create, update, and delete timelines',
+      category: 'timeline_management',
+      group: 'timelines',
+    },
+    
     // Role Management
     getRoles: {
       key: 'getRoles',
@@ -347,7 +363,7 @@ const hasNavigationAccess = (userRole, navigationPath) => {
 /**
  * Check if user has access to a specific branch
  * @param {Object} userRole - The user's role object
- * @param {ObjectId} branchId - The branch ID to check
+ * @param {ObjectId|string} branchId - The branch ID to check
  * @returns {boolean}
  */
 const hasBranchAccess = (userRole, branchId) => {
@@ -362,8 +378,67 @@ const hasBranchAccess = (userRole, branchId) => {
 
   // Check if branch is in the allowed branches array
   if (userRole.branchAccess && userRole.branchAccess.length > 0) {
-    return userRole.branchAccess.some(branch => 
-      branch._id.toString() === branchId.toString()
+    const branchIdStr = branchId.toString();
+    return userRole.branchAccess.some(branch => {
+      const branchIdToCheck = typeof branch === 'string' ? branch : branch._id || branch;
+      return branchIdToCheck.toString() === branchIdStr;
+    });
+  }
+
+  return false;
+};
+
+/**
+ * Get all branch IDs that a user has access to
+ * @param {Object} userRole - The user's role object
+ * @returns {Array<string>} - Array of branch IDs as strings
+ */
+const getUserBranchIds = (userRole) => {
+  if (!userRole) {
+    return [];
+  }
+
+  // If role has access to all branches, return null to indicate no filtering needed
+  if (userRole.allBranchesAccess) {
+    return null;
+  }
+
+  // Return array of branch IDs
+  if (userRole.branchAccess && userRole.branchAccess.length > 0) {
+    return userRole.branchAccess.map(branch => {
+      const branchId = typeof branch === 'string' ? branch : branch._id || branch;
+      return branchId.toString();
+    });
+  }
+
+  return [];
+};
+
+/**
+ * Check if user has access to any of the provided branches
+ * @param {Object} userRole - The user's role object
+ * @param {Array<ObjectId|string>} branchIds - Array of branch IDs to check
+ * @returns {boolean}
+ */
+const hasAnyBranchAccess = (userRole, branchIds) => {
+  if (!userRole || !branchIds || branchIds.length === 0) {
+    return false;
+  }
+
+  // If role has access to all branches
+  if (userRole.allBranchesAccess) {
+    return true;
+  }
+
+  // Check if any of the provided branches are in the allowed branches array
+  if (userRole.branchAccess && userRole.branchAccess.length > 0) {
+    const allowedBranchIds = userRole.branchAccess.map(branch => {
+      const branchId = typeof branch === 'string' ? branch : branch._id || branch;
+      return branchId.toString();
+    });
+
+    return branchIds.some(branchId => 
+      allowedBranchIds.includes(branchId.toString())
     );
   }
 
@@ -384,4 +459,6 @@ export {
   hasPermission,
   hasNavigationAccess,
   hasBranchAccess,
+  getUserBranchIds,
+  hasAnyBranchAccess,
 }; 

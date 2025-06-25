@@ -6,8 +6,46 @@ import setupTestDB from '../utils/setupTestDB.js';
 import { User } from '../../src/models/index.js';
 import { userOne, insertUsers } from '../fixtures/user.fixture.js';
 import { getAccessToken } from '../fixtures/token.fixture.js';
+import * as roleService from '../../src/services/role.service.js';
 
 setupTestDB();
+
+// Helper function to create test permissions
+const createTestPermissions = () => {
+  const availableNavigationPermissions = roleService.getAvailableNavigationPermissions();
+  const availableApiPermissions = roleService.getAvailableApiPermissions();
+  
+  const navigationPermissions = {};
+  const apiPermissions = {};
+  
+  // Set navigation permissions
+  Object.keys(availableNavigationPermissions).forEach(key => {
+    if (key === 'settings') {
+      navigationPermissions[key] = {};
+      Object.keys(availableNavigationPermissions[key].children || {}).forEach(childKey => {
+        navigationPermissions[key][childKey] = false;
+      });
+    } else {
+      navigationPermissions[key] = false;
+    }
+  });
+  
+  // Set API permissions
+  Object.keys(availableApiPermissions).forEach(key => {
+    apiPermissions[key] = false;
+  });
+  
+  // Set some test permissions to true
+  if (navigationPermissions.dashboard !== undefined) navigationPermissions.dashboard = true;
+  if (navigationPermissions.clients !== undefined) navigationPermissions.clients = true;
+  if (apiPermissions.getTeamMembers !== undefined) apiPermissions.getTeamMembers = true;
+  if (apiPermissions.getActivities !== undefined) apiPermissions.getActivities = true;
+  if (apiPermissions.getBranches !== undefined) apiPermissions.getBranches = true;
+  if (apiPermissions.getClients !== undefined) apiPermissions.getClients = true;
+  if (apiPermissions.getGroups !== undefined) apiPermissions.getGroups = true;
+  
+  return { navigationPermissions, apiPermissions };
+};
 
 describe('Role routes', () => {
   describe('POST /v1/roles', () => {
@@ -15,39 +53,13 @@ describe('Role routes', () => {
       await insertUsers([userOne]);
       const accessToken = await getAccessToken(userOne);
 
+      const { navigationPermissions, apiPermissions } = createTestPermissions();
+
       const newRole = {
         name: 'Test Role',
         description: 'Test role description',
-        navigationPermissions: {
-          dashboard: true,
-          clients: true,
-          groups: false,
-          teams: false,
-          timelines: false,
-          analytics: false,
-          settings: {
-            activities: false,
-            branches: false,
-            users: false,
-            roles: false,
-          },
-        },
-        apiPermissions: {
-          getUsers: false,
-          manageUsers: false,
-          getTeamMembers: true,
-          manageTeamMembers: false,
-          getActivities: true,
-          manageActivities: false,
-          getBranches: true,
-          manageBranches: false,
-          getClients: true,
-          manageClients: false,
-          getGroups: true,
-          manageGroups: false,
-          getRoles: false,
-          manageRoles: false,
-        },
+        navigationPermissions,
+        apiPermissions,
         allBranchesAccess: false,
         isActive: true,
       };
@@ -77,15 +89,13 @@ describe('Role routes', () => {
       await insertUsers([userOne]);
       const accessToken = await getAccessToken(userOne);
 
+      const { navigationPermissions, apiPermissions } = createTestPermissions();
+
       const newRole = {
         name: 'Test Role',
         description: 'Test role description',
-        navigationPermissions: {
-          dashboard: true,
-        },
-        apiPermissions: {
-          getUsers: false,
-        },
+        navigationPermissions,
+        apiPermissions,
       };
 
       await request(app)
@@ -148,16 +158,14 @@ describe('Role routes', () => {
       await insertUsers([userOne]);
       const accessToken = await getAccessToken(userOne);
 
+      const { navigationPermissions, apiPermissions } = createTestPermissions();
+
       // First create a role
       const newRole = {
         name: 'Test Role',
         description: 'Test role description',
-        navigationPermissions: {
-          dashboard: true,
-        },
-        apiPermissions: {
-          getUsers: false,
-        },
+        navigationPermissions,
+        apiPermissions,
       };
 
       const createRes = await request(app)

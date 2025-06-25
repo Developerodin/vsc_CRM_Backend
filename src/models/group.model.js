@@ -18,6 +18,11 @@ const groupSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Client'
     }],
+    branch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      required: true,
+    },
     sortOrder: {
       type: Number,
       required: true,

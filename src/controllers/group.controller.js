@@ -5,14 +5,16 @@ import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
 
 const createGroup = catchAsync(async (req, res) => {
-  const group = await groupService.createGroup(req.body);
+  const group = await groupService.createGroup(req.body, req.user);
   res.status(httpStatus.CREATED).send(group);
 });
 
 const getGroups = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'numberOfClients']);
+  const filter = pick(req.query, ['name', 'numberOfClients', 'branch']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await groupService.queryGroups(filter, options);
+  
+  // Add branch filtering based on user's access
+  const result = await groupService.queryGroups(filter, options, req.user);
   res.send(result);
 });
 
@@ -25,7 +27,7 @@ const getGroup = catchAsync(async (req, res) => {
 });
 
 const updateGroup = catchAsync(async (req, res) => {
-  const group = await groupService.updateGroupById(req.params.groupId, req.body);
+  const group = await groupService.updateGroupById(req.params.groupId, req.body, req.user);
   res.send(group);
 });
 

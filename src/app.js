@@ -13,6 +13,7 @@ import { authLimiter } from './middlewares/rateLimiter.js';
 import routes from './routes/v1/index.js';
 import { errorConverter, errorHandler } from './middlewares/error.js';
 import ApiError from './utils/ApiError.js';
+import { setupBranchAccess } from './scripts/setup-branch-access.js';
 
 const app = express();
 
@@ -58,6 +59,7 @@ app.use((req, res, next) => {
   next(new ApiError(httpStatus.NOT_FOUND, 'Not found'));
 });
 
+// setupBranchAccess(); 
 // convert error to ApiError, if needed
 app.use(errorConverter);
 

@@ -16,8 +16,16 @@ const register = catchAsync(async (req, res) => {
 
 const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
+  console.log("=== LOGIN DEBUG ===");
+  console.log("Login attempt for email:", email);
+  
   const user = await loginUserWithEmailAndPassword(email, password);
+  console.log("User authenticated:", user.email);
+  
   const tokens = await generateAuthTokens(user);
+  console.log("Generated access token:", tokens.access.token.substring(0, 20) + "...");
+  console.log("Token expires:", tokens.access.expires);
+  
   res.send({ user, tokens });
 });
 

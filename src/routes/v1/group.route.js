@@ -8,26 +8,26 @@ const router = express.Router();
 
 router
   .route('/')
-  .post(validate(groupValidation.createGroup), groupController.createGroup)
-  .get(validate(groupValidation.getGroups), groupController.getGroups);
+  .post(auth('manageGroups'), validate(groupValidation.createGroup), groupController.createGroup)
+  .get(auth('getGroups'), validate(groupValidation.getGroups), groupController.getGroups);
 
 router
   .route('/bulk-import')
-  .post(validate(groupValidation.bulkImportGroups), groupController.bulkImportGroups);
+  .post(auth('manageGroups'), validate(groupValidation.bulkImportGroups), groupController.bulkImportGroups);
 
 router
   .route('/:groupId')
-  .get(validate(groupValidation.getGroup), groupController.getGroup)
-  .patch(validate(groupValidation.updateGroup), groupController.updateGroup)
-  .delete(validate(groupValidation.deleteGroup), groupController.deleteGroup);
+  .get(auth('getGroups'), validate(groupValidation.getGroup), groupController.getGroup)
+  .patch(auth('manageGroups'), validate(groupValidation.updateGroup), groupController.updateGroup)
+  .delete(auth('manageGroups'), validate(groupValidation.deleteGroup), groupController.deleteGroup);
 
 router
   .route('/:groupId/clients')
-  .get(validate(groupValidation.getGroup), groupController.getClientsByGroup)
-  .post(validate(groupValidation.addClientToGroup), groupController.addClientToGroup);
+  .get(auth('getGroups'), validate(groupValidation.getGroup), groupController.getClientsByGroup)
+  .post(auth('manageGroups'), validate(groupValidation.addClientToGroup), groupController.addClientToGroup);
 
 router
   .route('/:groupId/clients/:clientId')
-  .delete(validate(groupValidation.removeClientFromGroup), groupController.removeClientFromGroup);
+  .delete(auth('manageGroups'), validate(groupValidation.removeClientFromGroup), groupController.removeClientFromGroup);
 
 export default router; 
