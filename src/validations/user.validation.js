@@ -15,6 +15,7 @@ const createUser = {
 const getUsers = {
   query: Joi.object().keys({
     name: Joi.string(),
+    email: Joi.string(),
     role: Joi.string().custom(objectId),
     assignedBranch: Joi.string().custom(objectId),
     sortBy: Joi.string(),

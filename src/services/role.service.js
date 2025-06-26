@@ -24,6 +24,9 @@ const createRole = async (roleBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryRoles = async (filter, options) => {
+  if(filter.name) {
+    filter.name = { $regex: filter.name, $options: 'i' };
+  }
   const roles = await Role.paginate(filter, {
     ...options,
     populate: 'createdBy',

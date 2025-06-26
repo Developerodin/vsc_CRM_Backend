@@ -26,6 +26,14 @@ const createUser = async (userBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryUsers = async (filter, options) => {
+  if(filter.name) {
+    filter.name = { $regex: filter.name, $options: 'i' };
+  }
+
+  if(filter.email) {
+    filter.email = { $regex: filter.email, $options: 'i' };
+  }
+
   const users = await User.paginate(filter, {
     ...options,
     populate: 'role assignedBranch',

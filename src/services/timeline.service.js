@@ -272,6 +272,10 @@ const queryTimelines = async (filter, options, user) => {
     delete mongoFilter.endDate;
   }
 
+  if(mongoFilter.startDate || mongoFilter.endDate) {
+    delete mongoFilter.today;
+  }
+
   // Apply branch filtering based on user's access
   if (user && user.role) {
     // If specific branch is requested in filter
