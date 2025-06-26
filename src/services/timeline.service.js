@@ -304,24 +304,47 @@ const queryTimelines = async (filter, options, user) => {
     
     const dateConditions = [];
 
-    if(mongoFilter.startDate && mongoFilter.endDate) {
+    // Case 1: Both startDate and endDate are provided
+    if (mongoFilter.startDate && mongoFilter.endDate) {
       dateConditions.push({
         $and: [
+          { startDate: { $exists: true, $ne: null, $ne: "" } },
+          { endDate: { $exists: true, $ne: null, $ne: "" } },
           { startDate: { $lte: endOfDay } },
           { endDate: { $gte: startOfDay } }
         ]
       });
-    } else if(mongoFilter.startDate && !mongoFilter.endDate) {
+    }
+    // Case 2: Only startDate is provided - timeline starts before or on today
+    else if (mongoFilter.startDate && !mongoFilter.endDate) {
       dateConditions.push({
-        startDate: { $lte: endOfDay }
+        $and: [
+          { startDate: { $exists: true, $ne: null, $ne: "" } },
+          { startDate: { $lte: endOfDay } }
+        ]
       });
-    } else if(!mongoFilter.startDate && mongoFilter.endDate) {
+    }
+    // Case 3: Only endDate is provided - timeline ends after or on today
+    else if (!mongoFilter.startDate && mongoFilter.endDate) {
       dateConditions.push({
-        endDate: { $gte: startOfDay }
+        $and: [
+          { endDate: { $exists: true, $ne: null, $ne: "" } },
+          { endDate: { $gte: startOfDay } }
+        ]
       });
     }
 
-    if(dateConditions.length > 0) mongoFilter.$or = dateConditions;
+    dateConditions.push({
+      $or: [
+        { startDate: { $ne: "", $ne: null } },
+        { endDate: { $ne: "", $ne: null } }
+      ]
+    });
+
+    if (dateConditions.length > 0) {
+      mongoFilter.$or = dateConditions;
+    }
+    
     delete mongoFilter.today;
   } else if (mongoFilter.today === 'false' || mongoFilter.today === '') {
     delete mongoFilter.today;
