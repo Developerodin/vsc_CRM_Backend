@@ -843,6 +843,26 @@ const bulkImportTimelines = async (timelines) => {
   return results;
 };
 
+/**
+ * Update UDIN array for a timeline
+ * @param {ObjectId} timelineId
+ * @param {Array} udinArray
+ * @param {Object} user - User object with role information (optional)
+ * @returns {Promise<Timeline>}
+ */
+const updateTimelineUdin = async (timelineId, udinArray, user = null) => {
+  const timeline = await getTimelineById(timelineId);
+  // Optionally, validate branch access if needed
+  if (user && user.role && timeline.branch) {
+    if (!hasBranchAccess(user.role, timeline.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+  }
+  timeline.udin = udinArray;
+  await timeline.save();
+  return timeline;
+};
+
 export {
   createTimeline,
   queryTimelines,
@@ -850,4 +870,5 @@ export {
   updateTimelineById,
   deleteTimelineById,
   bulkImportTimelines,
+  updateTimelineUdin,
 }; 

@@ -96,11 +96,25 @@ const timelineSchema = mongoose.Schema(
       type: frequencyConfigSchema,
       required: true,
     },
-    udin: {
-      type: String,
-      required: false,
-      trim: true,
-    },
+    udin: [
+      {
+        fieldName: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        udin: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        frequency: {
+          type: String,
+          enum: ['Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'],
+          required: true,
+        },
+      },
+    ],
     turnover: {
       type: Number,
       required: false,

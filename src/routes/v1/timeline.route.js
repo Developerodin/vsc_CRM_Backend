@@ -21,4 +21,9 @@ router
   .patch(auth('manageTimelines'), validate(timelineValidation.updateTimeline), timelineController.updateTimeline)
   .delete(auth('manageTimelines'), validate(timelineValidation.deleteTimeline), timelineController.deleteTimeline);
 
+router
+  .route('/:timelineId/udin')
+  .get(auth('getTimelines'), timelineController.getTimelineUdin)
+  .patch(auth('manageTimelines'), validate(timelineValidation.updateTimelineUdin), timelineController.updateTimelineUdin);
+
 export default router; 

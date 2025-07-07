@@ -41,6 +41,21 @@ const bulkImportTimelines = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+// Get UDIN array for a timeline
+const getTimelineUdin = catchAsync(async (req, res) => {
+  const timeline = await timelineService.getTimelineById(req.params.timelineId);
+  if (!timeline) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Timeline not found');
+  }
+  res.send({ udin: timeline.udin });
+});
+
+// Update UDIN array for a timeline
+const updateTimelineUdin = catchAsync(async (req, res) => {
+  const timeline = await timelineService.updateTimelineUdin(req.params.timelineId, req.body.udin, req.user);
+  res.send({ udin: timeline.udin });
+});
+
 export {
   createTimeline,
   getTimelines,
@@ -48,4 +63,6 @@ export {
   updateTimeline,
   deleteTimeline,
   bulkImportTimelines,
+  getTimelineUdin,
+  updateTimelineUdin,
 }; 

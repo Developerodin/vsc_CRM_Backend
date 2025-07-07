@@ -71,7 +71,15 @@ const createTimeline = {
     status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').required(),
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').required(),
     frequencyConfig: Joi.object().required(),
-    udin: Joi.string().trim().allow(''),
+    udin: Joi.array()
+      .items(
+        Joi.object({
+          fieldName: Joi.string().trim().required(),
+          udin: Joi.string().trim().required(),
+          frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').required(),
+        })
+      )
+      .optional(),
     turnover: Joi.number(),
     assignedMember: Joi.string().custom(objectId).required(),
     branch: Joi.string().custom(objectId).required(),
@@ -122,7 +130,15 @@ const updateTimeline = {
       status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
       frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
       frequencyConfig: Joi.object(),
-      udin: Joi.string().trim().allow(''),
+      udin: Joi.array()
+        .items(
+          Joi.object({
+            fieldName: Joi.string().trim().required(),
+            udin: Joi.string().trim().required(),
+            frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').required(),
+          })
+        )
+        .optional(),
       turnover: Joi.number(),
       assignedMember: Joi.string().custom(objectId),
       branch: Joi.string().custom(objectId),
@@ -159,7 +175,15 @@ const bulkImportTimelines = {
           status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
           frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').required(),
           frequencyConfig: Joi.object().required(),
-          udin: Joi.string().trim().allow(''),
+          udin: Joi.array()
+            .items(
+              Joi.object({
+                fieldName: Joi.string().trim().required(),
+                udin: Joi.string().trim().required(),
+                frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').required(),
+              })
+            )
+            .optional(),
           turnover: Joi.number(),
           assignedMember: Joi.string().custom(objectId).required(),
           branch: Joi.string().custom(objectId).required(),
@@ -180,6 +204,23 @@ const bulkImportTimelines = {
   }),
 };
 
+const updateTimelineUdin = {
+  params: Joi.object().keys({
+    timelineId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    udin: Joi.array()
+      .items(
+        Joi.object({
+          fieldName: Joi.string().trim().required(),
+          udin: Joi.string().trim().required(),
+          frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').required(),
+        })
+      )
+      .required(),
+  }),
+};
+
 export {
   createTimeline,
   getTimelines,
@@ -187,4 +228,5 @@ export {
   updateTimeline,
   deleteTimeline,
   bulkImportTimelines,
+  updateTimelineUdin,
 };
