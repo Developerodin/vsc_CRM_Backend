@@ -7,6 +7,7 @@ import * as clientController from './client.controller.js';
 import * as groupController from './group.controller.js';
 import * as roleController from './role.controller.js';
 import * as timelineController from './timeline.controller.js';
+import * as dashboardController from './dashboard.controller.js';
 
 export {
   authController,
@@ -18,5 +19,6 @@ export {
   groupController,
   roleController,
   timelineController,
+  dashboardController,
 };
 

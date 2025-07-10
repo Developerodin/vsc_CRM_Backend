@@ -7,6 +7,7 @@ import * as clientValidation from './client.validation.js';
 import * as groupValidation from './group.validation.js';
 import * as roleValidation from './role.validation.js';
 import * as timelineValidation from './timeline.validation.js';
+import * as dashboardValidation from './dashboard.validation.js';
 
 export {
   authValidation,
@@ -18,4 +19,5 @@ export {
   groupValidation,
   roleValidation,
   timelineValidation,
+  dashboardValidation,
 };
