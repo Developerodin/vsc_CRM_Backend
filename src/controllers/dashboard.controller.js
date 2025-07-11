@@ -8,7 +8,8 @@ const getTotalActivities = catchAsync(async (req, res) => {
 });
 
 const getTotalTeams = catchAsync(async (req, res) => {
-  const count = await dashboardService.getTotalTeams(req.user);
+  const { branchId } = req.query;
+  const count = await dashboardService.getTotalTeams(req.user, branchId);
   res.status(httpStatus.OK).send({ total: count });
 });
 
@@ -18,12 +19,14 @@ const getTotalBranches = catchAsync(async (req, res) => {
 });
 
 const getTotalClients = catchAsync(async (req, res) => {
-  const count = await dashboardService.getTotalClients(req.user);
+  const { branchId } = req.query;
+  const count = await dashboardService.getTotalClients(req.user, branchId);
   res.status(httpStatus.OK).send({ total: count });
 });
 
 const getTotalOngoingTasks = catchAsync(async (req, res) => {
-  const count = await dashboardService.getTotalOngoingTasks(req.user);
+  const { branchId } = req.query;
+  const count = await dashboardService.getTotalOngoingTasks(req.user, branchId);
   res.status(httpStatus.OK).send({ total: count });
 });
 
@@ -34,9 +37,21 @@ const getTimelineCountsByBranch = catchAsync(async (req, res) => {
 });
 
 const getAssignedTaskCounts = catchAsync(async (req, res) => {
-  const { branchId, startDate, endDate } = req.query;
-  const count = await dashboardService.getAssignedTaskCounts(req.user, branchId, startDate, endDate);
-  res.status(httpStatus.OK).send({ count });
+  const { branchId } = req.query;
+  const data = await dashboardService.getAssignedTaskCounts(req.user, branchId);
+  res.status(httpStatus.OK).send(data);
+});
+
+const getTopClients = catchAsync(async (req, res) => {
+  const { branchId } = req.query;
+  const data = await dashboardService.getTopClients(req.user, branchId);
+  res.status(httpStatus.OK).send(data);
+});
+
+const getTopActivities = catchAsync(async (req, res) => {
+  const { branchId } = req.query;
+  const data = await dashboardService.getTopActivities(req.user, branchId);
+  res.status(httpStatus.OK).send(data);
 });
 
 export { 
@@ -46,5 +61,7 @@ export {
   getTotalClients, 
   getTotalOngoingTasks,
   getTimelineCountsByBranch,
-  getAssignedTaskCounts
+  getAssignedTaskCounts,
+  getTopClients,
+  getTopActivities
 }; 

@@ -1,4 +1,5 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import Activity from '../models/activity.model.js';
 import TeamMember from '../models/teamMember.model.js';
 import Branch from '../models/branch.model.js';
@@ -18,29 +19,28 @@ const getTotalActivities = async () => {
 };
 
 /**
- * Get total count of team members
- * @param {Object} user - User object with role information (optional)
+ * Get total count of team members for a specific branch
+ * @param {Object} user - User object with role information
+ * @param {string} branchId - Branch ID to get count for
  * @returns {Promise<number>}
  */
-const getTotalTeams = async (user = null) => {
-  let filter = {};
-  
-  // Apply branch filtering based on user's access
-  if (user && user.role) {
-    const allowedBranchIds = getUserBranchIds(user.role);
-    
-    if (allowedBranchIds === null) {
-      // User has access to all branches, no filtering needed
-    } else if (allowedBranchIds.length > 0) {
-      // Filter by user's allowed branches
-      filter.branch = { $in: allowedBranchIds };
-    } else {
-      // User has no branch access
-      throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
-    }
+const getTotalTeams = async (user, branchId) => {
+  // Check if user has access to the specified branch
+  if (!user.role) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
+  }
+
+  if (!hasBranchAccess(user.role, branchId)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  }
+
+  // Verify the branch exists
+  const branch = await Branch.findById(branchId);
+  if (!branch) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
   }
   
-  const count = await TeamMember.countDocuments(filter);
+  const count = await TeamMember.countDocuments({ branch: branchId });
   return count;
 };
 
@@ -72,56 +72,54 @@ const getTotalBranches = async (user = null) => {
 };
 
 /**
- * Get total count of clients
- * @param {Object} user - User object with role information (optional)
+ * Get total count of clients for a specific branch
+ * @param {Object} user - User object with role information
+ * @param {string} branchId - Branch ID to get count for
  * @returns {Promise<number>}
  */
-const getTotalClients = async (user = null) => {
-  let filter = {};
-  
-  // Apply branch filtering based on user's access
-  if (user && user.role) {
-    const allowedBranchIds = getUserBranchIds(user.role);
-    
-    if (allowedBranchIds === null) {
-      // User has access to all branches, no filtering needed
-    } else if (allowedBranchIds.length > 0) {
-      // Filter by user's allowed branches
-      filter.branch = { $in: allowedBranchIds };
-    } else {
-      // User has no branch access
-      throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
-    }
+const getTotalClients = async (user, branchId) => {
+  // Check if user has access to the specified branch
+  if (!user.role) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
+  }
+
+  if (!hasBranchAccess(user.role, branchId)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  }
+
+  // Verify the branch exists
+  const branch = await Branch.findById(branchId);
+  if (!branch) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
   }
   
-  const count = await Client.countDocuments(filter);
+  const count = await Client.countDocuments({ branch: branchId });
   return count;
 };
 
 /**
- * Get total count of ongoing tasks
- * @param {Object} user - User object with role information (optional)
+ * Get total count of ongoing tasks for a specific branch
+ * @param {Object} user - User object with role information
+ * @param {string} branchId - Branch ID to get count for
  * @returns {Promise<number>}
  */
-const getTotalOngoingTasks = async (user = null) => {
-  let filter = { status: 'ongoing' };
-  
-  // Apply branch filtering based on user's access
-  if (user && user.role) {
-    const allowedBranchIds = getUserBranchIds(user.role);
-    
-    if (allowedBranchIds === null) {
-      // User has access to all branches, no filtering needed
-    } else if (allowedBranchIds.length > 0) {
-      // Filter by user's allowed branches
-      filter.branch = { $in: allowedBranchIds };
-    } else {
-      // User has no branch access
-      throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
-    }
+const getTotalOngoingTasks = async (user, branchId) => {
+  // Check if user has access to the specified branch
+  if (!user.role) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
+  }
+
+  if (!hasBranchAccess(user.role, branchId)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  }
+
+  // Verify the branch exists
+  const branch = await Branch.findById(branchId);
+  if (!branch) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
   }
   
-  const count = await Timeline.countDocuments(filter);
+  const count = await Timeline.countDocuments({ branch: branchId, status: 'ongoing' });
   return count;
 };
 
@@ -171,14 +169,12 @@ const getTimelineCountsByBranch = async (user, branchId) => {
 };
 
 /**
- * Get count of tasks with startDate in the given date range for a specific branch
+ * Get count of tasks with startDate in the past twelve months for a specific branch
  * @param {Object} user - User object with role information
  * @param {string} branchId - Branch ID to get counts for
- * @param {Date} startDate - Start date of the range
- * @param {Date} endDate - End date of the range
- * @returns {Promise<number>}
+ * @returns {Promise<Object>}
  */
-const getAssignedTaskCounts = async (user, branchId, startDate, endDate) => {
+const getAssignedTaskCounts = async (user, branchId) => {
   // Check if user has access to the specified branch
   if (!user.role) {
     throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
@@ -194,58 +190,164 @@ const getAssignedTaskCounts = async (user, branchId, startDate, endDate) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
   }
 
-  // Parse and validate dates
-  const startDateValue = startDate.toISOString();
-  const endDateValue = endDate.toISOString();
+  // Calculate the past 12 months
+  const months = [];
+  const assigned = [];
   
-  let startYear, startMonth, startDay;
-  let endYear, endMonth, endDay;
-  
-  if (startDateValue.includes('T')) {
-    const startDatePart = startDateValue.split('T')[0];
-    [startYear, startMonth, startDay] = startDatePart.split('-').map(Number);
-  } else {
-    [startYear, startMonth, startDay] = startDateValue.split('-').map(Number);
+  for (let i = 11; i >= 0; i--) {
+    const currentDate = new Date();
+    const targetDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+    
+    // Calculate start and end of the month
+    const monthStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1, 0, 0, 0, 0);
+    const monthEnd = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    
+    // Add month to months array (Aug 24 format)
+    const monthName = targetDate.toLocaleString('default', { month: 'short' });
+    const year = targetDate.getFullYear().toString().slice(-2);
+    months.push(`${monthName} ${year}`);
+    
+    // Build filter for tasks with startDate in this month
+    const filter = {
+      branch: branchId,
+      startDate: {
+        $exists: true,
+        $ne: null,
+        $ne: "",
+        $gte: monthStart,
+        $lte: monthEnd
+      }
+    };
+    
+    // Count tasks for this month
+    const monthCount = await Timeline.countDocuments(filter);
+    assigned.push(monthCount);
   }
   
-  if (endDateValue.includes('T')) {
-    const endDatePart = endDateValue.split('T')[0];
-    [endYear, endMonth, endDay] = endDatePart.split('-').map(Number);
-  } else {
-    [endYear, endMonth, endDay] = endDateValue.split('-').map(Number);
-  }
-  
-  // Validate the dates
-  const tempStartDate = new Date(startYear, startMonth - 1, startDay);
-  if (tempStartDate.getFullYear() !== startYear || tempStartDate.getMonth() !== startMonth - 1 || tempStartDate.getDate() !== startDay) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid startDate: ${startDateValue}. Please use YYYY-MM-DD format.`);
-  }
-  
-  const tempEndDate = new Date(endYear, endMonth - 1, endDay);
-  if (tempEndDate.getFullYear() !== endYear || tempEndDate.getMonth() !== endMonth - 1 || tempEndDate.getDate() !== endDay) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid endDate: ${endDateValue}. Please use YYYY-MM-DD format.`);
-  }
-  
-  // Create date objects for filtering
-  const filterStartDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
-  const filterEndDate = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
-  
-  // Build the filter for tasks with startDate in the given range
-  const filter = {
-    branch: branchId,
-    startDate: {
-      $exists: true,
-      $ne: null,
-      $ne: "",
-      $gte: filterStartDate,
-      $lte: filterEndDate
-    }
+  return {
+    assigned,
+    months
   };
-  
-  // Count tasks that have startDate in the specified range
-  const count = await Timeline.countDocuments(filter);
-  
-  return count;
+};
+
+/**
+ * Get top 5 clients based on timeline count for a specific branch
+ * @param {Object} user - User object with role information
+ * @param {string} branchId - Branch ID to get top clients for
+ * @returns {Promise<Array>}
+ */
+const getTopClients = async (user, branchId) => {
+  // Check if user has access to the specified branch
+  if (!user.role) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
+  }
+
+  if (!hasBranchAccess(user.role, branchId)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  }
+
+  // Verify the branch exists
+  const branch = await Branch.findById(branchId);
+  if (!branch) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
+  }
+
+  // Aggregate to get top 5 clients by timeline count
+  const topClients = await Timeline.aggregate([
+    { $match: { branch: new mongoose.Types.ObjectId(branchId) } },
+    {
+      $group: {
+        _id: '$client',
+        timelineCount: { $sum: 1 }
+      }
+    },
+    { $sort: { timelineCount: -1 } },
+    { $limit: 5 },
+    {
+      $lookup: {
+        from: 'clients',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'clientInfo'
+      }
+    },
+    { $unwind: '$clientInfo' },
+    {
+      $project: {
+        _id: 0,
+        name: '$clientInfo.name',
+        frequency: '$timelineCount'
+      }
+    }
+  ]);
+
+  // Add ranking manually
+  const topClientsWithRanking = topClients.map((client, index) => ({
+    ...client,
+    ranking: index + 1
+  }));
+
+  return topClientsWithRanking;
+};
+
+/**
+ * Get top 5 activities based on timeline count for a specific branch
+ * @param {Object} user - User object with role information
+ * @param {string} branchId - Branch ID to get top activities for
+ * @returns {Promise<Array>}
+ */
+const getTopActivities = async (user, branchId) => {
+  // Check if user has access to the specified branch
+  if (!user.role) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
+  }
+
+  if (!hasBranchAccess(user.role, branchId)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  }
+
+  // Verify the branch exists
+  const branch = await Branch.findById(branchId);
+  if (!branch) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
+  }
+
+  // Aggregate to get top 5 activities by timeline count
+  const topActivities = await Timeline.aggregate([
+    { $match: { branch: new mongoose.Types.ObjectId(branchId) } },
+    {
+      $group: {
+        _id: '$activity',
+        timelineCount: { $sum: 1 }
+      }
+    },
+    { $sort: { timelineCount: -1 } },
+    { $limit: 5 },
+    {
+      $lookup: {
+        from: 'activities',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'activityInfo'
+      }
+    },
+    { $unwind: '$activityInfo' },
+    {
+      $project: {
+        _id: 0,
+        name: '$activityInfo.name',
+        frequency: '$timelineCount'
+      }
+    }
+  ]);
+
+  // Add ranking manually
+  const topActivitiesWithRanking = topActivities.map((activity, index) => ({
+    ...activity,
+    ranking: index + 1
+  }));
+
+  return topActivitiesWithRanking;
 };
 
 export { 
@@ -255,5 +357,7 @@ export {
   getTotalClients, 
   getTotalOngoingTasks,
   getTimelineCountsByBranch,
-  getAssignedTaskCounts
+  getAssignedTaskCounts,
+  getTopClients,
+  getTopActivities
 }; 
