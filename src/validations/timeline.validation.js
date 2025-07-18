@@ -221,6 +221,17 @@ const updateTimelineUdin = {
   }),
 };
 
+const updateFrequencyStatus = {
+  params: Joi.object().keys({
+    timelineId: Joi.string().custom(objectId).required(),
+    period: Joi.string().required(),
+  }),
+  body: Joi.object().keys({
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').required(),
+    notes: Joi.string().trim().optional(),
+  }),
+};
+
 export {
   createTimeline,
   getTimelines,
@@ -229,4 +240,5 @@ export {
   deleteTimeline,
   bulkImportTimelines,
   updateTimelineUdin,
+  updateFrequencyStatus,
 };

@@ -56,6 +56,40 @@ const updateTimelineUdin = catchAsync(async (req, res) => {
   res.send({ udin: timeline.udin });
 });
 
+// Get frequency status for a timeline
+const getFrequencyStatus = catchAsync(async (req, res) => {
+  const frequencyStatus = await timelineService.getFrequencyStatus(req.params.timelineId, req.user);
+  res.send(frequencyStatus);
+});
+
+// Update frequency status for a specific period
+const updateFrequencyStatus = catchAsync(async (req, res) => {
+  try {
+    const timeline = await timelineService.updateFrequencyStatus(
+      req.params.timelineId, 
+      req.params.period, 
+      req.body, 
+      req.user
+    );
+    res.send(timeline);
+  } catch (error) {
+    // Provide more specific error messages
+    if (error.message.includes('Frequency period')) {
+      throw new ApiError(httpStatus.NOT_FOUND, error.message);
+    } else if (error.message.includes('validation failed')) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid frequency status data. Please check the period and status values.');
+    } else {
+      throw error;
+    }
+  }
+});
+
+// Initialize or regenerate frequency status for a timeline
+const initializeFrequencyStatus = catchAsync(async (req, res) => {
+  const timeline = await timelineService.initializeOrRegenerateFrequencyStatus(req.params.timelineId, req.user);
+  res.send(timeline);
+});
+
 export {
   createTimeline,
   getTimelines,
@@ -65,4 +99,7 @@ export {
   bulkImportTimelines,
   getTimelineUdin,
   updateTimelineUdin,
+  getFrequencyStatus,
+  updateFrequencyStatus,
+  initializeFrequencyStatus,
 }; 

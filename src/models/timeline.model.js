@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import toJSON from './plugins/toJSON.plugin.js';
 import paginate from './plugins/paginate.plugin.js';
+import { generateFrequencyPeriods } from '../utils/frequencyGenerator.js';
 
 // Frequency configuration schema based on frequency type
 const frequencyConfigSchema = mongoose.Schema({
@@ -70,6 +71,32 @@ const frequencyConfigSchema = mongoose.Schema({
   },
 }, { _id: false });
 
+// Frequency status schema for tracking individual frequency periods
+const frequencyStatusSchema = mongoose.Schema({
+  period: {
+    type: String,
+    required: true,
+    // For Hourly: "2024-01-15-14" (YYYY-MM-DD-HH)
+    // For Daily: "2024-01-15" (YYYY-MM-DD)
+    // For Weekly: "2024-W03" (YYYY-WweekNumber)
+    // For Monthly: "2024-01" (YYYY-MM)
+    // For Quarterly: "2024-Q1" (YYYY-QquarterNumber)
+    // For Yearly: "2024-January" (YYYY-MonthName)
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'delayed', 'ongoing'],
+    default: 'pending',
+  },
+  completedAt: {
+    type: Date,
+  },
+  notes: {
+    type: String,
+    trim: true,
+  },
+}, { _id: false });
+
 const timelineSchema = mongoose.Schema(
   {
     activity: {
@@ -86,6 +113,7 @@ const timelineSchema = mongoose.Schema(
       type: String,
       enum: ['pending', 'completed', 'delayed', 'ongoing'],
       required: true,
+      default: 'pending',
     },
     frequency: {
       type: String,
@@ -96,6 +124,7 @@ const timelineSchema = mongoose.Schema(
       type: frequencyConfigSchema,
       required: true,
     },
+    frequencyStatus: [frequencyStatusSchema],
     udin: [
       {
         fieldName: {
@@ -142,6 +171,125 @@ const timelineSchema = mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Pre-save middleware to generate frequency status and update overall status
+timelineSchema.pre('save', function(next) {
+  // Generate frequency status if frequency, frequencyConfig, startDate, and endDate are present
+  if (this.frequency && this.frequencyConfig && this.startDate && this.endDate) {
+    // Check if this is a new document or if frequency-related fields have changed
+    const isNew = this.isNew;
+    const frequencyChanged = this.isModified('frequency') || this.isModified('frequencyConfig') || 
+                           this.isModified('startDate') || this.isModified('endDate');
+    
+    if (isNew || frequencyChanged) {
+      // Generate new frequency status entries
+      const newFrequencyStatus = generateFrequencyPeriods(
+        this.frequency,
+        this.frequencyConfig,
+        this.startDate,
+        this.endDate
+      );
+      
+      // If this is an update and we have existing frequency status, preserve completed/delayed/ongoing status
+      if (!isNew && this.frequencyStatus && this.frequencyStatus.length > 0) {
+        const existingStatusMap = new Map();
+        this.frequencyStatus.forEach(fs => {
+          if (fs.status !== 'pending') {
+            existingStatusMap.set(fs.period, {
+              status: fs.status,
+              completedAt: fs.completedAt,
+              notes: fs.notes
+            });
+          }
+        });
+        
+        // Merge existing status with new periods
+        newFrequencyStatus.forEach(fs => {
+          const existing = existingStatusMap.get(fs.period);
+          if (existing) {
+            fs.status = existing.status;
+            fs.completedAt = existing.completedAt;
+            fs.notes = existing.notes;
+          }
+        });
+      }
+      
+      this.frequencyStatus = newFrequencyStatus;
+    }
+  }
+  
+  // Update overall status based on frequency status
+  this.updateOverallStatus();
+  next();
+});
+
+// Instance method to regenerate frequency status
+timelineSchema.methods.regenerateFrequencyStatus = function() {
+  if (this.frequency && this.frequencyConfig && this.startDate && this.endDate) {
+    this.frequencyStatus = generateFrequencyPeriods(
+      this.frequency,
+      this.frequencyConfig,
+      this.startDate,
+      this.endDate
+    );
+    return this.save();
+  }
+  return Promise.reject(new Error('Missing required fields for frequency status generation'));
+};
+
+// Instance method to update a specific frequency status period
+timelineSchema.methods.updateFrequencyStatus = function(period, status, notes = '') {
+  const frequencyStatus = this.frequencyStatus.find(fs => fs.period === period);
+  if (!frequencyStatus) {
+    return Promise.reject(new Error(`Frequency status period '${period}' not found`));
+  }
+  
+  frequencyStatus.status = status;
+  frequencyStatus.notes = notes;
+  
+  if (status === 'completed') {
+    frequencyStatus.completedAt = new Date();
+  } else {
+    frequencyStatus.completedAt = null;
+  }
+  
+  // Update overall timeline status based on frequency status
+  this.updateOverallStatus();
+  
+  return this.save();
+};
+
+// Instance method to update overall status based on frequency status
+timelineSchema.methods.updateOverallStatus = function() {
+  if (this.frequencyStatus && this.frequencyStatus.length > 0) {
+    const allCompleted = this.frequencyStatus.every(fs => fs.status === 'completed');
+    const anyDelayed = this.frequencyStatus.some(fs => fs.status === 'delayed');
+    const anyOngoing = this.frequencyStatus.some(fs => fs.status === 'ongoing');
+    
+    if (allCompleted) {
+      this.status = 'completed';
+    } else if (anyDelayed) {
+      this.status = 'delayed';
+    } else if (anyOngoing) {
+      this.status = 'ongoing';
+    } else {
+      this.status = 'pending';
+    }
+  }
+};
+
+// Static method to regenerate frequency status for multiple timelines
+timelineSchema.statics.regenerateAllFrequencyStatus = function() {
+  return this.find({
+    frequency: { $exists: true },
+    frequencyConfig: { $exists: true },
+    startDate: { $exists: true },
+    endDate: { $exists: true }
+  }).then(timelines => {
+    const promises = timelines.map(timeline => timeline.regenerateFrequencyStatus());
+    return Promise.all(promises);
+  });
+};
 
 // add plugin that converts mongoose to json
 timelineSchema.plugin(toJSON);

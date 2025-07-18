@@ -6,6 +6,28 @@ import Activity from '../models/activity.model.js';
 import Client from '../models/client.model.js';
 import TeamMember from '../models/teamMember.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
+import { generateFrequencyPeriods } from '../utils/frequencyGenerator.js';
+
+
+
+/**
+ * Initialize frequency status for a timeline
+ * @param {Object} timeline - Timeline object
+ * @returns {Array} - Array of frequency status objects
+ */
+const initializeFrequencyStatus = (timeline) => {
+  if (!timeline.startDate || !timeline.endDate) {
+    return [];
+  }
+  
+  // Use the utility function which already returns the correct format
+  return generateFrequencyPeriods(
+    timeline.frequency,
+    timeline.frequencyConfig,
+    timeline.startDate,
+    timeline.endDate
+  );
+};
 
 /**
  * Validate if activity ID exists
@@ -225,10 +247,19 @@ const createTimeline = async (timelineBody, user = null) => {
   }
 
   // Create separate timeline entries for each client
-  const timelinesToCreate = clientArray.map(clientId => ({
-    ...cleanedTimelineBody,
-    client: clientId
-  }));
+  const timelinesToCreate = clientArray.map(clientId => {
+    const timelineData = {
+      ...cleanedTimelineBody,
+      client: clientId
+    };
+    
+    // Initialize frequency status if start and end dates are provided
+    if (timelineData.startDate && timelineData.endDate) {
+      timelineData.frequencyStatus = initializeFrequencyStatus(timelineData);
+    }
+    
+    return timelineData;
+  });
 
   const createdTimelines = await Timeline.insertMany(timelinesToCreate);
   
@@ -863,6 +894,131 @@ const updateTimelineUdin = async (timelineId, udinArray, user = null) => {
   return timeline;
 };
 
+/**
+ * Validate and clean frequency status array
+ * @param {Array} frequencyStatus - Frequency status array
+ * @returns {Array} - Cleaned frequency status array
+ */
+const validateAndCleanFrequencyStatus = (frequencyStatus) => {
+  if (!Array.isArray(frequencyStatus)) {
+    return [];
+  }
+  
+  return frequencyStatus.filter(fs => 
+    fs && 
+    typeof fs === 'object' && 
+    fs.period && 
+    typeof fs.period === 'string' &&
+    fs.status && 
+    ['pending', 'completed', 'delayed', 'ongoing'].includes(fs.status)
+  );
+};
+
+/**
+ * Update frequency status for a specific period
+ * @param {ObjectId} timelineId
+ * @param {string} period - Period identifier
+ * @param {Object} statusData - Status update data
+ * @param {Object} user - User object with role information (optional)
+ * @returns {Promise<Timeline>}
+ */
+const updateFrequencyStatus = async (timelineId, period, statusData, user = null) => {
+  const timeline = await getTimelineById(timelineId);
+  
+  // Validate branch access if needed
+  if (user && user.role && timeline.branch) {
+    if (!hasBranchAccess(user.role, timeline.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+  }
+  
+  // Clean and validate frequency status array
+  timeline.frequencyStatus = validateAndCleanFrequencyStatus(timeline.frequencyStatus);
+  
+  // Find the frequency status entry for the specified period
+  const frequencyStatusIndex = timeline.frequencyStatus.findIndex(fs => fs.period === period);
+  
+  if (frequencyStatusIndex === -1) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Frequency period '${period}' not found for this timeline`);
+  }
+  
+  // Update the frequency status
+  const updateData = {
+    status: statusData.status,
+    notes: statusData.notes || timeline.frequencyStatus[frequencyStatusIndex].notes
+  };
+  
+  // Set completedAt if status is being set to completed
+  if (statusData.status === 'completed') {
+    updateData.completedAt = new Date();
+  } else {
+    updateData.completedAt = null;
+  }
+  
+  // Ensure we preserve the period field and update other fields
+  timeline.frequencyStatus[frequencyStatusIndex] = {
+    period: timeline.frequencyStatus[frequencyStatusIndex].period, // Preserve the period
+    status: updateData.status,
+    completedAt: updateData.completedAt,
+    notes: updateData.notes
+  };
+  
+  await timeline.save();
+  return timeline;
+};
+
+/**
+ * Get frequency status for a timeline
+ * @param {ObjectId} timelineId
+ * @param {Object} user - User object with role information (optional)
+ * @returns {Promise<Object>}
+ */
+const getFrequencyStatus = async (timelineId, user = null) => {
+  const timeline = await getTimelineById(timelineId);
+  
+  // Validate branch access if needed
+  if (user && user.role && timeline.branch) {
+    if (!hasBranchAccess(user.role, timeline.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+  }
+  
+  // Clean and validate frequency status before returning
+  const cleanFrequencyStatus = validateAndCleanFrequencyStatus(timeline.frequencyStatus);
+  
+  return {
+    timelineId: timeline._id,
+    frequency: timeline.frequency,
+    overallStatus: timeline.status,
+    frequencyStatus: cleanFrequencyStatus
+  };
+};
+
+/**
+ * Initialize or regenerate frequency status for a timeline
+ * @param {ObjectId} timelineId
+ * @param {Object} user - User object with role information (optional)
+ * @returns {Promise<Timeline>}
+ */
+const initializeOrRegenerateFrequencyStatus = async (timelineId, user = null) => {
+  const timeline = await getTimelineById(timelineId);
+  
+  // Validate branch access if needed
+  if (user && user.role && timeline.branch) {
+    if (!hasBranchAccess(user.role, timeline.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+  }
+  
+  if (!timeline.startDate || !timeline.endDate) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Start date and end date are required to initialize frequency status');
+  }
+  
+  timeline.frequencyStatus = initializeFrequencyStatus(timeline);
+  await timeline.save();
+  return timeline;
+};
+
 export {
   createTimeline,
   queryTimelines,
@@ -871,4 +1027,7 @@ export {
   deleteTimelineById,
   bulkImportTimelines,
   updateTimelineUdin,
+  updateFrequencyStatus,
+  getFrequencyStatus,
+  initializeOrRegenerateFrequencyStatus,
 }; 
