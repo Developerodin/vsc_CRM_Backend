@@ -54,6 +54,53 @@ const getTopActivities = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(data);
 });
 
+// Helper function to clean up empty string parameters
+const cleanParams = (params) => {
+  const cleaned = {};
+  Object.keys(params).forEach(key => {
+    if (params[key] !== '' && params[key] !== null && params[key] !== undefined) {
+      cleaned[key] = params[key];
+    }
+  });
+  return cleaned;
+};
+
+// New controller methods for frequency-based timeline analysis
+const getTimelineStatusByFrequency = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, frequency, status } = req.query;
+  const cleanedParams = cleanParams({ branchId, startDate, endDate, frequency, status });
+  const data = await dashboardService.getTimelineStatusByFrequency(req.user, cleanedParams);
+  res.status(httpStatus.OK).send(data);
+});
+
+const getTimelineStatusByPeriod = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, frequency, period } = req.query;
+  const cleanedParams = cleanParams({ branchId, startDate, endDate, frequency, period });
+  const data = await dashboardService.getTimelineStatusByPeriod(req.user, cleanedParams);
+  res.status(httpStatus.OK).send(data);
+});
+
+const getTimelineFrequencyAnalytics = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, groupBy } = req.query;
+  const cleanedParams = cleanParams({ branchId, startDate, endDate, groupBy });
+  const data = await dashboardService.getTimelineFrequencyAnalytics(req.user, cleanedParams);
+  res.status(httpStatus.OK).send(data);
+});
+
+const getTimelineStatusTrends = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, frequency, interval } = req.query;
+  const cleanedParams = cleanParams({ branchId, startDate, endDate, frequency, interval });
+  const data = await dashboardService.getTimelineStatusTrends(req.user, cleanedParams);
+  res.status(httpStatus.OK).send(data);
+});
+
+const getTimelineCompletionRates = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, frequency } = req.query;
+  const cleanedParams = cleanParams({ branchId, startDate, endDate, frequency });
+  const data = await dashboardService.getTimelineCompletionRates(req.user, cleanedParams);
+  res.status(httpStatus.OK).send(data);
+});
+
 export { 
   getTotalActivities, 
   getTotalTeams, 
@@ -63,5 +110,10 @@ export {
   getTimelineCountsByBranch,
   getAssignedTaskCounts,
   getTopClients,
-  getTopActivities
+  getTopActivities,
+  getTimelineStatusByFrequency,
+  getTimelineStatusByPeriod,
+  getTimelineFrequencyAnalytics,
+  getTimelineStatusTrends,
+  getTimelineCompletionRates
 }; 

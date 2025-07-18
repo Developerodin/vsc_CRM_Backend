@@ -8,38 +8,59 @@ const router = express.Router();
 
 router
   .route('/total-activities')
-  .get(auth('getActivities'), dashboardController.getTotalActivities);
+  .get(auth(), dashboardController.getTotalActivities);
 
 router
   .route('/total-teams')
-  .get(auth('getTeamMembers'), validate(dashboardValidation.getTotalTeams), dashboardController.getTotalTeams);
+  .get(auth(), validate(dashboardValidation.getTotalTeams), dashboardController.getTotalTeams);
 
 router
   .route('/total-branches')
-  .get(auth('getBranches'), dashboardController.getTotalBranches);
+  .get(auth(), dashboardController.getTotalBranches);
 
 router
   .route('/total-clients')
-  .get(auth('getClients'), validate(dashboardValidation.getTotalClients), dashboardController.getTotalClients);
+  .get(auth(), validate(dashboardValidation.getTotalClients), dashboardController.getTotalClients);
 
 router
   .route('/total-ongoing-tasks')
-  .get(auth('getTimelines'), validate(dashboardValidation.getTotalOngoingTasks), dashboardController.getTotalOngoingTasks);
+  .get(auth(), validate(dashboardValidation.getTotalOngoingTasks), dashboardController.getTotalOngoingTasks);
 
 router
   .route('/timeline-counts-by-branch')
-  .get(auth('getTimelines'), validate(dashboardValidation.getTimelineCountsByBranch), dashboardController.getTimelineCountsByBranch);
+  .get(auth(), validate(dashboardValidation.getTimelineCountsByBranch), dashboardController.getTimelineCountsByBranch);
 
 router
   .route('/assigned-task-counts')
-  .get(auth('getTimelines'), validate(dashboardValidation.getAssignedTaskCounts), dashboardController.getAssignedTaskCounts);
+  .get(auth(), validate(dashboardValidation.getAssignedTaskCounts), dashboardController.getAssignedTaskCounts);
 
 router
   .route('/top-clients')
-  .get(auth('getClients'), validate(dashboardValidation.getTopClients), dashboardController.getTopClients);
+  .get(auth(), validate(dashboardValidation.getTopClients), dashboardController.getTopClients);
 
 router
   .route('/top-activities')
-  .get(auth('getActivities'), validate(dashboardValidation.getTopActivities), dashboardController.getTopActivities);
+  .get(auth(), validate(dashboardValidation.getTopActivities), dashboardController.getTopActivities);
+
+// New frequency-based timeline analysis routes
+router
+  .route('/timeline-status-by-frequency')
+  .get(auth(), validate(dashboardValidation.getTimelineStatusByFrequency), dashboardController.getTimelineStatusByFrequency);
+
+router
+  .route('/timeline-status-by-period')
+  .get(auth(), validate(dashboardValidation.getTimelineStatusByPeriod), dashboardController.getTimelineStatusByPeriod);
+
+router
+  .route('/timeline-frequency-analytics')
+  .get(auth(), validate(dashboardValidation.getTimelineFrequencyAnalytics), dashboardController.getTimelineFrequencyAnalytics);
+
+router
+  .route('/timeline-status-trends')
+  .get(auth(), validate(dashboardValidation.getTimelineStatusTrends), dashboardController.getTimelineStatusTrends);
+
+router
+  .route('/timeline-completion-rates')
+  .get(auth(), validate(dashboardValidation.getTimelineCompletionRates), dashboardController.getTimelineCompletionRates);
 
 export default router;
