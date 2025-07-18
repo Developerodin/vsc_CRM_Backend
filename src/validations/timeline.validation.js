@@ -232,6 +232,12 @@ const updateFrequencyStatus = {
   }),
 };
 
+const getFrequencyStatusStats = {
+  query: Joi.object().keys({
+    // No query parameters needed for this endpoint
+  }),
+};
+
 export {
   createTimeline,
   getTimelines,
@@ -241,4 +247,5 @@ export {
   bulkImportTimelines,
   updateTimelineUdin,
   updateFrequencyStatus,
+  getFrequencyStatusStats,
 };

@@ -90,6 +90,12 @@ const initializeFrequencyStatus = catchAsync(async (req, res) => {
   res.send(timeline);
 });
 
+// Get frequency status statistics across all timelines
+const getFrequencyStatusStats = catchAsync(async (req, res) => {
+  const stats = await timelineService.getFrequencyStatusStats(req.user);
+  res.send(stats);
+});
+
 export {
   createTimeline,
   getTimelines,
@@ -102,4 +108,5 @@ export {
   getFrequencyStatus,
   updateFrequencyStatus,
   initializeFrequencyStatus,
+  getFrequencyStatusStats,
 }; 

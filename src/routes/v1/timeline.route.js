@@ -15,6 +15,11 @@ router
   .route('/bulk-import')
   .post(auth('manageTimelines'), validate(timelineValidation.bulkImportTimelines), timelineController.bulkImportTimelines);
 
+// Get frequency status statistics across all timelines
+router
+  .route('/frequency-status-stats')
+  .get(auth('getTimelines'), validate(timelineValidation.getFrequencyStatusStats), timelineController.getFrequencyStatusStats);
+
 router
   .route('/:timelineId')
   .get(auth('getTimelines'), validate(timelineValidation.getTimeline), timelineController.getTimeline)

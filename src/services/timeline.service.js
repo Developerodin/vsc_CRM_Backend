@@ -1019,6 +1019,121 @@ const initializeOrRegenerateFrequencyStatus = async (timelineId, user = null) =>
   return timeline;
 };
 
+/**
+ * Get frequency status statistics across all timelines
+ * @param {Object} user - User object for branch access filtering
+ * @returns {Object} - Statistics object with counts for each status
+ */
+const getFrequencyStatusStats = async (user = null) => {
+  let query = {};
+  
+  // Apply branch access filtering if user is provided
+  if (user) {
+    const userBranchIds = getUserBranchIds(user.role);
+    console.log('User branch IDs:', userBranchIds);
+    if (userBranchIds === null) {
+      // User has access to all branches, no filtering needed
+      query = {};
+    } else if (userBranchIds.length > 0) {
+      query.branch = { $in: userBranchIds };
+    } else {
+      // User has no branch access, return empty stats
+      return {
+        pending: 0,
+        ongoing: 0,
+        delayed: 0,
+        completed: 0,
+        total: 0
+      };
+    }
+  }
+
+  console.log('Query:', JSON.stringify(query));
+
+  // First, let's check how many timelines we have
+  const totalTimelines = await Timeline.countDocuments(query);
+  console.log('Total timelines found:', totalTimelines);
+
+  // Check if timelines have frequencyStatus
+  const timelinesWithFrequencyStatus = await Timeline.countDocuments({
+    ...query,
+    'frequencyStatus.0': { $exists: true }
+  });
+  console.log('Timelines with frequencyStatus:', timelinesWithFrequencyStatus);
+
+  // Let's first get a sample timeline to see the structure
+  const sampleTimeline = await Timeline.findOne(query);
+  console.log('Sample timeline frequencyStatus:', sampleTimeline?.frequencyStatus);
+
+  // Aggregate to count frequency status across all timelines
+  const stats = await Timeline.aggregate([
+    { $match: query },
+    { $unwind: '$frequencyStatus' },
+    {
+      $group: {
+        _id: '$frequencyStatus.status',
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  console.log('Aggregation results:', stats);
+
+  // Alternative approach: manually count from all timelines
+  const allTimelines = await Timeline.find(query).select('frequencyStatus');
+  console.log('All timelines count:', allTimelines.length);
+  
+  const manualCounts = {
+    pending: 0,
+    ongoing: 0,
+    delayed: 0,
+    completed: 0
+  };
+
+  allTimelines.forEach(timeline => {
+    if (timeline.frequencyStatus && Array.isArray(timeline.frequencyStatus)) {
+      timeline.frequencyStatus.forEach(fs => {
+        if (fs.status && manualCounts.hasOwnProperty(fs.status)) {
+          manualCounts[fs.status]++;
+        }
+      });
+    }
+  });
+
+  console.log('Manual counts:', manualCounts);
+
+  // Initialize result object with all possible statuses
+  const result = {
+    pending: 0,
+    ongoing: 0,
+    delayed: 0,
+    completed: 0,
+    total: 0
+  };
+
+  // Populate counts from aggregation results
+  stats.forEach(stat => {
+    if (result.hasOwnProperty(stat._id)) {
+      result[stat._id] = stat.count;
+    }
+  });
+
+  // If aggregation returned no results, use manual counts
+  if (result.total === 0) {
+    console.log('Using manual counts as fallback');
+    result.pending = manualCounts.pending;
+    result.ongoing = manualCounts.ongoing;
+    result.delayed = manualCounts.delayed;
+    result.completed = manualCounts.completed;
+  }
+
+  // Calculate total
+  result.total = result.pending + result.ongoing + result.delayed + result.completed;
+
+  console.log('Final result:', result);
+  return result;
+};
+
 export {
   createTimeline,
   queryTimelines,
@@ -1030,4 +1145,5 @@ export {
   updateFrequencyStatus,
   getFrequencyStatus,
   initializeOrRegenerateFrequencyStatus,
+  getFrequencyStatusStats,
 }; 
