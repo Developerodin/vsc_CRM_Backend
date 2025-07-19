@@ -22,7 +22,7 @@ const createBranch = async (branchBody) => {
  * @param {Object} filter - Mongo filter
  * @param {Object} options - Query options
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
+ * @param {number} [options.limit] - Maximum number of results per page (default = all)
  * @param {number} [options.page] - Current page (default = 1)
  * @returns {Promise<QueryResult>}
  */
@@ -35,7 +35,13 @@ const queryBranches = async (filter, options) => {
     mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
   }
 
-  const branches = await Branch.paginate(mongoFilter, options);
+  // If no limit is specified, set it to a very high number to get all branches
+  const queryOptions = { ...options };
+  if (!queryOptions.limit) {
+    queryOptions.limit = 10000; // Set to a very high number to get all branches
+  }
+
+  const branches = await Branch.paginate(mongoFilter, queryOptions);
   return branches;
 };
 
