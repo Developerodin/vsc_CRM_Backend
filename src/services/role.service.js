@@ -155,6 +155,13 @@ const getAvailableNavigationPermissions = () => {
       path: '/analytics',
       category: 'main',
     },
+    fileManager: {
+      key: 'fileManager',
+      title: 'File Manager',
+      description: 'Access to file management system',
+      path: '/file-manager',
+      category: 'main',
+    },
     settings: {
       key: 'settings',
       title: 'Settings',
@@ -326,6 +333,22 @@ const getAvailableApiPermissions = () => {
       description: 'Can create, update, and delete roles',
       category: 'role_management',
       group: 'roles',
+    },
+    
+    // File Manager Management
+    getFileManager: {
+      key: 'getFileManager',
+      title: 'View File Manager',
+      description: 'Can view file manager and browse files',
+      category: 'file_management',
+      group: 'fileManager',
+    },
+    manageFileManager: {
+      key: 'manageFileManager',
+      title: 'Manage File Manager',
+      description: 'Can upload, delete, and manage files',
+      category: 'file_management',
+      group: 'fileManager',
     },
   };
 };

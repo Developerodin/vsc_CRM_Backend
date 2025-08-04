@@ -22,6 +22,7 @@ const roleSchema = mongoose.Schema(
       teams: { type: Boolean, default: false },
       timelines: { type: Boolean, default: false },
       analytics: { type: Boolean, default: false },
+      fileManager: { type: Boolean, default: false },
       settings: {
         activities: { type: Boolean, default: false },
         branches: { type: Boolean, default: false },
@@ -55,6 +56,9 @@ const roleSchema = mongoose.Schema(
       // Role permissions
       getRoles: { type: Boolean, default: false },
       manageRoles: { type: Boolean, default: false },
+      // File Manager permissions
+      getFileManager: { type: Boolean, default: false },
+      manageFileManager: { type: Boolean, default: false },
     },
     // Branch access - array of branch IDs this role can access
     branchAccess: [{

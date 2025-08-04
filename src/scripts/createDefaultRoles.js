@@ -6,12 +6,12 @@ import User from '../models/user.model.js';
 
 const createDefaultRoles = async () => {
   try {
-    // Create Admin role with all permissions
-    const adminRole = await Role.findOneAndUpdate(
-      { name: 'Admin' },
+    // Create Superadmin role with ALL permissions
+    const superadminRole = await Role.findOneAndUpdate(
+      { name: 'superadmin' },
       {
-        name: 'Admin',
-        description: 'Full system administrator with all permissions',
+        name: 'superadmin',
+        description: 'Super Admin with complete system access',
         navigationPermissions: {
           dashboard: true,
           clients: true,
@@ -19,6 +19,7 @@ const createDefaultRoles = async () => {
           teams: true,
           timelines: true,
           analytics: true,
+          fileManager: true,
           settings: {
             activities: true,
             branches: true,
@@ -41,6 +42,54 @@ const createDefaultRoles = async () => {
           manageGroups: true,
           getRoles: true,
           manageRoles: true,
+          getFileManager: true,
+          manageFileManager: true,
+        },
+        allBranchesAccess: true,
+        isActive: true,
+        createdBy: null,
+      },
+      { upsert: true, new: true }
+    );
+
+    // Create Admin role with all permissions
+    const adminRole = await Role.findOneAndUpdate(
+      { name: 'Admin' },
+      {
+        name: 'Admin',
+        description: 'Full system administrator with all permissions',
+        navigationPermissions: {
+          dashboard: true,
+          clients: true,
+          groups: true,
+          teams: true,
+          timelines: true,
+          analytics: true,
+          fileManager: true,
+          settings: {
+            activities: true,
+            branches: true,
+            users: true,
+            roles: true,
+          },
+        },
+        apiPermissions: {
+          getUsers: true,
+          manageUsers: true,
+          getTeamMembers: true,
+          manageTeamMembers: true,
+          getActivities: true,
+          manageActivities: true,
+          getBranches: true,
+          manageBranches: true,
+          getClients: true,
+          manageClients: true,
+          getGroups: true,
+          manageGroups: true,
+          getRoles: true,
+          manageRoles: true,
+          getFileManager: true,
+          manageFileManager: true,
         },
         allBranchesAccess: true,
         isActive: true,
@@ -62,6 +111,7 @@ const createDefaultRoles = async () => {
           teams: true,
           timelines: true,
           analytics: false,
+          fileManager: true,
           settings: {
             activities: false,
             branches: false,
@@ -84,6 +134,8 @@ const createDefaultRoles = async () => {
           manageGroups: false,
           getRoles: false,
           manageRoles: false,
+          getFileManager: true,
+          manageFileManager: false,
         },
         allBranchesAccess: false,
         isActive: true,
@@ -105,6 +157,7 @@ const createDefaultRoles = async () => {
           teams: true,
           timelines: true,
           analytics: true,
+          fileManager: true,
           settings: {
             activities: true,
             branches: true,
@@ -127,6 +180,8 @@ const createDefaultRoles = async () => {
           manageGroups: true,
           getRoles: false,
           manageRoles: false,
+          getFileManager: true,
+          manageFileManager: true,
         },
         allBranchesAccess: false,
         isActive: true,
@@ -136,7 +191,7 @@ const createDefaultRoles = async () => {
     );
 
     logger.info('Default roles created successfully');
-    return { adminRole, userRole, managerRole };
+    return { superadminRole, adminRole, userRole, managerRole };
   } catch (error) {
     logger.error('Error creating default roles:', error);
     throw error;

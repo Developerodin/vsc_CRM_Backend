@@ -38,11 +38,13 @@ const createTestPermissions = () => {
   // Set some test permissions to true
   if (navigationPermissions.dashboard !== undefined) navigationPermissions.dashboard = true;
   if (navigationPermissions.clients !== undefined) navigationPermissions.clients = true;
+  if (navigationPermissions.fileManager !== undefined) navigationPermissions.fileManager = true;
   if (apiPermissions.getTeamMembers !== undefined) apiPermissions.getTeamMembers = true;
   if (apiPermissions.getActivities !== undefined) apiPermissions.getActivities = true;
   if (apiPermissions.getBranches !== undefined) apiPermissions.getBranches = true;
   if (apiPermissions.getClients !== undefined) apiPermissions.getClients = true;
   if (apiPermissions.getGroups !== undefined) apiPermissions.getGroups = true;
+  if (apiPermissions.getFileManager !== undefined) apiPermissions.getFileManager = true;
   
   return { navigationPermissions, apiPermissions };
 };
