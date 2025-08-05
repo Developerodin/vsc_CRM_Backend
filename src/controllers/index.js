@@ -8,6 +8,8 @@ import * as groupController from './group.controller.js';
 import * as roleController from './role.controller.js';
 import * as timelineController from './timeline.controller.js';
 import * as dashboardController from './dashboard.controller.js';
+import * as commonController from './common.controller.js';
+import * as fileManagerController from './fileManager.controller.js';
 
 export {
   authController,
@@ -20,5 +22,7 @@ export {
   roleController,
   timelineController,
   dashboardController,
+  commonController,
+  fileManagerController,
 };
 

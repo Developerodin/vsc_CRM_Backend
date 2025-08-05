@@ -7,5 +7,7 @@ import Client from './client.model.js';
 import Group from './group.model.js';
 import Role from './role.model.js';
 import Timeline from './timeline.model.js';
-export { Token, User, TeamMember, Activity, Branch, Client, Group, Role, Timeline };
+import FileManager from './fileManager.model.js';
+
+export { Token, User, TeamMember, Activity, Branch, Client, Group, Role, Timeline, FileManager };
 

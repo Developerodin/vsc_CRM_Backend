@@ -11,6 +11,8 @@ import timelineRoute from './timeline.route.js';
 import dashboardRoute from './dashboard.route.js';
 import docsRoute from './docs.route.js';
 import config from '../../config/config.js';
+import commonRoute from './common.route.js';
+import fileManagerRoute from './fileManager.route.js';
 
 const router = express.Router();
 
@@ -54,6 +56,14 @@ const defaultRoutes = [
   {
     path: '/dashboard',
     route: dashboardRoute,
+  },
+  {
+    path: '/common',
+    route: commonRoute,
+  },
+  {
+    path: '/file-manager',
+    route: fileManagerRoute,
   },
 ];
 

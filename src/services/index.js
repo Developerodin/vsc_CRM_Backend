@@ -10,6 +10,7 @@ import * as groupService from './group.service.js';
 import * as roleService from './role.service.js';
 import * as timelineService from './timeline.service.js';
 import * as dashboardService from './dashboard.service.js';
+import * as fileManagerService from './fileManager.service.js';
 
 export {
   teamMemberService,
@@ -20,5 +21,6 @@ export {
   roleService,
   timelineService,
   dashboardService,
+  fileManagerService,
 };
 

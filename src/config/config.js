@@ -1,7 +1,8 @@
 import dotenv from 'dotenv';
+import path from 'path';
 import Joi from 'joi';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const envVarsSchema = Joi.object()
   .keys({
@@ -23,6 +24,10 @@ const envVarsSchema = Joi.object()
     SMTP_PASSWORD: Joi.string().description('password for email server'),
     EMAIL_FROM: Joi.string().description('the from field in the emails sent by the app'),
     PAYLOAD_LIMIT: Joi.string().default('50mb').description('maximum payload size for requests'),
+    AWS_ACCESS_KEY_ID: Joi.string().required().description('AWS access key ID'),
+    AWS_SECRET_ACCESS_KEY: Joi.string().required().description('AWS secret access key'),
+    AWS_REGION: Joi.string().required().description('AWS region'),
+    AWS_BUCKET_NAME: Joi.string().required().description('AWS S3 bucket name'),
   })
   .unknown();
 
@@ -61,6 +66,14 @@ const config = {
       },
     },
     from: envVars.EMAIL_FROM,
+  },
+  aws: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION,
+    s3: {
+      bucket: process.env.AWS_BUCKET_NAME,
+    }
   },
 };
 
