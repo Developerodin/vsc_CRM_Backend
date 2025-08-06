@@ -1,6 +1,15 @@
 # Email API Guide
 
-This document describes the global email API endpoints for sending custom emails, task assignments, notifications, and bulk emails.
+This document describes the global email API endpoints for sending custom emails, task assignments, notifications, and bulk emails with **beautiful HTML templates**.
+
+## Features
+
+- ✅ **HTML Email Templates** - Professional, responsive email designs
+- ✅ **Gradient Headers** - Modern gradient backgrounds
+- ✅ **Priority Badges** - Color-coded priority indicators for tasks
+- ✅ **Responsive Design** - Works on all devices
+- ✅ **Fallback Text** - Plain text version for email clients that don't support HTML
+- ✅ **Custom Styling** - Professional CSS styling with shadows and borders
 
 ## Endpoints
 
@@ -8,7 +17,7 @@ This document describes the global email API endpoints for sending custom emails
 
 **POST** `/v1/common-email/send`
 
-Send a custom email with text and optional description.
+Send a custom email with text and optional description using beautiful HTML template.
 
 #### Request Body
 ```json
@@ -34,6 +43,12 @@ Content-Type: application/json
 }
 ```
 
+#### Email Features
+- **Gradient Header** - Beautiful purple gradient background
+- **Description Box** - Highlighted description section (if provided)
+- **Clean Content Area** - White background with shadow
+- **Professional Footer** - Branded footer section
+
 #### Example Response
 ```json
 {
@@ -53,7 +68,7 @@ Content-Type: application/json
 
 **POST** `/v1/common-email/task-assignment`
 
-Send a formatted task assignment email.
+Send a formatted task assignment email with priority badges and professional design.
 
 #### Request Body
 ```json
@@ -67,11 +82,18 @@ Send a formatted task assignment email.
 }
 ```
 
-#### Priority Options
-- `low`
-- `medium`
-- `high`
-- `urgent`
+#### Priority Options & Colors
+- `low` - Green (#4caf50)
+- `medium` - Orange (#ff9800)
+- `high` - Red (#f44336)
+- `urgent` - Purple (#9c27b0)
+
+#### Email Features
+- **Task Card Design** - Professional card layout
+- **Priority Badge** - Color-coded priority indicator
+- **Grid Layout** - Organized task details
+- **Call-to-Action Button** - "View Task Details" button
+- **Responsive Design** - Works on mobile and desktop
 
 #### Example Request (Postman)
 ```
@@ -109,7 +131,7 @@ Content-Type: application/json
 
 **POST** `/v1/common-email/notification`
 
-Send a notification email with type and message.
+Send a notification email with type and message using professional HTML template.
 
 #### Request Body
 ```json
@@ -120,6 +142,12 @@ Send a notification email with type and message.
   "details": "Additional details about the notification"
 }
 ```
+
+#### Email Features
+- **Notification Card** - Clean card design
+- **Type Icon** - 📢 icon for notification type
+- **Color-coded Sections** - Green for messages, yellow for details
+- **Professional Layout** - Organized information display
 
 #### Example Request (Postman)
 ```
@@ -154,7 +182,7 @@ Content-Type: application/json
 
 **POST** `/v1/common-email/bulk`
 
-Send the same email to multiple recipients.
+Send the same email to multiple recipients with HTML template.
 
 #### Request Body
 ```json
@@ -196,6 +224,32 @@ Content-Type: application/json
   }
 }
 ```
+
+---
+
+## HTML Email Features
+
+### Design Elements
+- **Gradient Headers** - Modern purple gradient backgrounds
+- **Card Layouts** - Professional card designs with shadows
+- **Color-coded Elements** - Priority badges and status indicators
+- **Responsive Grid** - Organized information display
+- **Call-to-Action Buttons** - Interactive buttons for actions
+
+### Technical Features
+- **Fallback Text** - Plain text version for all email clients
+- **Responsive Design** - Works on mobile, tablet, and desktop
+- **Cross-client Compatibility** - Tested with major email clients
+- **Professional Typography** - Clean, readable fonts
+- **Optimized Images** - Emoji icons for visual appeal
+
+### Email Client Support
+- ✅ Gmail (Web & Mobile)
+- ✅ Outlook (Web & Desktop)
+- ✅ Apple Mail
+- ✅ Yahoo Mail
+- ✅ Thunderbird
+- ✅ Mobile email apps
 
 ---
 
@@ -245,8 +299,11 @@ Authorization: Bearer <your_token>
 
 ## Notes
 
-- All emails are sent using the configured SMTP settings
-- Email validation is performed on all recipient addresses
-- Bulk emails are sent in parallel for better performance
+- All emails include both HTML and plain text versions
+- HTML templates are responsive and work on all devices
+- Priority badges are color-coded for easy identification
+- Emails include professional styling with gradients and shadows
 - Maximum 100 recipients per bulk email request
 - All endpoints return standardized success/error responses
+- Email validation is performed on all recipient addresses
+- Bulk emails are sent in parallel for better performance

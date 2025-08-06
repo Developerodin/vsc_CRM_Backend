@@ -21,13 +21,10 @@ const sendCustomEmail = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid email format');
   }
 
-  // Create email content with description if provided
-  let emailContent = text;
-  if (description) {
-    emailContent = `${description}\n\n${text}`;
-  }
+  // Generate HTML content
+  const htmlContent = emailService.generateCustomEmailHTML(text, description);
 
-  await emailService.sendEmail(to, subject, emailContent);
+  await emailService.sendEmail(to, subject, text, htmlContent);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -60,22 +57,32 @@ const sendTaskAssignmentEmail = catchAsync(async (req, res) => {
 
   const subject = `Task Assignment: ${taskTitle}`;
   
-  let emailContent = `Hello,\n\nYou have been assigned a new task:\n\n`;
-  emailContent += `Task: ${taskTitle}\n`;
-  emailContent += `Description: ${taskDescription}\n`;
-  emailContent += `Assigned By: ${assignedBy}\n`;
+  // Generate plain text content
+  let textContent = `Hello,\n\nYou have been assigned a new task:\n\n`;
+  textContent += `Task: ${taskTitle}\n`;
+  textContent += `Description: ${taskDescription}\n`;
+  textContent += `Assigned By: ${assignedBy}\n`;
   
   if (dueDate) {
-    emailContent += `Due Date: ${dueDate}\n`;
+    textContent += `Due Date: ${dueDate}\n`;
   }
   
   if (priority) {
-    emailContent += `Priority: ${priority}\n`;
+    textContent += `Priority: ${priority}\n`;
   }
   
-  emailContent += `\nPlease review and complete this task as soon as possible.\n\nBest regards,\nYour Team`;
+  textContent += `\nPlease review and complete this task as soon as possible.\n\nBest regards,\nYour Team`;
 
-  await emailService.sendEmail(to, subject, emailContent);
+  // Generate HTML content
+  const htmlContent = emailService.generateTaskAssignmentHTML({
+    taskTitle,
+    taskDescription,
+    assignedBy,
+    dueDate,
+    priority
+  });
+
+  await emailService.sendEmail(to, subject, textContent, htmlContent);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -109,17 +116,25 @@ const sendNotificationEmail = catchAsync(async (req, res) => {
 
   const subject = `Notification: ${notificationType}`;
   
-  let emailContent = `Hello,\n\nYou have received a notification:\n\n`;
-  emailContent += `Type: ${notificationType}\n`;
-  emailContent += `Message: ${message}\n`;
+  // Generate plain text content
+  let textContent = `Hello,\n\nYou have received a notification:\n\n`;
+  textContent += `Type: ${notificationType}\n`;
+  textContent += `Message: ${message}\n`;
   
   if (details) {
-    emailContent += `Details: ${details}\n`;
+    textContent += `Details: ${details}\n`;
   }
   
-  emailContent += `\nThank you,\nYour Team`;
+  textContent += `\nThank you,\nYour Team`;
 
-  await emailService.sendEmail(to, subject, emailContent);
+  // Generate HTML content
+  const htmlContent = emailService.generateNotificationHTML({
+    notificationType,
+    message,
+    details
+  });
+
+  await emailService.sendEmail(to, subject, textContent, htmlContent);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -156,14 +171,11 @@ const sendBulkEmails = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.BAD_REQUEST, `Invalid email formats: ${invalidEmails.join(', ')}`);
   }
 
-  // Create email content with description if provided
-  let emailContent = text;
-  if (description) {
-    emailContent = `${description}\n\n${text}`;
-  }
+  // Generate HTML content
+  const htmlContent = emailService.generateCustomEmailHTML(text, description);
 
   // Send emails to all recipients
-  const emailPromises = emails.map(email => emailService.sendEmail(email, subject, emailContent));
+  const emailPromises = emails.map(email => emailService.sendEmail(email, subject, text, htmlContent));
   await Promise.all(emailPromises);
 
   res.status(httpStatus.OK).send({

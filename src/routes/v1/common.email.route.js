@@ -14,7 +14,7 @@ router
 // Send task assignment email
 router
   .route('/task-assignment')
-  .post(auth('sendEmails'), validate(commonEmailValidation.sendTaskAssignmentEmail), commonEmailController.sendTaskAssignmentEmail);
+  .post(validate(commonEmailValidation.sendTaskAssignmentEmail), commonEmailController.sendTaskAssignmentEmail);
 
 // Send notification email
 router
