@@ -56,10 +56,30 @@ If you did not create an account, then ignore this email.`;
   await sendEmail(to, subject, text);
 };
 
+/**
+ * Send email OTP
+ * @param {string} to
+ * @param {string} otp
+ * @returns {Promise}
+ */
+const sendEmailOtp = async (to, otp) => {
+  const subject = 'Your Verification OTP';
+  const text = `Your OTP for email verification is: ${otp}\nThis OTP is valid for 10 minutes.`;
+  await sendEmail(to, subject, text);
+};
+
+const sendPasswordResetOtp = async (to, otp) => {
+  const subject = 'Your Password Reset OTP';
+  const text = `Your OTP for password reset is: ${otp}\nThis OTP is valid for 10 minutes.`;
+  await sendEmail(to, subject, text);
+};
+
 export {
   transport,
   sendEmail,
   sendResetPasswordEmail,
   sendVerificationEmail,
+  sendEmailOtp,
+  sendPasswordResetOtp
 };
 

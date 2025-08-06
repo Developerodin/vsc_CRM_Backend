@@ -10,6 +10,7 @@ import * as timelineController from './timeline.controller.js';
 import * as dashboardController from './dashboard.controller.js';
 import * as commonController from './common.controller.js';
 import * as fileManagerController from './fileManager.controller.js';
+import * as commonEmailController from './common.email.controller.js';
 
 export {
   authController,
@@ -24,5 +25,6 @@ export {
   dashboardController,
   commonController,
   fileManagerController,
+  commonEmailController,
 };
 

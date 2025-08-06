@@ -13,6 +13,7 @@ import docsRoute from './docs.route.js';
 import config from '../../config/config.js';
 import commonRoute from './common.route.js';
 import fileManagerRoute from './fileManager.route.js';
+import commonEmailRoute from './common.email.route.js';
 
 const router = express.Router();
 
@@ -64,6 +65,10 @@ const defaultRoutes = [
   {
     path: '/file-manager',
     route: fileManagerRoute,
+  },
+  {
+    path: '/common-email',
+    route: commonEmailRoute,
   },
 ];
 

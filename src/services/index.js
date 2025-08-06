@@ -11,6 +11,7 @@ import * as roleService from './role.service.js';
 import * as timelineService from './timeline.service.js';
 import * as dashboardService from './dashboard.service.js';
 import * as fileManagerService from './fileManager.service.js';
+import * as emailService from './email.service.js';
 
 export {
   teamMemberService,
@@ -22,5 +23,6 @@ export {
   timelineService,
   dashboardService,
   fileManagerService,
+  emailService,
 };
 
