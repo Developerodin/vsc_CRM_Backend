@@ -10,13 +10,36 @@ const createActivity = catchAsync(async (req, res) => {
 });
 
 const getActivities = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name']);
+  const filter = pick(req.query, ['name', 'frequency', 'dueDate']);
+  
+  // Handle route parameters for frequency and due date
+  if (req.params.frequency) {
+    filter.frequency = req.params.frequency;
+  }
+  if (req.params.date) {
+    filter.dueDate = req.params.date;
+  }
+  
   // Remove empty string filters
   Object.keys(filter).forEach((key) => {
     if (filter[key] === '') {
       delete filter[key];
     }
   });
+  
+  // Handle due date filtering
+  if (filter.dueDate) {
+    const dueDate = new Date(filter.dueDate);
+    if (!isNaN(dueDate.getTime())) {
+      filter.dueDate = {
+        $gte: dueDate,
+        $lt: new Date(dueDate.getTime() + 24 * 60 * 60 * 1000) // Next day
+      };
+    } else {
+      delete filter.dueDate;
+    }
+  }
+  
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await activityService.queryActivities(filter, options);
   res.send(result);

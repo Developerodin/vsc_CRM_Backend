@@ -16,6 +16,14 @@ router
   .post(validate(activityValidation.bulkImportActivities), activityController.bulkImportActivities);
 
 router
+  .route('/frequency/:frequency')
+  .get(validate(activityValidation.getActivities), activityController.getActivities);
+
+router
+  .route('/due-date/:date')
+  .get(validate(activityValidation.getActivities), activityController.getActivities);
+
+router
   .route('/:activityId')
   .get(validate(activityValidation.getActivity), activityController.getActivity)
   .patch(validate(activityValidation.updateActivity), activityController.updateActivity)

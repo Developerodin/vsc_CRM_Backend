@@ -10,7 +10,24 @@ const createClient = catchAsync(async (req, res) => {
 });
 
 const getClients = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'email', 'phone', 'district', 'state', 'country', 'fNo', 'pan', 'branch']);
+  const filter = pick(req.query, [
+    'name', 
+    'email', 
+    'phone', 
+    'district', 
+    'state', 
+    'country', 
+    'fNo', 
+    'pan', 
+    'businessType',
+    'gstNumber',
+    'tanNumber',
+    'cinNumber',
+    'udyamNumber',
+    'iecCode',
+    'entityType',
+    'branch'
+  ]);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   
   // Add branch filtering based on user's access

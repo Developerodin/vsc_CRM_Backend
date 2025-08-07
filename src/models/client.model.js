@@ -76,6 +76,84 @@ const clientSchema = mongoose.Schema(
         }
       },
     },
+    // New business-related fields
+    businessType: {
+      type: String,
+      trim: true,
+      description: 'Type of business or trade'
+    },
+    gstNumber: {
+      type: String,
+      trim: true,
+      validate(value) {
+        if (value && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(value)) {
+          throw new Error('Invalid GST number format');
+        }
+      },
+      description: 'GST Registration Number'
+    },
+    tanNumber: {
+      type: String,
+      trim: true,
+      validate(value) {
+        if (value && !/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/.test(value)) {
+          throw new Error('Invalid TAN number format');
+        }
+      },
+      description: 'Tax Deduction and Collection Account Number'
+    },
+    cinNumber: {
+      type: String,
+      trim: true,
+      validate(value) {
+        if (value && !/^[A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/.test(value)) {
+          throw new Error('Invalid CIN number format');
+        }
+      },
+      description: 'Corporate Identity Number'
+    },
+    udyamNumber: {
+      type: String,
+      trim: true,
+      validate(value) {
+        if (value && !/^UDYAM-[A-Z]{2}[0-9]{2}[0-9]{7}$/.test(value)) {
+          throw new Error('Invalid Udyam Registration Number format');
+        }
+      },
+      description: 'Udyam Registration Number (MSME)'
+    },
+    iecCode: {
+      type: String,
+      trim: true,
+      validate(value) {
+        if (value && !/^[0-9]{10}$/.test(value)) {
+          throw new Error('Invalid IEC Code format (should be 10 digits)');
+        }
+      },
+      description: 'Import Export Code'
+    },
+    entityType: {
+      type: String,
+      trim: true,
+      enum: [
+        'Proprietorship',
+        'Partnership',
+        'Private Limited',
+        'Public Limited',
+        'LLP',
+        'Sole Proprietorship',
+        'HUF',
+        'Trust',
+        'Society',
+        'Other'
+      ],
+      description: 'Type of business entity'
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+      description: 'Additional flexible data storage for client information'
+    },
     branch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Branch',
