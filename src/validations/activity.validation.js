@@ -1,5 +1,6 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
+import { validateFrequencyWithConfig } from '../utils/frequencyValidator.js';
 
 // Frequency configuration validation schema
 const frequencyConfigSchema = Joi.object({
@@ -16,9 +17,7 @@ const frequencyConfigSchema = Joi.object({
   ),
   quarterlyDay: Joi.number().min(1).max(31),
   quarterlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/),
-  yearlyMonth: Joi.array().items(
-    Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
-  ),
+  yearlyMonth: Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'),
   yearlyDate: Joi.number().min(1).max(31),
   yearlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/),
 });
@@ -30,7 +29,7 @@ const createActivity = {
     dueDate: Joi.date().optional(),
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
     frequencyConfig: frequencyConfigSchema.optional(),
-  }),
+  }).custom(validateFrequencyWithConfig),
 };
 
 const getActivities = {
@@ -62,7 +61,8 @@ const updateActivity = {
       frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
       frequencyConfig: frequencyConfigSchema.optional(),
     })
-    .min(1),
+    .min(1)
+    .custom(validateFrequencyWithConfig),
 };
 
 const deleteActivity = {
@@ -82,7 +82,7 @@ const bulkImportActivities = {
           dueDate: Joi.date().optional(),
           frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
           frequencyConfig: frequencyConfigSchema.optional(),
-        })
+        }).custom(validateFrequencyWithConfig)
       )
       .min(1)
       .max(1000)

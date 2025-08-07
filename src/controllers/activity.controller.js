@@ -40,6 +40,14 @@ const getActivities = catchAsync(async (req, res) => {
     }
   }
   
+  // Validate frequency parameter if provided
+  if (filter.frequency) {
+    const validFrequencies = ['Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'];
+    if (!validFrequencies.includes(filter.frequency)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid frequency value');
+    }
+  }
+  
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await activityService.queryActivities(filter, options);
   res.send(result);

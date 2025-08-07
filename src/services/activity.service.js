@@ -69,7 +69,7 @@ const deleteActivityById = async (activityId) => {
   if (!activity) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
   }
-  await activity.remove();
+  await activity.deleteOne();
   return activity;
 };
 
@@ -116,13 +116,25 @@ const bulkImportActivities = async (activities) => {
 
   // Handle bulk updates
   if (toUpdate.length > 0) {
-    const updateOps = toUpdate.map((activity) => ({
-      updateOne: {
-        filter: { _id: activity.id },
-        update: { $set: { name: activity.name, sortOrder: activity.sortOrder } },
-        upsert: false,
-      },
-    }));
+    const updateOps = toUpdate.map((activity) => {
+      const updateData = {
+        name: activity.name,
+        sortOrder: activity.sortOrder,
+      };
+      
+      // Include optional fields if they exist
+      if (activity.dueDate !== undefined) updateData.dueDate = activity.dueDate;
+      if (activity.frequency !== undefined) updateData.frequency = activity.frequency;
+      if (activity.frequencyConfig !== undefined) updateData.frequencyConfig = activity.frequencyConfig;
+      
+      return {
+        updateOne: {
+          filter: { _id: activity.id },
+          update: { $set: updateData },
+          upsert: false,
+        },
+      };
+    });
 
     try {
       const updateResult = await Activity.bulkWrite(updateOps, {

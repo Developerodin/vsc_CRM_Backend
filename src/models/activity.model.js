@@ -54,10 +54,10 @@ const frequencyConfigSchema = mongoose.Schema({
   },
   
   // For Yearly: On [Month] [Date] and At time [HH:MM AM/PM]
-  yearlyMonth:[{
+  yearlyMonth: {
     type: String,
     enum: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
-  }],
+  },
   yearlyDate: {
     type: Number,
     min: 1,
