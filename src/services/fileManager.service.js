@@ -473,7 +473,7 @@ const uploadFileToClientFolder = async (clientId, fileData) => {
   // Find the client's folder
   const clientFolder = await FileManager.findOne({
     type: 'folder',
-    'folder.metadata.clientId': clientId,
+    'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
     isDeleted: false,
   });
 
@@ -525,7 +525,7 @@ const getClientFolderContents = async (clientId, options = {}) => {
   // Find the client's folder
   const clientFolder = await FileManager.findOne({
     type: 'folder',
-    'folder.metadata.clientId': clientId,
+    'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
     isDeleted: false,
   });
 
@@ -533,21 +533,42 @@ const getClientFolderContents = async (clientId, options = {}) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client folder not found. Please ensure client folder was created properly.');
   }
 
-  // Get all contents of the client folder
-  const result = await FileManager.paginate(
-    {
-      $or: [
-        { 'folder.parentFolder': clientFolder._id },
-        { 'file.parentFolder': clientFolder._id }
-      ],
-      isDeleted: false,
-    },
-    {
-      ...options,
-      populate: 'folder.createdBy,file.uploadedBy',
-      sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
-    }
-  );
+  // Get all contents of the client folder using direct query instead of paginate
+  const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+  const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
+  const skip = (page - 1) * limit;
+
+  const filter = {
+    $or: [
+      { 'folder.parentFolder': clientFolder._id },
+      { 'file.parentFolder': clientFolder._id }
+    ],
+    isDeleted: false,
+  };
+
+  const countPromise = FileManager.countDocuments(filter);
+  const docsPromise = FileManager.find(filter)
+    .sort(options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc')
+    .skip(skip)
+    .limit(limit)
+    .lean(); // Use lean() to get plain objects
+
+  const [totalResults, results] = await Promise.all([countPromise, docsPromise]);
+  const totalPages = Math.ceil(totalResults / limit);
+
+  // Add id field to each result since we're using lean()
+  const resultsWithId = results.map(item => ({
+    ...item,
+    id: item._id.toString()
+  }));
+
+  const result = {
+    results: resultsWithId,
+    page,
+    limit,
+    totalPages,
+    totalResults,
+  };
 
   return {
     ...result,

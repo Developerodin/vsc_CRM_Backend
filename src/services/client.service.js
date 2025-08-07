@@ -82,6 +82,16 @@ const getClientById = async (id) => {
 };
 
 /**
+ * Get client by email
+ * @param {string} email
+ * @returns {Promise<Client>}
+ */
+const getClientByEmail = async (email) => {
+  const client = await Client.findOne({ email });
+  return client;
+};
+
+/**
  * Update client by id
  * @param {ObjectId} clientId
  * @param {Object} updateBody
@@ -384,6 +394,7 @@ export {
   createClient, 
   queryClients, 
   getClientById, 
+  getClientByEmail,
   updateClientById, 
   deleteClientById, 
   bulkImportClients,

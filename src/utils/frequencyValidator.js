@@ -69,3 +69,4 @@ export const validateFrequencyWithConfig = (value, helpers) => {
 
   return value;
 };
+
