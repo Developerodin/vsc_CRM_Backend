@@ -154,6 +154,30 @@ const clientSchema = mongoose.Schema(
       default: {},
       description: 'Additional flexible data storage for client information'
     },
+    activities: [{
+      activity: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Activity',
+        required: true,
+        description: 'Reference to the activity'
+      },
+      assignedTeamMember: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'TeamMember',
+        required: true,
+        description: 'Reference to the team member assigned to this activity'
+      },
+      assignedDate: {
+        type: Date,
+        default: Date.now,
+        description: 'Date when the activity was assigned to the team member'
+      },
+      notes: {
+        type: String,
+        trim: true,
+        description: 'Additional notes for this activity assignment'
+      }
+    }],
     branch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Branch',

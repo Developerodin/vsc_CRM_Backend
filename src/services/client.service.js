@@ -241,4 +241,154 @@ const bulkImportClients = async (clients) => {
   return results;
 };
 
-export { createClient, queryClients, getClientById, updateClientById, deleteClientById, bulkImportClients }; 
+// Activity management service methods
+
+/**
+ * Add an activity to a client
+ * @param {ObjectId} clientId
+ * @param {Object} activityData
+ * @returns {Promise<Client>}
+ */
+const addActivityToClient = async (clientId, activityData) => {
+  const client = await getClientById(clientId);
+  
+  // Check if activity already exists for this client
+  const existingActivity = client.activities.find(
+    (act) => act.activity.toString() === activityData.activity
+  );
+  
+  if (existingActivity) {
+    throw new ApiError(httpStatus.CONFLICT, 'Activity already exists for this client');
+  }
+  
+  // Add the new activity
+  client.activities.push({
+    activity: activityData.activity,
+    assignedTeamMember: activityData.assignedTeamMember,
+    notes: activityData.notes || '',
+  });
+  
+  await client.save();
+  return client.populate([
+    { path: 'activities.activity' },
+    { path: 'activities.assignedTeamMember' }
+  ]);
+};
+
+/**
+ * Remove an activity from a client
+ * @param {ObjectId} clientId
+ * @param {ObjectId} activityId
+ * @returns {Promise<void>}
+ */
+const removeActivityFromClient = async (clientId, activityId) => {
+  const client = await getClientById(clientId);
+  
+  const activityIndex = client.activities.findIndex(
+    (act) => act.activity.toString() === activityId
+  );
+  
+  if (activityIndex === -1) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found for this client');
+  }
+  
+  client.activities.splice(activityIndex, 1);
+  await client.save();
+};
+
+/**
+ * Update activity assignment for a client
+ * @param {ObjectId} clientId
+ * @param {ObjectId} activityId
+ * @param {Object} updateData
+ * @returns {Promise<Client>}
+ */
+const updateActivityAssignment = async (clientId, activityId, updateData) => {
+  const client = await getClientById(clientId);
+  
+  const activity = client.activities.find(
+    (act) => act.activity.toString() === activityId
+  );
+  
+  if (!activity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found for this client');
+  }
+  
+  // Update the activity assignment
+  if (updateData.assignedTeamMember !== undefined) {
+    activity.assignedTeamMember = updateData.assignedTeamMember;
+  }
+  
+  if (updateData.notes !== undefined) {
+    activity.notes = updateData.notes;
+  }
+  
+  await client.save();
+  return client.populate([
+    { path: 'activities.activity' },
+    { path: 'activities.assignedTeamMember' }
+  ]);
+};
+
+/**
+ * Get client activities with filtering and pagination
+ * @param {ObjectId} clientId
+ * @param {Object} query - Query parameters
+ * @returns {Promise<Object>}
+ */
+const getClientActivities = async (clientId, query = {}) => {
+  const client = await getClientById(clientId);
+  
+  let activities = client.activities;
+  
+  // Apply filters
+  if (query.assignedTeamMember) {
+    activities = activities.filter(
+      (act) => act.assignedTeamMember.toString() === query.assignedTeamMember
+    );
+  }
+  
+  // Apply sorting
+  if (query.sortBy) {
+    const [field, order] = query.sortBy.split(':');
+    const sortOrder = order === 'desc' ? -1 : 1;
+    
+    activities.sort((a, b) => {
+      if (field === 'assignedDate') {
+        return (new Date(a.assignedDate) - new Date(b.assignedDate)) * sortOrder;
+      }
+      return 0;
+    });
+  }
+  
+  // Apply pagination
+  const page = parseInt(query.page) || 1;
+  const limit = parseInt(query.limit) || 10;
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  
+  const paginatedActivities = activities.slice(startIndex, endIndex);
+  
+  return {
+    activities: paginatedActivities,
+    pagination: {
+      page,
+      limit,
+      total: activities.length,
+      pages: Math.ceil(activities.length / limit),
+    },
+  };
+};
+
+export { 
+  createClient, 
+  queryClients, 
+  getClientById, 
+  updateClientById, 
+  deleteClientById, 
+  bulkImportClients,
+  addActivityToClient,
+  removeActivityFromClient,
+  updateActivityAssignment,
+  getClientActivities,
+}; 

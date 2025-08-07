@@ -162,6 +162,49 @@ const bulkImportClients = {
   }),
 };
 
+// Activity management validations
+const addActivityToClient = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    activity: Joi.string().custom(objectId).required(),
+    assignedTeamMember: Joi.string().custom(objectId).required(),
+    notes: Joi.string().optional(),
+  }),
+};
+
+const removeActivityFromClient = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+    activityId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+const updateActivityAssignment = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+    activityId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    assignedTeamMember: Joi.string().custom(objectId).optional(),
+    notes: Joi.string().optional(),
+  }).min(1),
+};
+
+const getClientActivities = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    status: Joi.string().valid('pending', 'in_progress', 'completed', 'cancelled'),
+    assignedTeamMember: Joi.string().custom(objectId),
+    sortBy: Joi.string(),
+    limit: Joi.number().integer(),
+    page: Joi.number().integer(),
+  }),
+};
+
 export default {
   createClient,
   getClients,
@@ -169,4 +212,8 @@ export default {
   updateClient,
   deleteClient,
   bulkImportClients,
+  addActivityToClient,
+  removeActivityFromClient,
+  updateActivityAssignment,
+  getClientActivities,
 }; 

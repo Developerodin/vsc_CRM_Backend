@@ -22,4 +22,15 @@ router
   .patch(auth('manageClients'), validate(clientValidation.updateClient), clientController.updateClient)
   .delete(auth('manageClients'), validate(clientValidation.deleteClient), clientController.deleteClient);
 
+// Activity management routes
+router
+  .route('/:clientId/activities')
+  .get(auth('getClients'), validate(clientValidation.getClientActivities), clientController.getClientActivities)
+  .post(auth('manageClients'), validate(clientValidation.addActivityToClient), clientController.addActivityToClient);
+
+router
+  .route('/:clientId/activities/:activityId')
+  .patch(auth('manageClients'), validate(clientValidation.updateActivityAssignment), clientController.updateActivityAssignment)
+  .delete(auth('manageClients'), validate(clientValidation.removeActivityFromClient), clientController.removeActivityFromClient);
+
 export default router; 
