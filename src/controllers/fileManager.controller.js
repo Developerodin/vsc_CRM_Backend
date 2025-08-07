@@ -195,6 +195,32 @@ const getDashboard = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Upload file to client folder
+ * @route POST /v1/file-manager/clients/:clientId/upload
+ * @access Private
+ */
+const uploadFileToClient = catchAsync(async (req, res) => {
+  const fileData = {
+    ...req.body,
+    uploadedBy: req.user.id,
+  };
+  
+  const file = await fileManagerService.uploadFileToClientFolder(req.params.clientId, fileData);
+  res.status(httpStatus.CREATED).send(file);
+});
+
+/**
+ * Get client folder contents
+ * @route GET /v1/file-manager/clients/:clientId/contents
+ * @access Private
+ */
+const getClientContents = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await fileManagerService.getClientFolderContents(req.params.clientId, options);
+  res.send(result);
+});
+
 export {
   createFolder,
   createFile,
@@ -210,4 +236,6 @@ export {
   deleteMultipleItems,
   searchItems,
   getDashboard,
+  uploadFileToClient,
+  getClientContents,
 }; 

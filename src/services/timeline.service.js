@@ -6,28 +6,6 @@ import Activity from '../models/activity.model.js';
 import Client from '../models/client.model.js';
 import TeamMember from '../models/teamMember.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
-import { generateFrequencyPeriods } from '../utils/frequencyGenerator.js';
-
-
-
-/**
- * Initialize frequency status for a timeline
- * @param {Object} timeline - Timeline object
- * @returns {Array} - Array of frequency status objects
- */
-const initializeFrequencyStatus = (timeline) => {
-  if (!timeline.startDate || !timeline.endDate) {
-    return [];
-  }
-  
-  // Use the utility function which already returns the correct format
-  return generateFrequencyPeriods(
-    timeline.frequency,
-    timeline.frequencyConfig,
-    timeline.startDate,
-    timeline.endDate
-  );
-};
 
 /**
  * Validate if activity ID exists
@@ -253,10 +231,8 @@ const createTimeline = async (timelineBody, user = null) => {
       client: clientId
     };
     
-    // Initialize frequency status if start and end dates are provided
-    if (timelineData.startDate && timelineData.endDate) {
-      timelineData.frequencyStatus = initializeFrequencyStatus(timelineData);
-    }
+    // Initialize empty frequency status - will be generated based on frequency config
+    timelineData.frequencyStatus = [];
     
     return timelineData;
   });
@@ -295,18 +271,6 @@ const queryTimelines = async (filter, options, user) => {
     delete mongoFilter.activityName;
   }
 
-  if(mongoFilter.startDate === '') {
-    delete mongoFilter.startDate;
-  }
-  
-  if(mongoFilter.endDate === '') {
-    delete mongoFilter.endDate;
-  }
-
-  if(mongoFilter.startDate || mongoFilter.endDate) {
-    delete mongoFilter.today;
-  }
-
   // Apply branch filtering based on user's access
   if (user && user.role) {
     // If specific branch is requested in filter
@@ -329,193 +293,6 @@ const queryTimelines = async (filter, options, user) => {
         throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
       }
     }
-  }
-
-  // Handle "Today" filter
-  if (mongoFilter.today === 'true') {
-    const today = new Date();
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-    
-    const dateConditions = [];
-
-    // Case 1: Both startDate and endDate are provided
-    if (mongoFilter.startDate && mongoFilter.endDate) {
-      dateConditions.push({
-        $and: [
-          { startDate: { $exists: true, $ne: null, $ne: "" } },
-          { endDate: { $exists: true, $ne: null, $ne: "" } },
-          { startDate: { $lte: endOfDay } },
-          { endDate: { $gte: startOfDay } }
-        ]
-      });
-    }
-    // Case 2: Only startDate is provided - timeline starts before or on today
-    else if (mongoFilter.startDate && !mongoFilter.endDate) {
-      dateConditions.push({
-        $and: [
-          { startDate: { $exists: true, $ne: null, $ne: "" } },
-          { startDate: { $lte: endOfDay } }
-        ]
-      });
-    }
-    // Case 3: Only endDate is provided - timeline ends after or on today
-    else if (!mongoFilter.startDate && mongoFilter.endDate) {
-      dateConditions.push({
-        $and: [
-          { endDate: { $exists: true, $ne: null, $ne: "" } },
-          { endDate: { $gte: startOfDay } }
-        ]
-      });
-    }
-
-    dateConditions.push({
-      $or: [
-        { startDate: { $ne: "", $ne: null } },
-        { endDate: { $ne: "", $ne: null } }
-      ]
-    });
-
-    if (dateConditions.length > 0) {
-      mongoFilter.$or = dateConditions;
-    }
-    
-    delete mongoFilter.today;
-  } else if (mongoFilter.today === 'false' || mongoFilter.today === '') {
-    delete mongoFilter.today;
-  }
-
-  // Handle date range filtering
-  if (mongoFilter.startDate || mongoFilter.endDate) {
-    const startDateValue = mongoFilter?.startDate?.toISOString();
-    const endDateValue = mongoFilter?.endDate?.toISOString();
-    
-    console.log('=== DATE FILTERING DEBUG ===');
-    console.log('startDateValue:', startDateValue);
-    console.log('endDateValue:', endDateValue);
-    
-    // Build date filter conditions
-    const dateConditions = [];
-    
-    if (startDateValue) {
-      // Parse the date string properly to avoid timezone issues
-      let year, month, day;
-      
-      if (startDateValue.includes('T')) {
-        // Handle ISO format: "2024-01-15T10:30:00Z" or "2024-01-15T10:30:00.000Z"
-        const datePart = startDateValue.split('T')[0];
-        [year, month, day] = datePart.split('-').map(Number);
-      } else {
-        // Handle simple format: "2024-01-15"
-        [year, month, day] = startDateValue.split('-').map(Number);
-      }
-      
-      // Validate the date
-      const tempDate = new Date(year, month - 1, day);
-      if (tempDate.getFullYear() !== year || tempDate.getMonth() !== month - 1 || tempDate.getDate() !== day) {
-        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid startDate: ${startDateValue}. Please use YYYY-MM-DD format.`);
-      }
-      
-      const startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
-      
-      console.log('Filter startDate:', startDate);
-      console.log('Filter startDate ISO:', startDate.toISOString());
-      
-      // For startDate filter: timeline should start on or after the specified date
-      // Only include timelines that have a startDate field and it's >= the filter date
-      dateConditions.push({
-        $and: [
-          { startDate: { $exists: true } },
-          { startDate: { $ne: null } },
-          { startDate: { $gte: startDate } }
-        ]
-      });
-    }
-    
-    if (endDateValue) {
-      // Parse the date string properly to avoid timezone issues
-      let year, month, day;
-      
-      if (endDateValue.includes('T')) {
-        // Handle ISO format: "2024-01-15T10:30:00Z" or "2024-01-15T10:30:00.000Z"
-        const datePart = endDateValue.split('T')[0];
-        [year, month, day] = datePart.split('-').map(Number);
-      } else {
-        // Handle simple format: "2024-01-15"
-        [year, month, day] = endDateValue.split('-').map(Number);
-      }
-      
-      // Validate the date
-      const tempDate = new Date(year, month - 1, day);
-      if (tempDate.getFullYear() !== year || tempDate.getMonth() !== month - 1 || tempDate.getDate() !== day) {
-        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid endDate: ${endDateValue}. Please use YYYY-MM-DD format.`);
-      }
-      
-      const endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
-      
-      console.log('Filter endDate:', endDate);
-      console.log('Filter endDate ISO:', endDate.toISOString());
-      
-      // For endDate filter: timeline should end on or before the specified date
-      // Only include timelines that have an endDate field and it's <= the filter date
-      dateConditions.push({
-        $and: [
-          { endDate: { $exists: true } },
-          { endDate: { $ne: null } },
-          { endDate: { $lte: endDate } }
-        ]
-      });
-    }
-    
-    // If both startDate and endDate are provided, use $and to combine them
-    if (startDateValue && endDateValue) {
-      let startYear, startMonth, startDay;
-      let endYear, endMonth, endDay;
-      
-      if (startDateValue.includes('T')) {
-        const startDatePart = startDateValue.split('T')[0];
-        [startYear, startMonth, startDay] = startDatePart.split('-').map(Number);
-      } else {
-        [startYear, startMonth, startDay] = startDateValue.split('-').map(Number);
-      }
-      
-      if (endDateValue.includes('T')) {
-        const endDatePart = endDateValue.split('T')[0];
-        [endYear, endMonth, endDay] = endDatePart.split('-').map(Number);
-      } else {
-        [endYear, endMonth, endDay] = endDateValue.split('-').map(Number);
-      }
-      
-      const startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
-      const endDate = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
-      
-      mongoFilter.$and = [
-        { startDate: { $exists: true } },
-        { startDate: { $ne: null } },
-        { startDate: { $gte: startDate } },
-        { endDate: { $exists: true } },
-        { endDate: { $ne: null } },
-        { endDate: { $lte: endDate } }
-      ];
-      
-      console.log('Combined date filter:', JSON.stringify(mongoFilter.$and, null, 2));
-    } else {
-      // If only one date is provided, use $or for the conditions
-      if (mongoFilter.$or) {
-        const existingOrFilter = mongoFilter.$or;
-        mongoFilter.$or = [
-          ...existingOrFilter,
-          ...dateConditions
-        ];
-      } else {
-        mongoFilter.$or = dateConditions;
-      }
-      
-      console.log('Single date filter:', JSON.stringify(mongoFilter.$or, null, 2));
-    }
-    
-    delete mongoFilter.startDate;
-    delete mongoFilter.endDate;
   }
 
   // Handle activity name filtering
@@ -841,8 +618,6 @@ const bulkImportTimelines = async (timelines) => {
             turnover: timeline.turnover,
             assignedMember: timeline.assignedMember,
             branch: timeline.branch,
-            startDate: timeline.startDate,
-            endDate: timeline.endDate,
           },
         },
         upsert: false,
@@ -997,7 +772,7 @@ const getFrequencyStatus = async (timelineId, user = null) => {
 /**
  * Initialize or regenerate frequency status for a timeline
  * @param {ObjectId} timelineId
- * @param {Object} user - User object with role information (optional)
+ * @param {Object} user - User object for branch access validation
  * @returns {Promise<Timeline>}
  */
 const initializeOrRegenerateFrequencyStatus = async (timelineId, user = null) => {
@@ -1010,12 +785,8 @@ const initializeOrRegenerateFrequencyStatus = async (timelineId, user = null) =>
     }
   }
   
-  if (!timeline.startDate || !timeline.endDate) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Start date and end date are required to initialize frequency status');
-  }
-  
-  timeline.frequencyStatus = initializeFrequencyStatus(timeline);
-  await timeline.save();
+  // Regenerate frequency status using the model's method
+  await timeline.regenerateFrequencyStatus();
   return timeline;
 };
 

@@ -144,10 +144,6 @@ const timelineSchema = mongoose.Schema(
         },
       },
     ],
-    turnover: {
-      type: Number,
-      required: false,
-    },
     assignedMember: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'TeamMember',
@@ -157,15 +153,7 @@ const timelineSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Branch',
       required: true,
-    },
-    startDate: {
-      type: Date,
-      required: false,
-    },
-    endDate: {
-      type: Date,
-      required: false,
-    },
+    }
   },
   {
     timestamps: true,
@@ -174,47 +162,16 @@ const timelineSchema = mongoose.Schema(
 
 // Pre-save middleware to generate frequency status and update overall status
 timelineSchema.pre('save', function(next) {
-  // Generate frequency status if frequency, frequencyConfig, startDate, and endDate are present
-  if (this.frequency && this.frequencyConfig && this.startDate && this.endDate) {
+  // Generate frequency status if frequency and frequencyConfig are present
+  if (this.frequency && this.frequencyConfig) {
     // Check if this is a new document or if frequency-related fields have changed
     const isNew = this.isNew;
-    const frequencyChanged = this.isModified('frequency') || this.isModified('frequencyConfig') || 
-                           this.isModified('startDate') || this.isModified('endDate');
+    const frequencyChanged = this.isModified('frequency') || this.isModified('frequencyConfig');
     
     if (isNew || frequencyChanged) {
-      // Generate new frequency status entries
-      const newFrequencyStatus = generateFrequencyPeriods(
-        this.frequency,
-        this.frequencyConfig,
-        this.startDate,
-        this.endDate
-      );
-      
-      // If this is an update and we have existing frequency status, preserve completed/delayed/ongoing status
-      if (!isNew && this.frequencyStatus && this.frequencyStatus.length > 0) {
-        const existingStatusMap = new Map();
-        this.frequencyStatus.forEach(fs => {
-          if (fs.status !== 'pending') {
-            existingStatusMap.set(fs.period, {
-              status: fs.status,
-              completedAt: fs.completedAt,
-              notes: fs.notes
-            });
-          }
-        });
-        
-        // Merge existing status with new periods
-        newFrequencyStatus.forEach(fs => {
-          const existing = existingStatusMap.get(fs.period);
-          if (existing) {
-            fs.status = existing.status;
-            fs.completedAt = existing.completedAt;
-            fs.notes = existing.notes;
-          }
-        });
-      }
-      
-      this.frequencyStatus = newFrequencyStatus;
+      // For now, we'll skip frequency status generation since we don't have start/end dates
+      // This will need to be handled differently based on your new requirements
+      this.frequencyStatus = [];
     }
   }
   
@@ -225,13 +182,10 @@ timelineSchema.pre('save', function(next) {
 
 // Instance method to regenerate frequency status
 timelineSchema.methods.regenerateFrequencyStatus = function() {
-  if (this.frequency && this.frequencyConfig && this.startDate && this.endDate) {
-    this.frequencyStatus = generateFrequencyPeriods(
-      this.frequency,
-      this.frequencyConfig,
-      this.startDate,
-      this.endDate
-    );
+  if (this.frequency && this.frequencyConfig) {
+    // For now, we'll skip frequency status generation since we don't have start/end dates
+    // This will need to be handled differently based on your new requirements
+    this.frequencyStatus = [];
     return this.save();
   }
   return Promise.reject(new Error('Missing required fields for frequency status generation'));
@@ -282,9 +236,7 @@ timelineSchema.methods.updateOverallStatus = function() {
 timelineSchema.statics.regenerateAllFrequencyStatus = function() {
   return this.find({
     frequency: { $exists: true },
-    frequencyConfig: { $exists: true },
-    startDate: { $exists: true },
-    endDate: { $exists: true }
+    frequencyConfig: { $exists: true }
   }).then(timelines => {
     const promises = timelines.map(timeline => timeline.regenerateFrequencyStatus());
     return Promise.all(promises);

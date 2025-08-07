@@ -119,6 +119,31 @@ const getDashboard = {
   }),
 };
 
+const uploadFileToClient = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    fileName: Joi.string().required().trim().min(1).max(255),
+    fileUrl: Joi.string().required().uri().trim(),
+    fileKey: Joi.string().required().trim().min(1),
+    fileSize: Joi.number().integer().min(0).optional(),
+    mimeType: Joi.string().trim().optional(),
+    metadata: Joi.object().optional(),
+  }),
+};
+
+const getClientContents = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    sortBy: Joi.string().optional(),
+    limit: Joi.number().integer().min(1).max(100).optional(),
+    page: Joi.number().integer().min(1).optional(),
+  }),
+};
+
 export {
   createFolder,
   createFile,
@@ -134,4 +159,6 @@ export {
   deleteMultipleItems,
   searchItems,
   getDashboard,
+  uploadFileToClient,
+  getClientContents,
 }; 

@@ -102,4 +102,19 @@ router
     fileManagerController.deleteMultipleItems
   );
 
+// Client-specific routes
+router
+  .route('/clients/:clientId/upload')
+  .post(
+    validate(fileManagerValidation.uploadFileToClient),
+    fileManagerController.uploadFileToClient
+  );
+
+router
+  .route('/clients/:clientId/contents')
+  .get(
+    validate(fileManagerValidation.getClientContents),
+    fileManagerController.getClientContents
+  );
+
 export default router; 

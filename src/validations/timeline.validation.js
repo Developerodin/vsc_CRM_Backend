@@ -83,8 +83,6 @@ const createTimeline = {
     turnover: Joi.number(),
     assignedMember: Joi.string().custom(objectId).required(),
     branch: Joi.string().custom(objectId).required(),
-    startDate: Joi.date(),
-    endDate: Joi.date(),
   }).custom((value, helpers) => {
     try {
       validateFrequencyConfig(value.frequency, value.frequencyConfig);
@@ -105,8 +103,6 @@ const getTimelines = {
     assignedMember: Joi.string().custom(objectId),
     branch: Joi.string().custom(objectId),
     today: Joi.string().valid('true', 'false').allow(''),
-    startDate: Joi.date().allow(''),
-    endDate: Joi.date().allow(''),
     sortBy: Joi.string(),
     limit: Joi.number().integer().min(1),
     page: Joi.number().integer().min(1),
@@ -142,8 +138,6 @@ const updateTimeline = {
       turnover: Joi.number(),
       assignedMember: Joi.string().custom(objectId),
       branch: Joi.string().custom(objectId),
-      startDate: Joi.date(),
-      endDate: Joi.date(),
     })
     .min(1)
     .custom((value, helpers) => {
@@ -187,8 +181,6 @@ const bulkImportTimelines = {
           turnover: Joi.number(),
           assignedMember: Joi.string().custom(objectId).required(),
           branch: Joi.string().custom(objectId).required(),
-          startDate: Joi.date(),
-          endDate: Joi.date(),
         }).custom((value, helpers) => {
           try {
             validateFrequencyConfig(value.frequency, value.frequencyConfig);

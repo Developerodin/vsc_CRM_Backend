@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
 import FileManager from '../models/fileManager.model.js';
+import Client from '../models/client.model.js';
 import { deleteFileFromS3 } from '../controllers/common.controller.js';
 
 /**
@@ -456,6 +457,116 @@ const getFolderTree = async (userId, rootFolderId = null) => {
   return tree;
 };
 
+/**
+ * Upload file to client folder
+ * @param {ObjectId} clientId
+ * @param {Object} fileData
+ * @returns {Promise<FileManager>}
+ */
+const uploadFileToClientFolder = async (clientId, fileData) => {
+  // First, verify the client exists
+  const client = await Client.findById(clientId);
+  if (!client) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+
+  // Find the client's folder
+  const clientFolder = await FileManager.findOne({
+    type: 'folder',
+    'folder.metadata.clientId': clientId,
+    isDeleted: false,
+  });
+
+  if (!clientFolder) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client folder not found. Please ensure client folder was created properly.');
+  }
+
+  // Check if file name already exists in the client folder
+  const isNameTaken = await FileManager.isFileNameTaken(fileData.fileName, clientFolder._id);
+  if (isNameTaken) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'File name already exists in this client folder');
+  }
+
+  // Create the file in the client folder
+  const file = await FileManager.create({
+    type: 'file',
+    file: {
+      fileName: fileData.fileName,
+      fileUrl: fileData.fileUrl,
+      fileKey: fileData.fileKey,
+      fileSize: fileData.fileSize || 0,
+      mimeType: fileData.mimeType,
+      metadata: {
+        ...fileData.metadata,
+        clientId: clientId,
+        clientName: client.name,
+      },
+      uploadedBy: fileData.uploadedBy,
+      parentFolder: clientFolder._id,
+    },
+  });
+
+  return file;
+};
+
+/**
+ * Get client folder contents
+ * @param {ObjectId} clientId
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const getClientFolderContents = async (clientId, options = {}) => {
+  // First, verify the client exists
+  const client = await Client.findById(clientId);
+  if (!client) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+
+  // Find the client's folder
+  const clientFolder = await FileManager.findOne({
+    type: 'folder',
+    'folder.metadata.clientId': clientId,
+    isDeleted: false,
+  });
+
+  if (!clientFolder) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client folder not found. Please ensure client folder was created properly.');
+  }
+
+  // Get all contents of the client folder
+  const result = await FileManager.paginate(
+    {
+      $or: [
+        { 'folder.parentFolder': clientFolder._id },
+        { 'file.parentFolder': clientFolder._id }
+      ],
+      isDeleted: false,
+    },
+    {
+      ...options,
+      populate: 'folder.createdBy,file.uploadedBy',
+      sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
+    }
+  );
+
+  return {
+    ...result,
+    clientFolder: {
+      id: clientFolder._id,
+      name: clientFolder.folder.name,
+      path: clientFolder.folder.path,
+      description: clientFolder.folder.description,
+      createdAt: clientFolder.createdAt,
+      updatedAt: clientFolder.updatedAt,
+    },
+    client: {
+      id: client._id,
+      name: client.name,
+      email: client.email,
+    },
+  };
+};
+
 export {
   createFolder,
   createFile,
@@ -470,4 +581,6 @@ export {
   deleteMultipleItems,
   searchItems,
   getFolderTree,
+  uploadFileToClientFolder,
+  getClientFolderContents,
 }; 
