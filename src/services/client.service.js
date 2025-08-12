@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { Client } from '../models/index.js';
+import { Client, Activity, TeamMember } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
@@ -130,6 +130,65 @@ const deleteClientById = async (clientId) => {
   return client;
 };
 
+// Helper function to validate and process activities from frontend data
+const processActivitiesFromFrontend = async (activityData) => {
+  if (!activityData || !Array.isArray(activityData)) {
+    return { isValid: true, activities: [], errors: [] };
+  }
+
+  const activities = [];
+  const errors = [];
+  
+  for (const activityRow of activityData) {
+    try {
+      // Validate that activity exists by ID
+      const activity = await Activity.findById(activityRow.activity);
+      
+      // Validate that team member exists by ID
+      const teamMember = await TeamMember.findById(activityRow.assignedTeamMember);
+      
+      if (activity && teamMember) {
+        // Use the IDs directly from frontend (no need to convert)
+        activities.push({
+          activity: activityRow.activity, // Keep the original ID
+          assignedTeamMember: activityRow.assignedTeamMember, // Keep the original ID
+          assignedDate: new Date(), // System automatically sets current date
+          notes: activityRow.notes || ''
+        });
+      } else {
+        // Add validation error
+        if (!activity) {
+          errors.push({
+            type: 'ACTIVITY_NOT_FOUND',
+            message: `Activity with ID '${activityRow.activity}' not found`,
+            data: activityRow
+          });
+        }
+        if (!teamMember) {
+          errors.push({
+            type: 'TEAM_MEMBER_NOT_FOUND',
+            message: `Team member with ID '${activityRow.assignedTeamMember}' not found`,
+            data: activityRow
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error validating activity row:', error, activityRow);
+      errors.push({
+        type: 'VALIDATION_ERROR',
+        message: 'Error validating activity data',
+        data: activityRow
+      });
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    activities,
+    errors
+  };
+};
+
 /**
  * Bulk import clients (create and update) - Allows duplicate emails and phones
  * @param {Array} clients - Array of client objects with optional id for updates
@@ -155,8 +214,29 @@ const bulkImportClients = async (clients) => {
       const batch = toCreate.slice(i, i + BATCH_SIZE);
 
       try {
+        // Process activities for each client before creation
+        const processedBatch = await Promise.all(
+          batch.map(async (client) => {
+            if (client.activities && Array.isArray(client.activities)) {
+              const result = await processActivitiesFromFrontend(client.activities);
+              if (!result.isValid) {
+                // Add validation errors to results
+                result.errors.forEach(error => {
+                  results.errors.push({
+                    index: i,
+                    error: error.message,
+                    data: { ...client, activityError: error }
+                  });
+                });
+              }
+              return { ...client, activities: result.activities };
+            }
+            return client;
+          })
+        );
+
         // Use bulk insert to create all clients, allowing duplicates
-        const insertResult = await Client.insertMany(batch, {
+        const insertResult = await Client.insertMany(processedBatch, {
           ordered: false, // Continue processing even if some fail
         });
         results.created += insertResult.length;
@@ -193,29 +273,62 @@ const bulkImportClients = async (clients) => {
       const batch = toUpdate.slice(i, i + BATCH_SIZE);
 
       try {
-        const updateOps = batch.map((client) => ({
-          updateOne: {
-            filter: { _id: client.id },
-            update: {
-              $set: {
-                name: client.name,
-                phone: client.phone,
-                email: client.email,
-                email2: client.email2,
-                address: client.address,
-                district: client.district,
-                state: client.state,
-                country: client.country,
-                fNo: client.fNo,
-                pan: client.pan,
-                dob: client.dob,
-                branch: client.branch,
-                sortOrder: client.sortOrder,
+        const updateOps = await Promise.all(
+          batch.map(async (client) => {
+            // Process activities if provided
+            let activities = [];
+            if (client.activities && Array.isArray(client.activities)) {
+              const result = await processActivitiesFromFrontend(client.activities);
+              if (result.isValid) {
+                activities = result.activities;
+              } else {
+                // Add validation errors to results
+                result.errors.forEach(error => {
+                  results.errors.push({
+                    index: i,
+                    error: error.message,
+                    data: { ...client, activityError: error }
+                  });
+                });
+              }
+            }
+
+            return {
+              updateOne: {
+                filter: { _id: client.id },
+                update: {
+                  $set: {
+                    name: client.name,
+                    phone: client.phone,
+                    email: client.email,
+                    email2: client.email2,
+                    address: client.address,
+                    district: client.district,
+                    state: client.state,
+                    country: client.country,
+                    fNo: client.fNo,
+                    pan: client.pan,
+                    dob: client.dob,
+                    branch: client.branch,
+                    sortOrder: client.sortOrder,
+                    // New business fields
+                    businessType: client.businessType,
+                    gstNumber: client.gstNumber,
+                    tanNumber: client.tanNumber,
+                    cinNumber: client.cinNumber,
+                    udyamNumber: client.udyamNumber,
+                    iecCode: client.iecCode,
+                    entityType: client.entityType,
+                    metadata: client.metadata,
+                    // Update activities if provided
+                    ...(activities.length > 0 && { activities }),
+                  },
+                },
+                upsert: false,
               },
-            },
-            upsert: false,
-          },
-        }));
+            };
+          })
+        );
 
         const updateResult = await Client.bulkWrite(updateOps, {
           ordered: false, // Continue processing even if some fail
