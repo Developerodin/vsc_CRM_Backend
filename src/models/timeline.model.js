@@ -115,6 +115,15 @@ const timelineSchema = mongoose.Schema(
       required: true,
       default: 'pending',
     },
+    startDate: {
+      type: Date,
+      required: true,
+      default: Date.now,
+    },
+    endDate: {
+      type: Date,
+      required: true,
+    },
     frequency: {
       type: String,
       enum: ['Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'],
@@ -162,16 +171,34 @@ const timelineSchema = mongoose.Schema(
 
 // Pre-save middleware to generate frequency status and update overall status
 timelineSchema.pre('save', function(next) {
-  // Generate frequency status if frequency and frequencyConfig are present
-  if (this.frequency && this.frequencyConfig) {
+  // Generate frequency status if frequency, frequencyConfig, startDate, and endDate are present
+  if (this.frequency && this.frequencyConfig && this.startDate && this.endDate) {
     // Check if this is a new document or if frequency-related fields have changed
     const isNew = this.isNew;
-    const frequencyChanged = this.isModified('frequency') || this.isModified('frequencyConfig');
+    const frequencyChanged = this.isModified('frequency') || this.isModified('frequencyConfig') || 
+                           this.isModified('startDate') || this.isModified('endDate');
     
     if (isNew || frequencyChanged) {
-      // For now, we'll skip frequency status generation since we don't have start/end dates
-      // This will need to be handled differently based on your new requirements
-      this.frequencyStatus = [];
+      try {
+        // Generate frequency periods using the utility function
+        const periods = generateFrequencyPeriods(
+          this.frequency,
+          this.frequencyConfig,
+          this.startDate,
+          this.endDate
+        );
+        
+        // Create frequency status entries for each period
+        this.frequencyStatus = periods.map(periodObj => ({
+          period: periodObj.period,
+          status: 'pending',
+          notes: ''
+        }));
+      } catch (error) {
+        console.error('Error generating frequency status:', error);
+        // If generation fails, set empty array but don't fail the save
+        this.frequencyStatus = [];
+      }
     }
   }
   
@@ -182,13 +209,29 @@ timelineSchema.pre('save', function(next) {
 
 // Instance method to regenerate frequency status
 timelineSchema.methods.regenerateFrequencyStatus = function() {
-  if (this.frequency && this.frequencyConfig) {
-    // For now, we'll skip frequency status generation since we don't have start/end dates
-    // This will need to be handled differently based on your new requirements
-    this.frequencyStatus = [];
-    return this.save();
+  if (this.frequency && this.frequencyConfig && this.startDate && this.endDate) {
+    try {
+      // Generate frequency periods using the utility function
+      const periods = generateFrequencyPeriods(
+        this.frequency,
+        this.frequencyConfig,
+        this.startDate,
+        this.endDate
+      );
+      
+      // Create frequency status entries for each period
+      this.frequencyStatus = periods.map(periodObj => ({
+        period: periodObj.period,
+        status: 'pending',
+        notes: ''
+      }));
+      
+      return this.save();
+    } catch (error) {
+      return Promise.reject(new Error(`Failed to regenerate frequency status: ${error.message}`));
+    }
   }
-  return Promise.reject(new Error('Missing required fields for frequency status generation'));
+  return Promise.reject(new Error('Missing required fields for frequency status generation: frequency, frequencyConfig, startDate, or endDate'));
 };
 
 // Instance method to update a specific frequency status period

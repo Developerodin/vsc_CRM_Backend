@@ -3,6 +3,7 @@ import validator from 'validator';
 import toJSON from './plugins/toJSON.plugin.js';
 import paginate from './plugins/paginate.plugin.js';
 import FileManager from './fileManager.model.js';
+import Timeline from './timeline.model.js';
 
 const clientSchema = mongoose.Schema(
   {
@@ -196,7 +197,7 @@ const clientSchema = mongoose.Schema(
 clientSchema.plugin(toJSON);
 clientSchema.plugin(paginate);
 
-// Post-save middleware to create client subfolder
+// Post-save middleware to create client subfolder and timelines
 clientSchema.post('save', async function(doc) {
   try {
     // Ensure Clients parent folder exists
@@ -246,8 +247,53 @@ clientSchema.post('save', async function(doc) {
         }
       });
     }
+
+    // Create timelines for activities with frequency configured
+    if (doc.activities && doc.activities.length > 0) {
+      const timelinePromises = [];
+      
+      for (const activityItem of doc.activities) {
+        try {
+          // Get the full activity document to check frequency
+          const Activity = mongoose.model('Activity');
+          const activity = await Activity.findById(activityItem.activity);
+          
+          // Only create timeline if activity has frequency and frequencyConfig
+          if (activity && activity.frequency && activity.frequencyConfig) {
+            // Calculate start and end dates (1 year from today)
+            const startDate = new Date();
+            const endDate = new Date();
+            endDate.setFullYear(endDate.getFullYear() + 1);
+            
+            // Create timeline
+            const timeline = new Timeline({
+              activity: activity._id,
+              client: doc._id,
+              status: 'pending',
+              startDate: startDate,
+              endDate: endDate,
+              frequency: activity.frequency,
+              frequencyConfig: activity.frequencyConfig,
+              assignedMember: activityItem.assignedTeamMember,
+              branch: doc.branch
+            });
+            
+            timelinePromises.push(timeline.save());
+          }
+        } catch (error) {
+          console.error(`Error creating timeline for activity ${activityItem.activity}:`, error);
+          // Continue with other activities even if one fails
+        }
+      }
+      
+      // Wait for all timelines to be created
+      if (timelinePromises.length > 0) {
+        await Promise.all(timelinePromises);
+        console.log(`Created ${timelinePromises.length} timelines for client ${doc.name}`);
+      }
+    }
   } catch (error) {
-    console.error('Error creating client subfolder:', error);
+    console.error('Error in client post-save middleware:', error);
   }
 });
 
