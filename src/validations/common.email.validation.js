@@ -38,9 +38,28 @@ const sendBulkEmails = {
   }),
 };
 
+const sendEmailWithAttachments = {
+  body: Joi.object().keys({
+    to: Joi.string().email().required(),
+    subject: Joi.string().required().trim().min(1).max(255),
+    text: Joi.string().required().trim().min(1),
+    description: Joi.string().trim().optional(),
+    attachments: Joi.array().items(
+      Joi.object({
+        filename: Joi.string().optional(), // Optional - will be extracted from URL if not provided
+        url: Joi.string().uri().optional(), // File URL to download (including S3 URLs)
+        content: Joi.string().optional(), // Base64 encoded content (alternative to URL)
+        contentType: Joi.string().optional(), // MIME type
+        cid: Joi.string().optional() // For inline images
+      }).or('url', 'content') // Must have at least one of these
+    ).optional()
+  }),
+};
+
 export {
   sendCustomEmail,
   sendTaskAssignmentEmail,
   sendNotificationEmail,
   sendBulkEmails,
+  sendEmailWithAttachments,
 };

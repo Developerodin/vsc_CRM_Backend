@@ -189,9 +189,60 @@ const sendBulkEmails = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Send email with attachments
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+const sendEmailWithAttachments = catchAsync(async (req, res) => {
+  const { to, subject, text, description, attachments } = req.body;
+
+  if (!to || !subject || !text) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'To, subject, and text are required');
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(to)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid email format');
+  }
+
+  // Validate attachments if provided
+  if (attachments && Array.isArray(attachments)) {
+    for (const attachment of attachments) {
+      // Check if attachment has either URL or content (not both required)
+      if (!attachment.url && !attachment.content) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Each attachment must have either url or content');
+      }
+      
+      // If using content, filename is required
+      if (attachment.content && !attachment.filename) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Filename is required when using content');
+      }
+    }
+  }
+
+  // Generate HTML content
+  const htmlContent = emailService.generateCustomEmailHTML(text, description);
+
+  await emailService.sendEmailWithFileAttachments(to, subject, text, htmlContent, attachments);
+
+  res.status(httpStatus.OK).send({
+    success: true,
+    message: 'Email with attachments sent successfully',
+    data: {
+      to,
+      subject,
+      attachmentsCount: attachments ? attachments.length : 0,
+      sentAt: new Date().toISOString()
+    }
+  });
+});
+
 export {
   sendCustomEmail,
   sendTaskAssignmentEmail,
   sendNotificationEmail,
   sendBulkEmails,
+  sendEmailWithAttachments,
 };

@@ -28,6 +28,149 @@ const sendEmail = async (to, subject, text, html = null) => {
 };
 
 /**
+ * Send an email with attachments
+ * @param {string} to
+ * @param {string} subject
+ * @param {string} text
+ * @param {string} html - Optional HTML content
+ * @param {Array} attachments - Optional array of attachment objects
+ * @returns {Promise}
+ */
+const sendEmailWithAttachments = async (to, subject, text, html = null, attachments = []) => {
+  const msg = { from: config.email.from, to, subject, text };
+  if (html) {
+    msg.html = html;
+  }
+  if (attachments && attachments.length > 0) {
+    msg.attachments = attachments;
+  }
+  await transport.sendMail(msg);
+};
+
+/**
+ * Download file from URL and convert to buffer
+ * @param {string} url - File URL
+ * @returns {Promise<Buffer>}
+ */
+const downloadFileFromUrl = async (url) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch (error) {
+    throw new Error(`Error downloading file from URL: ${error.message}`);
+  }
+};
+
+/**
+ * Download file from S3 using file key (DEPRECATED - Use URL instead)
+ * @param {string} fileKey - S3 file key
+ * @returns {Promise<Buffer>}
+ */
+const downloadFileFromS3 = async (fileKey) => {
+  // This function is deprecated since you're getting full S3 URLs
+  // Convert S3 key to full URL and use URL download instead
+  const s3Url = `https://${config.aws.s3.bucket}.s3.${config.aws.region}.amazonaws.com/${fileKey}`;
+  return await downloadFileFromUrl(s3Url);
+};
+
+/**
+ * Process attachments from frontend (URLs, S3 keys, or direct content)
+ * @param {Array} attachments - Array of attachment objects
+ * @returns {Promise<Array>} - Processed attachments for Nodemailer
+ */
+const processAttachments = async (attachments) => {
+  if (!attachments || !Array.isArray(attachments)) {
+    return [];
+  }
+
+  const processedAttachments = [];
+
+  for (const attachment of attachments) {
+    try {
+      let content;
+      let filename = attachment.filename;
+      let contentType = attachment.contentType;
+
+      // Handle different attachment types
+      if (attachment.url) {
+        // Download from URL
+        content = await downloadFileFromUrl(attachment.url);
+        if (!filename) {
+          filename = attachment.url.split('/').pop() || 'downloaded-file';
+        }
+        if (!contentType) {
+          contentType = 'application/octet-stream';
+        }
+      } else if (attachment.s3Key) {
+        // Download from S3
+        content = await downloadFileFromS3(attachment.s3Key);
+        if (!filename) {
+          filename = attachment.s3Key.split('/').pop() || 's3-file';
+        }
+        if (!contentType) {
+          contentType = 'application/octet-stream';
+        }
+      } else if (attachment.content) {
+        // Direct base64 content
+        content = Buffer.from(attachment.content, 'base64');
+        if (!filename) {
+          filename = 'attachment';
+        }
+        if (!contentType) {
+          contentType = 'application/octet-stream';
+        }
+      } else {
+        console.warn('Skipping attachment: missing url, s3Key, or content');
+        continue;
+      }
+
+      processedAttachments.push({
+        filename,
+        content,
+        contentType,
+        cid: attachment.cid // For inline images
+      });
+
+    } catch (error) {
+      console.error(`Error processing attachment: ${error.message}`, attachment);
+      // Continue with other attachments instead of failing completely
+    }
+  }
+
+  return processedAttachments;
+};
+
+/**
+ * Send email with attachments from URLs, S3 keys, or direct content
+ * @param {string} to
+ * @param {string} subject
+ * @param {string} text
+ * @param {string} html - Optional HTML content
+ * @param {Array} attachments - Array of attachment objects with url, s3Key, or content
+ * @returns {Promise}
+ */
+const sendEmailWithFileAttachments = async (to, subject, text, html = null, attachments = []) => {
+  const msg = { from: config.email.from, to, subject, text };
+  if (html) {
+    msg.html = html;
+  }
+
+  // Process attachments (download from URLs/S3 if needed)
+  if (attachments && attachments.length > 0) {
+    const processedAttachments = await processAttachments(attachments);
+    if (processedAttachments.length > 0) {
+      msg.attachments = processedAttachments;
+    }
+  }
+
+  await transport.sendMail(msg);
+};
+
+/**
  * Generate HTML template for custom email
  * @param {string} text
  * @param {string} description
@@ -264,6 +407,8 @@ const sendPasswordResetOtp = async (to, otp) => {
 export {
   transport,
   sendEmail,
+  sendEmailWithAttachments,
+  sendEmailWithFileAttachments,
   sendResetPasswordEmail,
   sendVerificationEmail,
   sendEmailOtp,

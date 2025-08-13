@@ -26,4 +26,9 @@ router
   .route('/bulk')
   .post(auth('sendEmails'), validate(commonEmailValidation.sendBulkEmails), commonEmailController.sendBulkEmails);
 
+// Send email with attachments
+router
+  .route('/send-with-attachments')
+  .post(validate(commonEmailValidation.sendEmailWithAttachments), commonEmailController.sendEmailWithAttachments);
+
 export default router;
