@@ -8,6 +8,7 @@ import Group from './group.model.js';
 import Role from './role.model.js';
 import Timeline from './timeline.model.js';
 import FileManager from './fileManager.model.js';
+import Task from './task.model.js';
 
-export { Token, User, TeamMember, Activity, Branch, Client, Group, Role, Timeline, FileManager };
+export { Token, User, TeamMember, Activity, Branch, Client, Group, Role, Timeline, FileManager, Task };
 

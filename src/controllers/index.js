@@ -11,6 +11,7 @@ import * as dashboardController from './dashboard.controller.js';
 import * as commonController from './common.controller.js';
 import * as fileManagerController from './fileManager.controller.js';
 import * as commonEmailController from './common.email.controller.js';
+import * as taskController from './task.controller.js';
 
 export {
   authController,
@@ -26,5 +27,6 @@ export {
   commonController,
   fileManagerController,
   commonEmailController,
+  taskController,
 };
 

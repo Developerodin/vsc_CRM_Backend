@@ -16,6 +16,7 @@ import config from '../../config/config.js';
 import commonRoute from './common.route.js';
 import fileManagerRoute from './fileManager.route.js';
 import commonEmailRoute from './common.email.route.js';
+import taskRoute from './task.route.js';
 
 const router = express.Router();
 
@@ -67,6 +68,10 @@ const defaultRoutes = [
   {
     path: '/dashboard',
     route: dashboardRoute,
+  },
+  {
+    path: '/tasks',
+    route: taskRoute,
   },
   {
     path: '/common',

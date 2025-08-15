@@ -1,0 +1,332 @@
+import httpStatus from 'http-status';
+import catchAsync from '../utils/catchAsync.js';
+import pick from '../utils/pick.js';
+import ApiError from '../utils/ApiError.js';
+import taskService from '../services/task.service.js';
+
+/**
+ * Create a task
+ * @route POST /v1/tasks
+ * @access Private
+ */
+const createTask = catchAsync(async (req, res) => {
+  const task = await taskService.createTask(req.body);
+  res.status(httpStatus.CREATED).send(task);
+});
+
+/**
+ * Get tasks with filtering and pagination
+ * @route GET /v1/tasks
+ * @access Private
+ */
+const getTasks = catchAsync(async (req, res) => {
+  const filter = pick(req.query, [
+    'teamMember', 'assignedBy', 'timeline', 'branch', 'status', 'priority',
+    'startDate', 'endDate'
+  ]);
+  
+  // Handle date range filtering
+  if (req.query.startDateRange && req.query.endDateRange) {
+    const startDate = new Date(req.query.startDateRange);
+    const endDate = new Date(req.query.endDateRange);
+    delete filter.startDate;
+    delete filter.endDate;
+    filter.startDateRange = startDate;
+    filter.endDateRange = endDate;
+  }
+  
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.queryTasks(filter, options);
+  res.send(result);
+});
+
+/**
+ * Get task by id
+ * @route GET /v1/tasks/:taskId
+ * @access Private
+ */
+const getTask = catchAsync(async (req, res) => {
+  const task = await taskService.getTaskById(req.params.taskId);
+  res.send(task);
+});
+
+/**
+ * Update task by id
+ * @route PATCH /v1/tasks/:taskId
+ * @access Private
+ */
+const updateTask = catchAsync(async (req, res) => {
+  const task = await taskService.updateTaskById(req.params.taskId, req.body);
+  res.send(task);
+});
+
+/**
+ * Delete task by id
+ * @route DELETE /v1/tasks/:taskId
+ * @access Private
+ */
+const deleteTask = catchAsync(async (req, res) => {
+  await taskService.deleteTaskById(req.params.taskId);
+  res.status(httpStatus.NO_CONTENT).send();
+});
+
+/**
+ * Get tasks by team member
+ * @route GET /v1/tasks/team-member/:teamMemberId
+ * @access Private
+ */
+const getTasksByTeamMember = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksByTeamMember(req.params.teamMemberId, options);
+  res.send(result);
+});
+
+/**
+ * Get tasks by timeline
+ * @route GET /v1/tasks/timeline/:timelineId
+ * @access Private
+ */
+const getTasksByTimeline = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksByTimeline(req.params.timelineId, options);
+  res.send(result);
+});
+
+/**
+ * Get tasks by assigned by user
+ * @route GET /v1/tasks/assigned-by/:userId
+ * @access Private
+ */
+const getTasksByAssignedBy = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksByAssignedBy(req.params.userId, options);
+  res.send(result);
+});
+
+/**
+ * Get tasks by branch
+ * @route GET /v1/tasks/branch/:branchId
+ * @access Private
+ */
+const getTasksByBranch = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksByBranch(req.params.branchId, options);
+  res.send(result);
+});
+
+/**
+ * Get tasks by status
+ * @route GET /v1/tasks/status/:status
+ * @access Private
+ */
+const getTasksByStatus = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksByStatus(req.params.status, options);
+  res.send(result);
+});
+
+/**
+ * Get tasks by priority
+ * @route GET /v1/tasks/priority/:priority
+ * @access Private
+ */
+const getTasksByPriority = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksByPriority(req.params.priority, options);
+  res.send(result);
+});
+
+/**
+ * Get tasks by date range
+ * @route GET /v1/tasks/date-range
+ * @access Private
+ */
+const getTasksByDateRange = catchAsync(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  
+  if (!startDate || !endDate) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Start date and end date are required');
+  }
+  
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksByDateRange(
+    new Date(startDate),
+    new Date(endDate),
+    options
+  );
+  res.send(result);
+});
+
+/**
+ * Get overdue tasks
+ * @route GET /v1/tasks/overdue
+ * @access Private
+ */
+const getOverdueTasks = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getOverdueTasks(options);
+  res.send(result);
+});
+
+/**
+ * Get high priority tasks
+ * @route GET /v1/tasks/high-priority
+ * @access Private
+ */
+const getHighPriorityTasks = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getHighPriorityTasks(options);
+  res.send(result);
+});
+
+/**
+ * Get tasks due today
+ * @route GET /v1/tasks/due-today
+ * @access Private
+ */
+const getTasksDueToday = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksDueToday(options);
+  res.send(result);
+});
+
+/**
+ * Get tasks due this week
+ * @route GET /v1/tasks/due-this-week
+ * @access Private
+ */
+const getTasksDueThisWeek = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksDueThisWeek(options);
+  res.send(result);
+});
+
+/**
+ * Get tasks due this month
+ * @route GET /v1/tasks/due-this-month
+ * @access Private
+ */
+const getTasksDueThisMonth = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.getTasksDueThisMonth(options);
+  res.send(result);
+});
+
+/**
+ * Search tasks by text
+ * @route GET /v1/tasks/search
+ * @access Private
+ */
+const searchTasks = catchAsync(async (req, res) => {
+  const { q } = req.query;
+  
+  if (!q) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Search query is required');
+  }
+  
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await taskService.searchTasks(q, options);
+  res.send(result);
+});
+
+/**
+ * Get task statistics
+ * @route GET /v1/tasks/statistics
+ * @access Private
+ */
+const getTaskStatistics = catchAsync(async (req, res) => {
+  const { branchId } = req.query;
+  const stats = await taskService.getTaskStatistics(branchId);
+  res.send(stats);
+});
+
+/**
+ * Bulk update task status
+ * @route PATCH /v1/tasks/bulk/status
+ * @access Private
+ */
+const bulkUpdateTaskStatus = catchAsync(async (req, res) => {
+  const { taskIds, status } = req.body;
+  
+  if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Task IDs array is required');
+  }
+  
+  if (!status) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Status is required');
+  }
+  
+  const result = await taskService.bulkUpdateTaskStatus(taskIds, status);
+  res.send(result);
+});
+
+/**
+ * Bulk delete tasks
+ * @route DELETE /v1/tasks/bulk
+ * @access Private
+ */
+const bulkDeleteTasks = catchAsync(async (req, res) => {
+  const { taskIds } = req.body;
+  
+  if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Task IDs array is required');
+  }
+  
+  const result = await taskService.bulkDeleteTasks(taskIds);
+  res.send(result);
+});
+
+/**
+ * Add attachment to task
+ * @route POST /v1/tasks/:taskId/attachments
+ * @access Private
+ */
+const addAttachment = catchAsync(async (req, res) => {
+  const { fileName, fileUrl } = req.body;
+  
+  if (!fileName || !fileUrl) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'File name and file URL are required');
+  }
+  
+  const task = await taskService.getTaskById(req.params.taskId);
+  await task.addAttachment(fileName, fileUrl);
+  res.send(task);
+});
+
+/**
+ * Remove attachment from task
+ * @route DELETE /v1/tasks/:taskId/attachments/:fileName
+ * @access Private
+ */
+const removeAttachment = catchAsync(async (req, res) => {
+  const { fileName } = req.params;
+  const task = await taskService.getTaskById(req.params.taskId);
+  await task.removeAttachment(fileName);
+  res.send(task);
+});
+
+export default {
+  createTask,
+  getTasks,
+  getTask,
+  updateTask,
+  deleteTask,
+  getTasksByTeamMember,
+  getTasksByTimeline,
+  getTasksByAssignedBy,
+  getTasksByBranch,
+  getTasksByStatus,
+  getTasksByPriority,
+  getTasksByDateRange,
+  getOverdueTasks,
+  getHighPriorityTasks,
+  getTasksDueToday,
+  getTasksDueThisWeek,
+  getTasksDueThisMonth,
+  searchTasks,
+  getTaskStatistics,
+  bulkUpdateTaskStatus,
+  bulkDeleteTasks,
+  addAttachment,
+  removeAttachment,
+};

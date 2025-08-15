@@ -10,6 +10,7 @@ import * as timelineValidation from './timeline.validation.js';
 import * as dashboardValidation from './dashboard.validation.js';
 import * as fileManagerValidation from './fileManager.validation.js';
 import * as commonEmailValidation from './common.email.validation.js';
+import * as taskValidation from './task.validation.js';
 
 export {
   authValidation,
@@ -24,4 +25,5 @@ export {
   dashboardValidation,
   fileManagerValidation,
   commonEmailValidation,
+  taskValidation,
 };
