@@ -394,134 +394,145 @@ const deleteMultipleItems = async (itemIds) => {
 const searchItems = async (filter, options = {}) => {
   console.log('🔍 Search filter received:', JSON.stringify(filter, null, 2));
   
-  // Create a more flexible search pattern
-  const searchPattern = filter.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape regex special characters
-  
-  console.log('🔍 Search pattern:', searchPattern);
-  console.log('🔍 Original query:', filter.query);
-  
-  const searchFilter = {
-    isDeleted: false,
-    $or: [
-      { 'folder.name': { $regex: searchPattern, $options: 'i' } },
-      { 'file.fileName': { $regex: searchPattern, $options: 'i' } },
-      { 'folder.path': { $regex: searchPattern, $options: 'i' } }, // Search in folder paths
-      { 'folder.description': { $regex: searchPattern, $options: 'i' } }, // Search in folder descriptions
-    ],
-  };
-
-  if (filter.type) {
-    searchFilter.type = filter.type;
-  }
-
-  // Handle user permissions more flexibly
-  if (filter.userId) {
-    // For now, let's make the search more permissive for testing
-    // In production, you'd want proper branch-based access control
-    console.log('🔍 User ID filter applied, but allowing broader access for testing');
+  // Check if this is a search query or just a filter request
+  if (filter.query) {
+    // This is a text search - create search pattern
+    const searchPattern = filter.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape regex special characters
     
-    // Option 1: Remove user filter entirely for testing
-    // delete searchFilter.$and;
+    console.log('🔍 Search pattern:', searchPattern);
+    console.log('🔍 Original query:', filter.query);
     
-    // Option 2: Keep user filter but make it less restrictive
-    searchFilter.$and = [
-      {
-        $or: [
-          { 'folder.createdBy': filter.userId },
-          { 'file.uploadedBy': filter.userId },
-          // Allow access to client folders (they should be accessible to users in the same branch)
-          { 'folder.metadata.clientId': { $exists: true } }
-        ]
-      }
-    ];
-  } else {
-    // If no userId filter, remove any existing $and to avoid conflicts
-    delete searchFilter.$and;
-  }
-
-  // If searching for subfolders specifically, enhance path-based search
-  if (filter.includeSubfolders !== false) { // Default to true if not specified
-    // The path search is already included in the main $or array above
-    // This ensures we search in folder paths by default
-  }
-
-  console.log('🔍 Final search filter:', JSON.stringify(searchFilter, null, 2));
-
-  // Test the search filter directly to see what it finds
-  console.log('🔍 Testing search filter directly...');
-  const testQuery = await FileManager.find(searchFilter).limit(3);
-  console.log('🔍 Direct test query found:', testQuery.length, 'results');
-  if (testQuery.length > 0) {
-    console.log('🔍 First test result:', JSON.stringify(testQuery[0], null, 2));
-  }
-
-  const result = await FileManager.paginate(searchFilter, {
-    ...options,
-    populate: 'folder.createdBy,file.uploadedBy',
-    sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
-  });
-
-  console.log('🔍 Search results count:', result.totalResults);
-  if (result.totalResults > 0) {
-    console.log('🔍 First few results:', result.results.slice(0, 3).map(item => ({
-      type: item.type,
-      name: item.type === 'folder' ? (item.folder && item.folder.name) : (item.file && item.file.fileName),
-      path: item.folder && item.folder.path,
-      rawItem: JSON.stringify(item, null, 2)
-    })));
-    
-    // Debug: Check the raw data structure
-    console.log('🔍 Debug - Raw first result:', JSON.stringify(result.results[0], null, 2));
-    
-    // Debug: Check if populate worked
-    if (result.results[0].type === 'folder') {
-      console.log('🔍 Debug - Folder object exists:', !!result.results[0].folder);
-      console.log('🔍 Debug - Folder keys:', result.results[0].folder ? Object.keys(result.results[0].folder) : 'NO_FOLDER');
-    }
-  } else {
-    console.log('🔍 No results found. Let\'s check what exists in database...');
-    
-    // Debug: Check what folders exist with similar names
-    const debugFolders = await FileManager.find({
-      type: 'folder',
+    const searchFilter = {
       isDeleted: false,
-      'folder.name': { $regex: 'Abhishek', $options: 'i' }
-    }).limit(5);
-    
-    console.log('🔍 Debug - Folders with "Abhishek" in name:', debugFolders.length);
-    if (debugFolders.length > 0) {
-      console.log('🔍 Debug - First folder found:', JSON.stringify(debugFolders[0], null, 2));
+      $or: [
+        { 'folder.name': { $regex: searchPattern, $options: 'i' } },
+        { 'file.fileName': { $regex: searchPattern, $options: 'i' } },
+        { 'folder.path': { $regex: searchPattern, $options: 'i' } }, // Search in folder paths
+        { 'folder.description': { $regex: searchPattern, $options: 'i' } }, // Search in folder descriptions
+      ],
+    };
+
+    if (filter.type) {
+      searchFilter.type = filter.type;
     }
+
+    // Handle user permissions more flexibly
+    if (filter.userId) {
+      console.log('🔍 User ID filter applied, but allowing broader access for testing');
+      searchFilter.$and = [
+        {
+          $or: [
+            { 'folder.createdBy': filter.userId },
+            { 'file.uploadedBy': filter.userId },
+            { 'folder.metadata.clientId': { $exists: true } }
+          ]
+        }
+      ];
+    } else {
+      delete searchFilter.$and;
+    }
+
+    console.log('🔍 Final search filter:', JSON.stringify(searchFilter, null, 2));
+
+    // Test the search filter directly to see what it finds
+    console.log('🔍 Testing search filter directly...');
+    const testQuery = await FileManager.find(searchFilter).limit(3);
+    console.log('🔍 Direct test query found:', testQuery.length, 'results');
+    if (testQuery.length > 0) {
+      console.log('🔍 First test result:', JSON.stringify(testQuery[0], null, 2));
+    }
+
+    const result = await FileManager.paginate(searchFilter, {
+      ...options,
+      populate: 'folder.createdBy,file.uploadedBy',
+      sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
+    });
+
+    console.log('🔍 Search results count:', result.totalResults);
+    if (result.totalResults > 0) {
+      console.log('🔍 First few results:', result.results.slice(0, 3).map(item => ({
+        type: item.type,
+        name: item.type === 'folder' ? (item.folder && item.folder.name) : (item.file && item.file.fileName),
+        path: item.folder && item.folder.path,
+        rawItem: JSON.stringify(item, null, 2)
+      })));
+      
+      if (result.results[0].type === 'folder') {
+        console.log('🔍 Debug - Folder object exists:', !!result.results[0].folder);
+        console.log('🔍 Debug - Folder keys:', result.results[0].folder ? Object.keys(result.results[0].folder) : 'NO_FOLDER');
+      }
+    } else {
+      console.log('🔍 No results found. Let\'s check what exists in database...');
+      
+      const debugFolders = await FileManager.find({
+        type: 'folder',
+        isDeleted: false,
+        'folder.name': { $regex: 'Abhishek', $options: 'i' }
+      }).limit(5);
+      
+      console.log('🔍 Debug - Folders with "Abhishek" in name:', debugFolders.length);
+      if (debugFolders.length > 0) {
+        console.log('🔍 Debug - First folder found:', JSON.stringify(debugFolders[0], null, 2));
+      }
+      
+      const allFolders = await FileManager.find({
+        type: 'folder',
+        isDeleted: false
+      }).limit(3);
+      
+      console.log('🔍 Debug - Sample folder structure:', allFolders.map(f => ({
+        id: f._id,
+        name: f.folder ? f.folder.name : 'NO_FOLDER_OBJECT',
+        path: f.folder ? f.folder.path : 'NO_PATH',
+        createdBy: f.folder ? f.folder.createdBy : 'NO_CREATEDBY'
+      })));
+    }
+
+    console.log('🔍 Final result structure:', {
+      totalResults: result.totalResults,
+      resultsLength: result.results.length,
+      hasResults: !!result.results,
+      resultsType: typeof result.results,
+      firstResult: result.results[0] ? {
+        type: result.results[0].type,
+        hasFolder: !!result.results[0].folder,
+        hasFile: !!result.results[0].file,
+        keys: Object.keys(result.results[0])
+      } : 'NO_RESULTS'
+    });
+
+    return result;
+  } else {
+    // This is just a filter request (no text search) - use simple filtering
+    console.log('🔍 No query provided, using simple filter');
     
-    // Debug: Check all folders to see the structure
-    const allFolders = await FileManager.find({
-      type: 'folder',
-      isDeleted: false
-    }).limit(3);
-    
-    console.log('🔍 Debug - Sample folder structure:', allFolders.map(f => ({
-      id: f._id,
-      name: f.folder ? f.folder.name : 'NO_FOLDER_OBJECT',
-      path: f.folder ? f.folder.path : 'NO_PATH',
-      createdBy: f.folder ? f.folder.createdBy : 'NO_CREATEDBY'
-    })));
+    const searchFilter = {
+      isDeleted: false,
+    };
+
+    if (filter.type) {
+      searchFilter.type = filter.type;
+    }
+
+    if (filter.userId) {
+      searchFilter.$or = [
+        { 'folder.createdBy': filter.userId },
+        { 'file.uploadedBy': filter.userId },
+        { 'folder.metadata.clientId': { $exists: true } }
+      ];
+    }
+
+    console.log('🔍 Simple filter:', JSON.stringify(searchFilter, null, 2));
+
+    const result = await FileManager.paginate(searchFilter, {
+      ...options,
+      populate: 'folder.createdBy,file.uploadedBy',
+      sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
+    });
+
+    console.log('🔍 Filter results count:', result.totalResults);
+    return result;
   }
-
-  // Additional debugging: Check the final result structure
-  console.log('🔍 Final result structure:', {
-    totalResults: result.totalResults,
-    resultsLength: result.results.length,
-    hasResults: !!result.results,
-    resultsType: typeof result.results,
-    firstResult: result.results[0] ? {
-      type: result.results[0].type,
-      hasFolder: !!result.results[0].folder,
-      hasFile: !!result.results[0].file,
-      keys: Object.keys(result.results[0])
-    } : 'NO_RESULTS'
-  });
-
-  return result;
 };
 
 /**
@@ -654,7 +665,7 @@ const searchSubfoldersByName = async (subfolderName, options = {}) => {
 
     // Use direct query for better control
     const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
-    const page = options.page && parseInt(options.limit, 10) > 0 ? parseInt(options.page, 10) : 1;
+    const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
     const skip = (page - 1) * limit;
 
     const countPromise = FileManager.countDocuments(searchFilter);
