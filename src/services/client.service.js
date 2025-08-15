@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { Client, Activity, TeamMember } from '../models/index.js';
+import { Client, Activity, FileManager, Timeline } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
@@ -143,15 +143,10 @@ const processActivitiesFromFrontend = async (activityData) => {
     try {
       // Validate that activity exists by ID
       const activity = await Activity.findById(activityRow.activity);
-      
-      // Validate that team member exists by ID
-      const teamMember = await TeamMember.findById(activityRow.assignedTeamMember);
-      
-      if (activity && teamMember) {
+      if (activity) {
         // Use the IDs directly from frontend (no need to convert)
         activities.push({
           activity: activityRow.activity, // Keep the original ID
-          assignedTeamMember: activityRow.assignedTeamMember, // Keep the original ID
           assignedDate: new Date(), // System automatically sets current date
           notes: activityRow.notes || ''
         });
@@ -161,13 +156,6 @@ const processActivitiesFromFrontend = async (activityData) => {
           errors.push({
             type: 'ACTIVITY_NOT_FOUND',
             message: `Activity with ID '${activityRow.activity}' not found`,
-            data: activityRow
-          });
-        }
-        if (!teamMember) {
-          errors.push({
-            type: 'TEAM_MEMBER_NOT_FOUND',
-            message: `Team member with ID '${activityRow.assignedTeamMember}' not found`,
             data: activityRow
           });
         }
@@ -194,6 +182,111 @@ const processActivitiesFromFrontend = async (activityData) => {
  * @param {Array} clients - Array of client objects with optional id for updates
  * @returns {Promise<Object>} - Result with created and updated counts
  */
+// Helper function to create client subfolder
+const createClientSubfolder = async (clientName, branchId) => {
+  try {
+    // Ensure Clients parent folder exists
+    let clientsParentFolder = await FileManager.findOne({
+      type: 'folder',
+      'folder.name': 'Clients',
+      'folder.isRoot': true,
+      isDeleted: false
+    });
+
+    if (!clientsParentFolder) {
+      clientsParentFolder = await FileManager.create({
+        type: 'folder',
+        folder: {
+          name: 'Clients',
+          description: 'Parent folder for all client subfolders',
+          parentFolder: null,
+          createdBy: branchId,
+          isRoot: true,
+          path: '/Clients'
+        }
+      });
+    }
+
+    // Create client subfolder if it doesn't exist
+    const existingClientFolder = await FileManager.findOne({
+      type: 'folder',
+      'folder.name': clientName,
+      'folder.parentFolder': clientsParentFolder._id,
+      isDeleted: false
+    });
+
+    if (!existingClientFolder) {
+      await FileManager.create({
+        type: 'folder',
+        folder: {
+          name: clientName,
+          description: `Folder for client: ${clientName}`,
+          parentFolder: clientsParentFolder._id,
+          createdBy: branchId,
+          isRoot: false,
+          path: `/Clients/${clientName}`,
+          metadata: {
+            clientName: clientName
+          }
+        }
+      });
+    }
+  } catch (error) {
+    console.error(`Error creating subfolder for client ${clientName}:`, error);
+    throw error;
+  }
+};
+
+// Helper function to create timelines for client activities
+const createClientTimelines = async (client, activities) => {
+  try {
+    if (!activities || activities.length === 0) return;
+
+    const timelinePromises = [];
+    
+    for (const activityItem of activities) {
+      try {
+        // Get the full activity document to check frequency
+        const activity = await Activity.findById(activityItem.activity);
+        
+        // Only create timeline if activity has frequency and frequencyConfig
+        if (activity && activity.frequency && activity.frequencyConfig) {
+          // Calculate start and end dates (1 year from today)
+          const startDate = new Date();
+          const endDate = new Date();
+          endDate.setFullYear(endDate.getFullYear() + 1);
+          
+          // Create timeline
+          const timeline = new Timeline({
+            activity: activity._id,
+            client: client._id,
+            status: 'pending',
+            startDate: startDate,
+            endDate: endDate,
+            frequency: activity.frequency,
+            frequencyConfig: activity.frequencyConfig,
+            branch: client.branch
+          });
+          
+          timelinePromises.push(timeline.save());
+        }
+      } catch (error) {
+        console.error(`Error creating timeline for activity ${activityItem.activity}:`, error);
+        // Continue with other activities even if one fails
+      }
+    }
+    
+    // Wait for all timelines to be created
+    if (timelinePromises.length > 0) {
+      await Promise.all(timelinePromises);
+      console.log(`Created ${timelinePromises.length} timelines for client ${client.name}`);
+    }
+  } catch (error) {
+    console.error(`Error creating timelines for client ${client.name}:`, error);
+    throw error;
+  }
+};
+
 const bulkImportClients = async (clients) => {
   const results = {
     created: 0,
@@ -203,6 +296,9 @@ const bulkImportClients = async (clients) => {
   };
 
   const BATCH_SIZE = 100; // Process in batches to avoid memory issues
+  
+  console.log(`Starting bulk import of ${clients.length} clients...`);
+  const startTime = Date.now();
 
   // Separate clients for creation and update
   const toCreate = clients.filter((client) => !client.id);
@@ -210,8 +306,10 @@ const bulkImportClients = async (clients) => {
 
   // Process creation in batches - allow duplicates
   if (toCreate.length > 0) {
+    console.log(`Processing ${toCreate.length} clients for creation in batches of ${BATCH_SIZE}...`);
     for (let i = 0; i < toCreate.length; i += BATCH_SIZE) {
       const batch = toCreate.slice(i, i + BATCH_SIZE);
+      console.log(`Processing creation batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(toCreate.length/BATCH_SIZE)} (${batch.length} clients)...`);
 
       try {
         // Process activities for each client before creation
@@ -241,6 +339,37 @@ const bulkImportClients = async (clients) => {
         });
         results.created += insertResult.length;
         results.totalProcessed += batch.length;
+
+        // Create subfolders and timelines for newly created clients
+        // Process in smaller batches to avoid overwhelming the system
+        const POST_PROCESS_BATCH_SIZE = 20;
+        console.log(`Creating subfolders and timelines for ${insertResult.length} newly created clients...`);
+        for (let j = 0; j < insertResult.length; j += POST_PROCESS_BATCH_SIZE) {
+          const postProcessBatch = insertResult.slice(j, j + POST_PROCESS_BATCH_SIZE);
+          console.log(`Post-processing batch ${Math.floor(j/POST_PROCESS_BATCH_SIZE) + 1}/${Math.ceil(insertResult.length/POST_PROCESS_BATCH_SIZE)}...`);
+          
+          await Promise.all(
+            postProcessBatch.map(async (createdClient) => {
+              try {
+                // Create subfolder
+                await createClientSubfolder(createdClient.name, createdClient.branch);
+                
+                // Create timelines if activities exist
+                if (createdClient.activities && createdClient.activities.length > 0) {
+                  await createClientTimelines(createdClient, createdClient.activities);
+                }
+              } catch (error) {
+                console.error(`Error in post-processing for client ${createdClient.name}:`, error);
+                // Add to errors but don't fail the entire batch
+                results.errors.push({
+                  index: i + j,
+                  error: `Post-processing failed: ${error.message}`,
+                  data: createdClient,
+                });
+              }
+            })
+          );
+        }
       } catch (error) {
         if (error.writeErrors) {
           // Handle partial failures in batch
@@ -269,8 +398,10 @@ const bulkImportClients = async (clients) => {
 
   // Process updates in batches
   if (toUpdate.length > 0) {
+    console.log(`Processing ${toUpdate.length} clients for updates in batches of ${BATCH_SIZE}...`);
     for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
       const batch = toUpdate.slice(i, i + BATCH_SIZE);
+      console.log(`Processing update batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(toUpdate.length/BATCH_SIZE)} (${batch.length} clients)...`);
 
       try {
         const updateOps = await Promise.all(
@@ -335,6 +466,43 @@ const bulkImportClients = async (clients) => {
         });
         results.updated += updateResult.modifiedCount || 0;
         results.totalProcessed += batch.length;
+
+        // For updated clients, we need to fetch them to create/update subfolders and timelines
+        if (updateResult.modifiedCount > 0) {
+          // Fetch the updated clients to get their current state
+          const updatedClientIds = batch.map(client => client.id);
+          const updatedClients = await Client.find({ _id: { $in: updatedClientIds } });
+          
+          // Process in smaller batches to avoid overwhelming the system
+          const POST_PROCESS_BATCH_SIZE = 20;
+          console.log(`Creating/updating subfolders and timelines for ${updatedClients.length} updated clients...`);
+          for (let j = 0; j < updatedClients.length; j += POST_PROCESS_BATCH_SIZE) {
+            const postProcessBatch = updatedClients.slice(j, j + POST_PROCESS_BATCH_SIZE);
+            console.log(`Post-processing update batch ${Math.floor(j/POST_PROCESS_BATCH_SIZE) + 1}/${Math.ceil(updatedClients.length/POST_PROCESS_BATCH_SIZE)}...`);
+            
+            await Promise.all(
+              postProcessBatch.map(async (updatedClient) => {
+                try {
+                  // Ensure subfolder exists (update if needed)
+                  await createClientSubfolder(updatedClient.name, updatedClient.branch);
+                  
+                  // Create timelines if activities exist and were updated
+                  if (updatedClient.activities && updatedClient.activities.length > 0) {
+                    await createClientTimelines(updatedClient, updatedClient.activities);
+                  }
+                } catch (error) {
+                  console.error(`Error in post-processing for updated client ${updatedClient.name}:`, error);
+                  // Add to errors but don't fail the entire batch
+                  results.errors.push({
+                    index: i + j,
+                    error: `Post-processing failed: ${error.message}`,
+                    data: updatedClient,
+                  });
+                }
+              })
+            );
+          }
+        }
       } catch (error) {
         if (error.writeErrors) {
           // Handle partial failures in batch
@@ -361,6 +529,13 @@ const bulkImportClients = async (clients) => {
     }
   }
 
+  const endTime = Date.now();
+  const totalTime = (endTime - startTime) / 1000;
+  
+  console.log(`Bulk import completed in ${totalTime.toFixed(2)} seconds`);
+  console.log(`Results: ${results.created} created, ${results.updated} updated, ${results.errors.length} errors`);
+  console.log(`Total processed: ${results.totalProcessed}/${clients.length}`);
+  
   return results;
 };
 
@@ -387,14 +562,12 @@ const addActivityToClient = async (clientId, activityData) => {
   // Add the new activity
   client.activities.push({
     activity: activityData.activity,
-    assignedTeamMember: activityData.assignedTeamMember,
     notes: activityData.notes || '',
   });
   
   await client.save();
   return client.populate([
     { path: 'activities.activity' },
-    { path: 'activities.assignedTeamMember' }
   ]);
 };
 
@@ -437,11 +610,7 @@ const updateActivityAssignment = async (clientId, activityId, updateData) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found for this client');
   }
   
-  // Update the activity assignment
-  if (updateData.assignedTeamMember !== undefined) {
-    activity.assignedTeamMember = updateData.assignedTeamMember;
-  }
-  
+  // Update the activity notes only (assigned team member removed)
   if (updateData.notes !== undefined) {
     activity.notes = updateData.notes;
   }
@@ -449,7 +618,6 @@ const updateActivityAssignment = async (clientId, activityId, updateData) => {
   await client.save();
   return client.populate([
     { path: 'activities.activity' },
-    { path: 'activities.assignedTeamMember' }
   ]);
 };
 
@@ -464,12 +632,7 @@ const getClientActivities = async (clientId, query = {}) => {
   
   let activities = client.activities;
   
-  // Apply filters
-  if (query.assignedTeamMember) {
-    activities = activities.filter(
-      (act) => act.assignedTeamMember.toString() === query.assignedTeamMember
-    );
-  }
+  // Apply filters (assigned team member removed)
   
   // Apply sorting
   if (query.sortBy) {
@@ -503,6 +666,91 @@ const getClientActivities = async (clientId, query = {}) => {
   };
 };
 
+/**
+ * Reprocess existing clients to create missing timelines and subfolders
+ * This is useful for clients that were imported before the automatic creation was implemented
+ * @param {Object} filter - Filter to select which clients to reprocess
+ * @param {number} batchSize - Number of clients to process at once (default: 50)
+ * @returns {Promise<Object>} - Results of the reprocessing
+ */
+const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
+  console.log('Starting reprocessing of existing clients...');
+  const startTime = Date.now();
+  
+  const results = {
+    processed: 0,
+    subfoldersCreated: 0,
+    timelinesCreated: 0,
+    errors: [],
+    totalClients: 0
+  };
+
+  try {
+    // Get total count of clients to process
+    const totalClients = await Client.countDocuments(filter);
+    results.totalClients = totalClients;
+    
+    if (totalClients === 0) {
+      console.log('No clients found matching the filter criteria');
+      return results;
+    }
+
+    console.log(`Found ${totalClients} clients to reprocess. Processing in batches of ${batchSize}...`);
+    
+    // Process clients in batches
+    for (let skip = 0; skip < totalClients; skip += batchSize) {
+      const clients = await Client.find(filter)
+        .skip(skip)
+        .limit(batchSize)
+        .populate('activities.activity');
+      
+      console.log(`Processing batch ${Math.floor(skip/batchSize) + 1}/${Math.ceil(totalClients/batchSize)} (${clients.length} clients)...`);
+      
+      await Promise.all(
+        clients.map(async (client) => {
+          try {
+            // Create subfolder if it doesn't exist
+            await createClientSubfolder(client.name, client.branch);
+            results.subfoldersCreated++;
+            
+            // Create timelines if activities exist
+            if (client.activities && client.activities.length > 0) {
+              await createClientTimelines(client, client.activities);
+              results.timelinesCreated++;
+            }
+            
+            results.processed++;
+          } catch (error) {
+            console.error(`Error reprocessing client ${client.name}:`, error);
+            results.errors.push({
+              clientId: client._id,
+              clientName: client.name,
+              error: error.message
+            });
+          }
+        })
+      );
+      
+      // Small delay between batches to avoid overwhelming the system
+      if (skip + batchSize < totalClients) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
+    const endTime = Date.now();
+    const totalTime = (endTime - startTime) / 1000;
+    
+    console.log(`Reprocessing completed in ${totalTime.toFixed(2)} seconds`);
+    console.log(`Results: ${results.processed} processed, ${results.subfoldersCreated} subfolders created, ${results.timelinesCreated} timelines created, ${results.errors.length} errors`);
+    
+  } catch (error) {
+    console.error('Error during reprocessing:', error);
+    throw error;
+  }
+  
+  return results;
+};
+
 export { 
   createClient, 
   queryClients, 
@@ -515,4 +763,5 @@ export {
   removeActivityFromClient,
   updateActivityAssignment,
   getClientActivities,
+  reprocessExistingClients,
 }; 

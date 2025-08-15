@@ -41,6 +41,14 @@ router
     fileManagerController.searchItems
   );
 
+// Search client subfolders
+router
+  .route('/search-clients')
+  .get(
+    validate(fileManagerValidation.searchClientSubfolders),
+    fileManagerController.searchClientSubfolders
+  );
+
 // Folders
 router
   .route('/folders')

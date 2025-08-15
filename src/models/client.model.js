@@ -162,21 +162,15 @@ const clientSchema = mongoose.Schema(
         required: true,
         description: 'Reference to the activity'
       },
-      assignedTeamMember: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'TeamMember',
-        required: true,
-        description: 'Reference to the team member assigned to this activity'
-      },
       assignedDate: {
         type: Date,
         default: Date.now,
-        description: 'Date when the activity was assigned to the team member'
+        description: 'Date when the activity was assigned'
       },
       notes: {
         type: String,
         trim: true,
-        description: 'Additional notes for this activity assignment'
+        description: 'Additional notes for this activity'
       }
     }],
     branch: {
@@ -274,7 +268,6 @@ clientSchema.post('save', async function(doc) {
               endDate: endDate,
               frequency: activity.frequency,
               frequencyConfig: activity.frequencyConfig,
-              assignedMember: activityItem.assignedTeamMember,
               branch: doc.branch
             });
             

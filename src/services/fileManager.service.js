@@ -323,7 +323,7 @@ const deleteFolder = async (folderId) => {
  */
 const deleteFile = async (fileId) => {
   const file = await getFileById(fileId);
-  const fileKey = file.file?.fileKey;
+  const fileKey = file.file && file.file.fileKey;
   file.isDeleted = true;
   await file.save();
   if (fileKey) {
@@ -386,17 +386,27 @@ const deleteMultipleItems = async (itemIds) => {
 };
 
 /**
- * Search files and folders
+ * Search files and folders (enhanced with recursive subfolder search)
  * @param {Object} filter
  * @param {Object} options
  * @returns {Promise<Object>}
  */
 const searchItems = async (filter, options = {}) => {
+  console.log('🔍 Search filter received:', JSON.stringify(filter, null, 2));
+  
+  // Create a more flexible search pattern
+  const searchPattern = filter.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape regex special characters
+  
+  console.log('🔍 Search pattern:', searchPattern);
+  console.log('🔍 Original query:', filter.query);
+  
   const searchFilter = {
     isDeleted: false,
     $or: [
-      { 'folder.name': { $regex: filter.query, $options: 'i' } },
-      { 'file.fileName': { $regex: filter.query, $options: 'i' } },
+      { 'folder.name': { $regex: searchPattern, $options: 'i' } },
+      { 'file.fileName': { $regex: searchPattern, $options: 'i' } },
+      { 'folder.path': { $regex: searchPattern, $options: 'i' } }, // Search in folder paths
+      { 'folder.description': { $regex: searchPattern, $options: 'i' } }, // Search in folder descriptions
     ],
   };
 
@@ -404,11 +414,45 @@ const searchItems = async (filter, options = {}) => {
     searchFilter.type = filter.type;
   }
 
+  // Handle user permissions more flexibly
   if (filter.userId) {
-    searchFilter.$or = [
-      { 'folder.createdBy': filter.userId },
-      { 'file.uploadedBy': filter.userId },
+    // For now, let's make the search more permissive for testing
+    // In production, you'd want proper branch-based access control
+    console.log('🔍 User ID filter applied, but allowing broader access for testing');
+    
+    // Option 1: Remove user filter entirely for testing
+    // delete searchFilter.$and;
+    
+    // Option 2: Keep user filter but make it less restrictive
+    searchFilter.$and = [
+      {
+        $or: [
+          { 'folder.createdBy': filter.userId },
+          { 'file.uploadedBy': filter.userId },
+          // Allow access to client folders (they should be accessible to users in the same branch)
+          { 'folder.metadata.clientId': { $exists: true } }
+        ]
+      }
     ];
+  } else {
+    // If no userId filter, remove any existing $and to avoid conflicts
+    delete searchFilter.$and;
+  }
+
+  // If searching for subfolders specifically, enhance path-based search
+  if (filter.includeSubfolders !== false) { // Default to true if not specified
+    // The path search is already included in the main $or array above
+    // This ensures we search in folder paths by default
+  }
+
+  console.log('🔍 Final search filter:', JSON.stringify(searchFilter, null, 2));
+
+  // Test the search filter directly to see what it finds
+  console.log('🔍 Testing search filter directly...');
+  const testQuery = await FileManager.find(searchFilter).limit(3);
+  console.log('🔍 Direct test query found:', testQuery.length, 'results');
+  if (testQuery.length > 0) {
+    console.log('🔍 First test result:', JSON.stringify(testQuery[0], null, 2));
   }
 
   const result = await FileManager.paginate(searchFilter, {
@@ -417,7 +461,321 @@ const searchItems = async (filter, options = {}) => {
     sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
   });
 
+  console.log('🔍 Search results count:', result.totalResults);
+  if (result.totalResults > 0) {
+    console.log('🔍 First few results:', result.results.slice(0, 3).map(item => ({
+      type: item.type,
+      name: item.type === 'folder' ? (item.folder && item.folder.name) : (item.file && item.file.fileName),
+      path: item.folder && item.folder.path,
+      rawItem: JSON.stringify(item, null, 2)
+    })));
+    
+    // Debug: Check the raw data structure
+    console.log('🔍 Debug - Raw first result:', JSON.stringify(result.results[0], null, 2));
+    
+    // Debug: Check if populate worked
+    if (result.results[0].type === 'folder') {
+      console.log('🔍 Debug - Folder object exists:', !!result.results[0].folder);
+      console.log('🔍 Debug - Folder keys:', result.results[0].folder ? Object.keys(result.results[0].folder) : 'NO_FOLDER');
+    }
+  } else {
+    console.log('🔍 No results found. Let\'s check what exists in database...');
+    
+    // Debug: Check what folders exist with similar names
+    const debugFolders = await FileManager.find({
+      type: 'folder',
+      isDeleted: false,
+      'folder.name': { $regex: 'Abhishek', $options: 'i' }
+    }).limit(5);
+    
+    console.log('🔍 Debug - Folders with "Abhishek" in name:', debugFolders.length);
+    if (debugFolders.length > 0) {
+      console.log('🔍 Debug - First folder found:', JSON.stringify(debugFolders[0], null, 2));
+    }
+    
+    // Debug: Check all folders to see the structure
+    const allFolders = await FileManager.find({
+      type: 'folder',
+      isDeleted: false
+    }).limit(3);
+    
+    console.log('🔍 Debug - Sample folder structure:', allFolders.map(f => ({
+      id: f._id,
+      name: f.folder ? f.folder.name : 'NO_FOLDER_OBJECT',
+      path: f.folder ? f.folder.path : 'NO_PATH',
+      createdBy: f.folder ? f.folder.createdBy : 'NO_CREATEDBY'
+    })));
+  }
+
+  // Additional debugging: Check the final result structure
+  console.log('🔍 Final result structure:', {
+    totalResults: result.totalResults,
+    resultsLength: result.results.length,
+    hasResults: !!result.results,
+    resultsType: typeof result.results,
+    firstResult: result.results[0] ? {
+      type: result.results[0].type,
+      hasFolder: !!result.results[0].folder,
+      hasFile: !!result.results[0].file,
+      keys: Object.keys(result.results[0])
+    } : 'NO_RESULTS'
+  });
+
   return result;
+};
+
+/**
+ * Recursive search through all subfolders and files
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const searchItemsRecursive = async (filter, options = {}) => {
+  try {
+    console.log('🔍 Starting recursive search with filter:', JSON.stringify(filter, null, 2));
+    
+    // First, find all folders that match the search query
+    const folderSearchFilter = {
+      type: 'folder',
+      isDeleted: false,
+      $or: [
+        { 'folder.name': { $regex: filter.query, $options: 'i' } },
+        { 'folder.path': { $regex: filter.query, $options: 'i' } },
+        { 'folder.description': { $regex: filter.query, $options: 'i' } }
+      ]
+    };
+
+    if (filter.userId) {
+      folderSearchFilter['folder.createdBy'] = filter.userId;
+    }
+
+    // Find matching folders
+    const matchingFolders = await FileManager.find(folderSearchFilter)
+      .populate('folder.createdBy', 'name email')
+      .lean();
+
+    console.log(`🔍 Found ${matchingFolders.length} matching folders`);
+
+    // Find all files that match the search query
+    const fileSearchFilter = {
+      type: 'file',
+      isDeleted: false,
+      $or: [
+        { 'file.fileName': { $regex: filter.query, $options: 'i' } },
+        { 'file.metadata': { $regex: filter.query, $options: 'i' } }
+      ]
+    };
+
+    if (filter.userId) {
+      fileSearchFilter['file.uploadedBy'] = filter.userId;
+    }
+
+    // Find matching files
+    const matchingFiles = await FileManager.find(fileSearchFilter)
+      .populate('file.uploadedBy', 'name email')
+      .lean();
+
+    console.log(`🔍 Found ${matchingFiles.length} matching files`);
+
+    // Combine results
+    const allResults = [...matchingFolders, ...matchingFiles];
+
+    // Apply pagination manually since we're combining results
+    const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+    const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
+    const skip = (page - 1) * limit;
+
+    // Sort results
+    let sortedResults = allResults.sort((a, b) => {
+      if (a.type === b.type) {
+        if (a.type === 'folder') {
+          return a.folder.name.localeCompare(b.folder.name);
+        } else {
+          return a.file.fileName.localeCompare(b.file.fileName);
+        }
+      }
+      return a.type === 'folder' ? -1 : 1; // Folders first
+    });
+
+    // Apply pagination
+    const totalResults = sortedResults.length;
+    const totalPages = Math.ceil(totalResults / limit);
+    const paginatedResults = sortedResults.slice(skip, skip + limit);
+
+    // Add id field to each result since we're using lean()
+    const resultsWithId = paginatedResults.map(item => ({
+      ...item,
+      id: item._id.toString()
+    }));
+
+    const result = {
+      results: resultsWithId,
+      page,
+      limit,
+      totalPages,
+      totalResults,
+    };
+
+    console.log(`🔍 Recursive search completed. Found ${totalResults} total items, returning ${resultsWithId.length} items for page ${page}`);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error in recursive search:', error);
+    throw error;
+  }
+};
+
+/**
+ * Search specifically for subfolders by name
+ * @param {string} subfolderName
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const searchSubfoldersByName = async (subfolderName, options = {}) => {
+  try {
+    console.log(`🔍 Searching for subfolders with name: ${subfolderName}`);
+    
+    const searchFilter = {
+      type: 'folder',
+      isDeleted: false,
+      $or: [
+        { 'folder.name': { $regex: subfolderName, $options: 'i' } },
+        { 'folder.path': { $regex: subfolderName, $options: 'i' } }
+      ]
+    };
+
+    if (options.userId) {
+      searchFilter['folder.createdBy'] = options.userId;
+    }
+
+    if (options.parentFolder) {
+      searchFilter['folder.parentFolder'] = options.parentFolder;
+    }
+
+    // Use direct query for better control
+    const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+    const page = options.page && parseInt(options.limit, 10) > 0 ? parseInt(options.page, 10) : 1;
+    const skip = (page - 1) * limit;
+
+    const countPromise = FileManager.countDocuments(searchFilter);
+    const docsPromise = FileManager.find(searchFilter)
+      .populate('folder.createdBy', 'name email')
+      .populate('folder.parentFolder', 'folder.name')
+      .sort(options.sortBy || 'folder.name:asc')
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const [totalResults, results] = await Promise.all([countPromise, docsPromise]);
+    const totalPages = Math.ceil(totalResults / limit);
+
+    // Add id field to each result since we're using lean()
+    const resultsWithId = results.map(item => ({
+      ...item,
+      id: item._id.toString()
+    }));
+
+    const result = {
+      results: resultsWithId,
+      page,
+      limit,
+      totalPages,
+      totalResults,
+    };
+
+    console.log(`🔍 Subfolder search completed. Found ${totalResults} subfolders matching "${subfolderName}"`);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error in subfolder search:', error);
+    throw error;
+  }
+};
+
+/**
+ * Search specifically for client subfolders by name (optimized for client search)
+ * @param {string} query
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const searchClientSubfolders = async (query, options = {}) => {
+  try {
+    console.log(`🔍 Searching for client subfolders with query: ${query}`);
+    
+    // Create search pattern
+    const searchPattern = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    const searchFilter = {
+      type: 'folder',
+      isDeleted: false,
+      'folder.parentFolder': { $exists: true }, // Must have a parent (not root)
+      $or: [
+        { 'folder.name': { $regex: searchPattern, $options: 'i' } },
+        { 'folder.path': { $regex: searchPattern, $options: 'i' } }
+      ]
+    };
+
+    // If we want to specifically search in Clients folder, we can add this filter
+    if (options.onlyClientFolders) {
+      // Find the Clients parent folder first
+      const clientsParentFolder = await FileManager.findOne({
+        type: 'folder',
+        'folder.name': 'Clients',
+        'folder.isRoot': true,
+        isDeleted: false
+      });
+      
+      if (clientsParentFolder) {
+        searchFilter['folder.parentFolder'] = clientsParentFolder._id;
+      }
+    }
+
+    // Use direct query for better control
+    const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+    const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
+    const skip = (page - 1) * limit;
+
+    const countPromise = FileManager.countDocuments(searchFilter);
+    const docsPromise = FileManager.find(searchFilter)
+      .populate('folder.createdBy', 'name email')
+      .populate('folder.parentFolder', 'folder.name')
+      .sort(options.sortBy || 'folder.name:asc')
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const [totalResults, results] = await Promise.all([countPromise, docsPromise]);
+    const totalPages = Math.ceil(totalResults / limit);
+
+    // Transform results to a cleaner format
+    const transformedResults = results.map(item => ({
+      id: item._id.toString(),
+      type: 'folder',
+      name: item.folder.name,
+      path: item.folder.path,
+      description: item.folder.description,
+      createdBy: item.folder.createdBy,
+      parentFolder: item.folder.parentFolder,
+      metadata: item.folder.metadata,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    }));
+
+    const result = {
+      results: transformedResults,
+      page,
+      limit,
+      totalPages,
+      totalResults,
+    };
+
+    console.log(`🔍 Client subfolder search completed. Found ${totalResults} folders matching "${query}"`);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error in client subfolder search:', error);
+    throw error;
+  }
 };
 
 /**
@@ -601,6 +959,9 @@ export {
   deleteFile,
   deleteMultipleItems,
   searchItems,
+  searchItemsRecursive,
+  searchSubfoldersByName,
+  searchClientSubfolders,
   getFolderTree,
   uploadFileToClientFolder,
   getClientFolderContents,

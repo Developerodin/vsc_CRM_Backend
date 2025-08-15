@@ -107,6 +107,7 @@ const searchItems = {
     query: Joi.string().required().trim().min(1),
     type: Joi.string().valid('folder', 'file').optional(),
     userId: Joi.string().custom(objectId).optional(),
+    includeSubfolders: Joi.boolean().default(true).optional(),
     sortBy: Joi.string().optional(),
     limit: Joi.number().integer().min(1).max(100).optional(),
     page: Joi.number().integer().min(1).optional(),
@@ -144,6 +145,15 @@ const getClientContents = {
   }),
 };
 
+const searchClientSubfolders = {
+  query: Joi.object().keys({
+    query: Joi.string().required().trim().min(1),
+    sortBy: Joi.string().optional(),
+    limit: Joi.number().integer().min(1).max(200).optional(),
+    page: Joi.number().integer().min(1).optional(),
+  }),
+};
+
 export {
   createFolder,
   createFile,
@@ -161,4 +171,5 @@ export {
   getDashboard,
   uploadFileToClient,
   getClientContents,
+  searchClientSubfolders,
 }; 

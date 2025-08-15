@@ -4,7 +4,6 @@ import ApiError from '../utils/ApiError.js';
 import Timeline from '../models/timeline.model.js';
 import Activity from '../models/activity.model.js';
 import Client from '../models/client.model.js';
-import TeamMember from '../models/teamMember.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
 /**
@@ -35,22 +34,6 @@ const validateClient = async (clientId) => {
   const client = await Client.findById(clientId);
   if (!client) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Client not found');
-  }
-  return true;
-};
-
-/**
- * Validate if team member ID exists
- * @param {string} teamMemberId
- * @returns {Promise<boolean>}
- */
-const validateTeamMember = async (teamMemberId) => {
-  if (!mongoose.Types.ObjectId.isValid(teamMemberId)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid team member ID format');
-  }
-  const teamMember = await TeamMember.findById(teamMemberId);
-  if (!teamMember) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Team member not found');
   }
   return true;
 };
@@ -197,7 +180,16 @@ const cleanFrequencyConfig = (frequency, frequencyConfig) => {
  */
 const createTimeline = async (timelineBody, user = null) => {
   await validateActivity(timelineBody.activity);
-  await validateTeamMember(timelineBody.assignedMember);
+
+  if (!Array.isArray(timelineBody.client)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Client must be an array');
+  }
+  
+  // Validate each client in the array
+  for (const clientId of timelineBody.client) {
+    await validateClient(clientId);
+  }
+  
   validateFrequencyConfig(timelineBody.frequency, timelineBody.frequencyConfig);
   
   // Validate branch access if user is provided
@@ -213,16 +205,8 @@ const createTimeline = async (timelineBody, user = null) => {
     frequencyConfig: cleanFrequencyConfig(timelineBody.frequency, timelineBody.frequencyConfig)
   };
 
-  // Ensure client is always an array
-  let clientArray = timelineBody.client;
-  if (!Array.isArray(clientArray)) {
-    clientArray = [clientArray];
-  }
-
-  // Validate all clients
-  for (const clientId of clientArray) {
-    await validateClient(clientId);
-  }
+  // Use the client array directly since it's already validated as an array
+  const clientArray = timelineBody.client;
 
   // Create separate timeline entries for each client
   const timelinesToCreate = clientArray.map(clientId => {
@@ -242,8 +226,7 @@ const createTimeline = async (timelineBody, user = null) => {
   // Populate all created timelines
   const populatedTimelines = await Timeline.populate(createdTimelines, [
     { path: 'activity', select: 'name' },
-    { path: 'client', select: 'name email' },
-    { path: 'assignedMember', select: 'name email' }
+    { path: 'client', select: 'name email' }
   ]);
 
   // Return single timeline if only one client, array if multiple clients
@@ -325,7 +308,7 @@ const queryTimelines = async (filter, options, user) => {
     sortBy: options.sortBy || 'createdAt:desc',
     limit: options.limit,
     page: options.page,
-    populate: 'activity,client,assignedMember',
+    populate: 'activity,client',
   });
   return timelines;
 };
@@ -341,8 +324,7 @@ const getTimelineById = async (id) => {
   }
   const timeline = await Timeline.findById(id).populate([
     { path: 'activity', select: 'name' },
-    { path: 'client', select: 'name email' },
-    { path: 'assignedMember', select: 'name email' }
+    { path: 'client', select: 'name email' }
   ]);
   if (!timeline) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Timeline not found');
@@ -373,9 +355,6 @@ const updateTimelineById = async (timelineId, updateBody, user = null) => {
   if (updateBody.client) {
     await validateClient(updateBody.client);
   }
-  if (updateBody.assignedMember) {
-    await validateTeamMember(updateBody.assignedMember);
-  }
   if (updateBody.frequency && updateBody.frequencyConfig) {
     validateFrequencyConfig(updateBody.frequency, updateBody.frequencyConfig);
   }
@@ -396,8 +375,7 @@ const updateTimelineById = async (timelineId, updateBody, user = null) => {
   await timeline.save();
   return timeline.populate([
     { path: 'activity', select: 'name' },
-    { path: 'client', select: 'name email' },
-    { path: 'assignedMember', select: 'name email' }
+    { path: 'client', select: 'name email' }
   ]);
 };
 
@@ -470,27 +448,22 @@ const bulkImportTimelines = async (timelines) => {
       // Validate all references for timelines to be created
       const allActivityIds = expandedTimelines.map(t => t.activity);
       const allClientIds = expandedTimelines.map(t => t.client);
-      const allTeamMemberIds = expandedTimelines.map(t => t.assignedMember);
 
       const uniqueActivityIds = [...new Set(allActivityIds)];
       const uniqueClientIds = [...new Set(allClientIds)];
-      const uniqueTeamMemberIds = [...new Set(allTeamMemberIds)];
 
       // Validate all references
-      const [validActivities, validClients, validTeamMembers] = await Promise.all([
+      const [validActivities, validClients] = await Promise.all([
         Activity.find({ _id: { $in: uniqueActivityIds } }),
-        Client.find({ _id: { $in: uniqueClientIds } }),
-        TeamMember.find({ _id: { $in: uniqueTeamMemberIds } })
+        Client.find({ _id: { $in: uniqueClientIds } })
       ]);
 
       const validActivityIds = validActivities.map(a => a._id.toString());
       const validClientIds = validClients.map(c => c._id.toString());
-      const validTeamMemberIds = validTeamMembers.map(tm => tm._id.toString());
 
       // Check for invalid references
       const invalidActivityIds = uniqueActivityIds.filter(id => !validActivityIds.includes(id));
       const invalidClientIds = uniqueClientIds.filter(id => !validClientIds.includes(id));
-      const invalidTeamMemberIds = uniqueTeamMemberIds.filter(id => !validTeamMemberIds.includes(id));
 
       const validationErrors = [];
 
@@ -521,18 +494,7 @@ const bulkImportTimelines = async (timelines) => {
         });
       }
 
-      if (invalidTeamMemberIds.length > 0) {
-        invalidTeamMemberIds.forEach((invalidId) => {
-          const timelinesWithInvalidTeamMember = expandedTimelines.filter(t => t.assignedMember === invalidId);
-          timelinesWithInvalidTeamMember.forEach((t) => {
-            validationErrors.push({
-              index: t.originalIndex,
-              field: 'assignedMember',
-              value: invalidId,
-            });
-          });
-        });
-      }
+      // No assigned member validation required
 
       // Validate frequency configurations
       expandedTimelines.forEach((timeline) => {
@@ -616,7 +578,6 @@ const bulkImportTimelines = async (timelines) => {
             frequencyConfig: timeline.frequencyConfig,
             udin: timeline.udin,
             turnover: timeline.turnover,
-            assignedMember: timeline.assignedMember,
             branch: timeline.branch,
           },
         },
@@ -834,7 +795,7 @@ const getFrequencyStatusStats = async (user = null) => {
 
   // Let's first get a sample timeline to see the structure
   const sampleTimeline = await Timeline.findOne(query);
-  console.log('Sample timeline frequencyStatus:', sampleTimeline?.frequencyStatus);
+  console.log('Sample timeline frequencyStatus:', sampleTimeline ? sampleTimeline.frequencyStatus : undefined);
 
   // Aggregate to count frequency status across all timelines
   const stats = await Timeline.aggregate([
@@ -917,4 +878,4 @@ export {
   getFrequencyStatus,
   initializeOrRegenerateFrequencyStatus,
   getFrequencyStatusStats,
-}; 
+};
