@@ -278,6 +278,68 @@ const queryTimelines = async (filter, options, user) => {
     }
   }
 
+  // Handle search parameter for general search across activities and clients
+  if (mongoFilter.search) {
+    const searchTerm = mongoFilter.search;
+    console.log(`🔍 Searching for: ${searchTerm}`);
+    
+    // Find activities that match the search term
+    const matchingActivities = await Activity.find({
+      name: { $regex: searchTerm, $options: 'i' }
+    }).select('_id');
+    
+    // Find clients that match the search term
+    const matchingClients = await Client.find({
+      $or: [
+        { name: { $regex: searchTerm, $options: 'i' } },
+        { email: { $regex: searchTerm, $options: 'i' } }
+      ]
+    }).select('_id');
+    
+    // Combine both activity and client IDs
+    const activityIds = matchingActivities.map(activity => activity._id);
+    const clientIds = matchingClients.map(client => client._id);
+    
+    // If no matches found, return empty result
+    if (activityIds.length === 0 && clientIds.length === 0) {
+      console.log(`🔍 No activities or clients found matching: ${searchTerm}`);
+      return {
+        results: [],
+        page: options.page || 1,
+        limit: options.limit || 10,
+        totalPages: 0,
+        totalResults: 0,
+      };
+    }
+    
+    // Create OR condition for both activity and client matches
+    const searchConditions = [];
+    
+    if (activityIds.length > 0) {
+      searchConditions.push({ activity: { $in: activityIds } });
+    }
+    
+    if (clientIds.length > 0) {
+      searchConditions.push({ client: { $in: clientIds } });
+    }
+    
+    // If we have search conditions, add them to the filter
+    if (searchConditions.length > 0) {
+      if (searchConditions.length === 1) {
+        // Single condition, use it directly
+        Object.assign(mongoFilter, searchConditions[0]);
+      } else {
+        // Multiple conditions, use $or
+        mongoFilter.$or = searchConditions;
+      }
+    }
+    
+    // Remove the search parameter as it's now processed
+    delete mongoFilter.search;
+    
+    console.log(`🔍 Search filter applied:`, JSON.stringify(mongoFilter, null, 2));
+  }
+
   // Handle activity name filtering
   if (mongoFilter.activityName) {
     // Find activities that match the name filter

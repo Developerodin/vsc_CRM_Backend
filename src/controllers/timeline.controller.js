@@ -10,7 +10,7 @@ const createTimeline = catchAsync(async (req, res) => {
 });
 
 const getTimelines = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['activity', 'activityName', 'client', 'status', 'frequency', 'assignedMember', 'branch', 'today']);
+  const filter = pick(req.query, ['activity', 'activityName', 'client', 'search', 'status', 'frequency', 'assignedMember', 'branch', 'today']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   
   // Add branch filtering based on user's access
