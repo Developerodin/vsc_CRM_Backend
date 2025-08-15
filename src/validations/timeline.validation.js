@@ -81,7 +81,6 @@ const createTimeline = {
       )
       .optional(),
     turnover: Joi.number(),
-    assignedMember: Joi.string().custom(objectId).required(),
     branch: Joi.string().custom(objectId).required(),
   }).custom((value, helpers) => {
     try {
@@ -100,7 +99,6 @@ const getTimelines = {
     client: Joi.string().custom(objectId),
     status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').allow(''),
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
-    assignedMember: Joi.string().custom(objectId),
     branch: Joi.string().custom(objectId),
     today: Joi.string().valid('true', 'false').allow(''),
     sortBy: Joi.string(),
@@ -136,7 +134,6 @@ const updateTimeline = {
         )
         .optional(),
       turnover: Joi.number(),
-      assignedMember: Joi.string().custom(objectId),
       branch: Joi.string().custom(objectId),
     })
     .min(1)
@@ -179,7 +176,6 @@ const bulkImportTimelines = {
             )
             .optional(),
           turnover: Joi.number(),
-          assignedMember: Joi.string().custom(objectId).required(),
           branch: Joi.string().custom(objectId).required(),
         }).custom((value, helpers) => {
           try {

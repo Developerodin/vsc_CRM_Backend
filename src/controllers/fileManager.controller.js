@@ -152,7 +152,7 @@ const deleteMultipleItems = catchAsync(async (req, res) => {
  * @access Private
  */
 const searchItems = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['query', 'type', 'userId']);
+  const filter = pick(req.query, ['query', 'type', 'userId', 'includeSubfolders']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   
   // If no userId specified, use current user's items
@@ -221,6 +221,33 @@ const getClientContents = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+/**
+ * Search client subfolders by name
+ * @route GET /v1/file-manager/search-clients
+ * @access Private
+ */
+const searchClientSubfolders = catchAsync(async (req, res) => {
+  const { query } = req.query;
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  
+  if (!query) {
+    return res.status(httpStatus.BAD_REQUEST).send({
+      message: 'Query parameter is required'
+    });
+  }
+  
+  // Set default options for client search
+  const searchOptions = {
+    ...options,
+    onlyClientFolders: true, // This will restrict search to only client subfolders
+    limit: options.limit || 100,
+    page: options.page || 1
+  };
+  
+  const result = await fileManagerService.searchClientSubfolders(query, searchOptions);
+  res.send(result);
+});
+
 export {
   createFolder,
   createFile,
@@ -238,4 +265,5 @@ export {
   getDashboard,
   uploadFileToClient,
   getClientContents,
+  searchClientSubfolders,
 }; 

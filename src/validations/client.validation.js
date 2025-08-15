@@ -169,7 +169,6 @@ const addActivityToClient = {
   }),
   body: Joi.object().keys({
     activity: Joi.string().custom(objectId).required(),
-    assignedTeamMember: Joi.string().custom(objectId).required(),
     notes: Joi.string().optional(),
   }),
 };
@@ -187,7 +186,6 @@ const updateActivityAssignment = {
     activityId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object().keys({
-    assignedTeamMember: Joi.string().custom(objectId).optional(),
     notes: Joi.string().optional(),
   }).min(1),
 };
@@ -198,7 +196,6 @@ const getClientActivities = {
   }),
   query: Joi.object().keys({
     status: Joi.string().valid('pending', 'in_progress', 'completed', 'cancelled'),
-    assignedTeamMember: Joi.string().custom(objectId),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),

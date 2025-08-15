@@ -122,7 +122,7 @@ const timelineSchema = mongoose.Schema(
     },
     endDate: {
       type: Date,
-      required: true,
+      required: false,
     },
     frequency: {
       type: String,
@@ -153,11 +153,6 @@ const timelineSchema = mongoose.Schema(
         },
       },
     ],
-    assignedMember: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'TeamMember',
-      required: true,
-    },
     branch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Branch',
