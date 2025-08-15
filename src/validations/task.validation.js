@@ -9,7 +9,7 @@ const createTask = {
     priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical').default('medium'),
     branch: Joi.string().custom(objectId).required(),
     assignedBy: Joi.string().custom(objectId),
-    timeline: Joi.string().custom(objectId),
+    timeline: Joi.array().items(Joi.string().custom(objectId)),
     remarks: Joi.string().max(1000),
     status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed').default('pending'),
     metadata: Joi.object(),
@@ -27,7 +27,10 @@ const getTasks = {
   query: Joi.object().keys({
     teamMember: Joi.string().custom(objectId),
     assignedBy: Joi.string().custom(objectId),
-    timeline: Joi.string().custom(objectId),
+    timeline: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.array().items(Joi.string().custom(objectId))
+    ),
     branch: Joi.string().custom(objectId),
     status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),
     priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical'),
@@ -59,7 +62,7 @@ const updateTask = {
       priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical'),
       branch: Joi.string().custom(objectId),
       assignedBy: Joi.string().custom(objectId),
-      timeline: Joi.string().custom(objectId),
+      timeline: Joi.array().items(Joi.string().custom(objectId)),
       remarks: Joi.string().max(1000),
       status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),
       metadata: Joi.object(),

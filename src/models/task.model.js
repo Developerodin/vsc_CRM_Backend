@@ -35,10 +35,10 @@ const taskSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
-    timeline: {
+    timeline: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Timeline',
-    },
+    }],
     remarks: {
       type: String,
       trim: true,

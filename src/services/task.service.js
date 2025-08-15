@@ -106,7 +106,7 @@ const getTasksByTeamMember = async (teamMemberId, options = {}) => {
 
 /**
  * Get tasks by timeline
- * @param {ObjectId} timelineId
+ * @param {ObjectId|Array<ObjectId>} timelineId
  * @param {Object} options - Query options
  * @returns {Promise<QueryResult>}
  */
