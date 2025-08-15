@@ -22,17 +22,36 @@ const createTask = catchAsync(async (req, res) => {
 const getTasks = catchAsync(async (req, res) => {
   const filter = pick(req.query, [
     'teamMember', 'assignedBy', 'timeline', 'branch', 'status', 'priority',
-    'startDate', 'endDate'
+    'startDate', 'endDate', 'startDateRange', 'endDateRange', 'today'
   ]);
   
+  // Filter out empty strings and convert them to undefined
+  Object.keys(filter).forEach(key => {
+    if (filter[key] === '') {
+      delete filter[key];
+    }
+  });
+  
   // Handle date range filtering
-  if (req.query.startDateRange && req.query.endDateRange) {
-    const startDate = new Date(req.query.startDateRange);
-    const endDate = new Date(req.query.endDateRange);
+  if (filter.startDateRange && filter.endDateRange) {
+    const startDate = new Date(filter.startDateRange);
+    const endDate = new Date(filter.endDateRange);
     delete filter.startDate;
     delete filter.endDate;
     filter.startDateRange = startDate;
     filter.endDateRange = endDate;
+  }
+  
+  // Handle today parameter
+  if (filter.today === 'true' || filter.today === true) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    filter.startDate = today;
+    filter.endDate = tomorrow;
+    delete filter.today;
   }
   
   const options = pick(req.query, ['sortBy', 'limit', 'page']);

@@ -134,9 +134,12 @@ Authorization: Bearer <your-jwt-token>
 - `endDate` - Filter by end date
 - `startDateRange` - Start date for range filtering
 - `endDateRange` - End date for range filtering
+- `today` - Filter tasks due today (true/false or "true"/"false")
 - `sortBy` - Sort field (e.g., "createdAt:desc", "priority:asc")
 - `limit` - Number of results per page (default: 10)
 - `page` - Page number (default: 1)
+
+**Note:** All filter parameters are optional. Empty strings will be ignored. Use the `today` parameter to quickly filter tasks due today.
 
 **Example Request:**
 ```

@@ -8,7 +8,10 @@ const createTask = {
     endDate: Joi.date().greater(Joi.ref('startDate')).required(),
     priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical').default('medium'),
     branch: Joi.string().custom(objectId).required(),
-    assignedBy: Joi.string().custom(objectId),
+    assignedBy: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().allow('').empty('')
+    ),
     timeline: Joi.array().items(Joi.string().custom(objectId)),
     remarks: Joi.string().max(1000),
     status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed').default('pending'),
@@ -25,19 +28,51 @@ const createTask = {
 
 const getTasks = {
   query: Joi.object().keys({
-    teamMember: Joi.string().custom(objectId),
-    assignedBy: Joi.string().custom(objectId),
+    teamMember: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().allow('').empty('')
+    ),
+    assignedBy: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().allow('').empty('')
+    ),
     timeline: Joi.alternatives().try(
       Joi.string().custom(objectId),
-      Joi.array().items(Joi.string().custom(objectId))
+      Joi.array().items(Joi.string().custom(objectId)),
+      Joi.string().allow('').empty('')
     ),
-    branch: Joi.string().custom(objectId),
-    status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),
-    priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical'),
-    startDate: Joi.date(),
-    endDate: Joi.date(),
-    startDateRange: Joi.date(),
-    endDateRange: Joi.date(),
+    branch: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().allow('').empty('')
+    ),
+    status: Joi.alternatives().try(
+      Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),
+      Joi.string().allow('').empty('')
+    ),
+    priority: Joi.alternatives().try(
+      Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical'),
+      Joi.string().allow('').empty('')
+    ),
+    startDate: Joi.alternatives().try(
+      Joi.date(),
+      Joi.string().allow('').empty('')
+    ),
+    endDate: Joi.alternatives().try(
+      Joi.date(),
+      Joi.string().allow('').empty('')
+    ),
+    startDateRange: Joi.alternatives().try(
+      Joi.date(),
+      Joi.string().allow('').empty('')
+    ),
+    endDateRange: Joi.alternatives().try(
+      Joi.date(),
+      Joi.string().allow('').empty('')
+    ),
+    today: Joi.alternatives().try(
+      Joi.boolean(),
+      Joi.string().valid('true', 'false').empty('')
+    ),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -61,7 +96,10 @@ const updateTask = {
       endDate: Joi.date(),
       priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical'),
       branch: Joi.string().custom(objectId),
-      assignedBy: Joi.string().custom(objectId),
+      assignedBy: Joi.alternatives().try(
+        Joi.string().custom(objectId),
+        Joi.string().allow('').empty('')
+      ),
       timeline: Joi.array().items(Joi.string().custom(objectId)),
       remarks: Joi.string().max(1000),
       status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),

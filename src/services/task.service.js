@@ -51,6 +51,25 @@ const getTaskByIdMinimal = async (id) => {
  * @returns {Promise<QueryResult>}
  */
 const queryTasks = async (filter, options) => {
+  // Handle date range filtering
+  if (filter.startDateRange && filter.endDateRange) {
+    filter.$or = [
+      { startDate: { $gte: filter.startDateRange, $lte: filter.endDateRange } },
+      { endDate: { $gte: filter.startDateRange, $lte: filter.endDateRange } },
+      { 
+        startDate: { $lte: filter.startDateRange },
+        endDate: { $gte: filter.endDateRange }
+      }
+    ];
+    delete filter.startDateRange;
+    delete filter.endDateRange;
+  }
+  
+  // Handle today filtering
+  if (filter.startDate && filter.endDate) {
+    // If both dates are set, they're already handled
+  }
+  
   const tasks = await Task.paginate(filter, {
     ...options,
     populate: [
