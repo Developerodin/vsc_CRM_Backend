@@ -126,7 +126,7 @@ const deleteClientById = async (clientId) => {
   if (!client) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
   }
-  await client.remove();
+  await client.deleteOne();
   return client;
 };
 
