@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { Client, Activity, FileManager, Timeline } from '../models/index.js';
+import { Client, Activity, FileManager, Timeline, Task } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
@@ -667,6 +667,223 @@ const getClientActivities = async (clientId, query = {}) => {
 };
 
 /**
+ * Get client task statistics based on timeline data
+ * @param {Object} filter - Filter to select which clients to get statistics for
+ * @param {Object} options - Query options
+ * @param {number} [options.limit] - Maximum number of results per page (default = 50)
+ * @param {number} [options.page] - Current page (default = 1)
+ * @param {Object} user - User object with role information
+ * @returns {Promise<Object>} - Client task statistics with pagination
+ */
+const getClientTaskStatistics = async (filter = {}, options = {}, user = null) => {
+  try {
+    console.log('🔍 Getting client task statistics...');
+    
+    // Create a new filter object to avoid modifying the original
+    const mongoFilter = { ...filter };
+    
+    // Apply branch filtering based on user's access
+    if (user && user.role) {
+      // If specific branch is requested in filter
+      if (mongoFilter.branch) {
+        // Check if user has access to this specific branch
+        if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+        }
+      } else {
+        // Get user's allowed branch IDs
+        const allowedBranchIds = getUserBranchIds(user.role);
+        
+        if (allowedBranchIds === null) {
+          // User has access to all branches, no filtering needed
+        } else if (allowedBranchIds.length > 0) {
+          // Filter by user's allowed branches
+          mongoFilter.branch = { $in: allowedBranchIds };
+        } else {
+          // User has no branch access
+          throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+        }
+      }
+    }
+
+    // If name filter exists, convert it to case-insensitive regex
+    if (mongoFilter.name) {
+      mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+    }
+
+    // Get pagination options
+    const page = parseInt(options.page) || 1;
+    const limit = parseInt(options.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    // First, get the clients that match the filter
+    const clients = await Client.find(mongoFilter)
+      .select('_id name email branch')
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    console.log(`📊 Found ${clients.length} clients to analyze`);
+
+    // Get total count for pagination
+    const totalClients = await Client.countDocuments(mongoFilter);
+
+    // Get task statistics for each client using aggregation
+    const clientStats = await Task.aggregate([
+      // Match tasks that have timelines
+      {
+        $match: {
+          timeline: { $exists: true, $ne: [] }
+        }
+      },
+      // Unwind timeline array to get individual timeline references
+      {
+        $unwind: '$timeline'
+      },
+      // Lookup timeline details
+      {
+        $lookup: {
+          from: 'timelines',
+          localField: 'timeline',
+          foreignField: '_id',
+          as: 'timelineDetails'
+        }
+      },
+      // Unwind timeline details
+      {
+        $unwind: '$timelineDetails'
+      },
+      // Lookup client details from timeline
+      {
+        $lookup: {
+          from: 'clients',
+          localField: 'timelineDetails.client',
+          foreignField: '_id',
+          as: 'clientDetails'
+        }
+      },
+      // Unwind client details
+      {
+        $unwind: '$clientDetails'
+      },
+      // Match only the clients we're interested in
+      {
+        $match: {
+          'clientDetails._id': { $in: clients.map(c => c._id) }
+        }
+      },
+      // Group by client and status
+      {
+        $group: {
+          _id: {
+            clientId: '$clientDetails._id',
+            clientName: '$clientDetails.name',
+            clientEmail: '$clientDetails.email',
+            status: '$status'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      // Group by client to get all statuses together
+      {
+        $group: {
+          _id: {
+            clientId: '$_id.clientId',
+            clientName: '$_id.clientName',
+            clientEmail: '$_id.clientEmail'
+          },
+          statusCounts: {
+            $push: {
+              status: '$_id.status',
+              count: '$count'
+            }
+          },
+          totalTasks: { $sum: '$count' }
+        }
+      },
+      // Sort by total tasks descending
+      {
+        $sort: { totalTasks: -1 }
+      }
+    ]);
+
+    console.log(`📊 Generated statistics for ${clientStats.length} clients`);
+
+    // Transform the data to a more user-friendly format
+    const transformedStats = clientStats.map(clientStat => {
+      const statusMap = {
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        on_hold: 0,
+        cancelled: 0,
+        delayed: 0
+      };
+
+      // Fill in the actual counts
+      clientStat.statusCounts.forEach(statusCount => {
+        if (statusCount.status in statusMap) {
+          statusMap[statusCount.status] = statusCount.count;
+        }
+      });
+
+      return {
+        clientId: clientStat._id.clientId,
+        clientName: clientStat._id.clientName,
+        clientEmail: clientStat._id.clientEmail,
+        taskStatistics: {
+          total: clientStat.totalTasks,
+          pending: statusMap.pending,
+          ongoing: statusMap.ongoing,
+          completed: statusMap.completed,
+          onHold: statusMap.on_hold,
+          cancelled: statusMap.cancelled,
+          delayed: statusMap.delayed
+        }
+      };
+    });
+
+    // Add clients with no tasks (showing 0 counts)
+    const clientsWithNoTasks = clients.filter(client => 
+      !transformedStats.some(stat => stat.clientId.toString() === client._id.toString())
+    );
+
+    const clientsWithNoTasksStats = clientsWithNoTasks.map(client => ({
+      clientId: client._id,
+      clientName: client.name,
+      clientEmail: client.email,
+      taskStatistics: {
+        total: 0,
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        onHold: 0,
+        cancelled: 0,
+        delayed: 0
+      }
+    }));
+
+    // Combine both arrays and sort by client name
+    const allClientStats = [...transformedStats, ...clientsWithNoTasksStats]
+      .sort((a, b) => a.clientName.localeCompare(b.clientName));
+
+    return {
+      results: allClientStats,
+      pagination: {
+        page,
+        limit,
+        total: totalClients,
+        pages: Math.ceil(totalClients / limit)
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Error getting client task statistics:', error);
+    throw error;
+  }
+};
+
+/**
  * Reprocess existing clients to create missing timelines and subfolders
  * This is useful for clients that were imported before the automatic creation was implemented
  * @param {Object} filter - Filter to select which clients to reprocess
@@ -763,5 +980,6 @@ export {
   removeActivityFromClient,
   updateActivityAssignment,
   getClientActivities,
+  getClientTaskStatistics,
   reprocessExistingClients,
 }; 

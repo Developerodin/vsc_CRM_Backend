@@ -56,6 +56,14 @@ const bulkImportGroups = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+const getGroupTaskStatistics = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['name', 'branch']);
+  const options = pick(req.query, ['limit', 'page']);
+  
+  const result = await groupService.getGroupTaskStatistics(filter, options, req.user);
+  res.send(result);
+});
+
 export {
   createGroup,
   getGroups,
@@ -66,4 +74,5 @@ export {
   removeClientFromGroup,
   getClientsByGroup,
   bulkImportGroups,
+  getGroupTaskStatistics,
 }; 

@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { Group, Client } from '../models/index.js';
+import { Group, Client, Task } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
@@ -349,6 +349,297 @@ const bulkImportGroups = async (groups) => {
   return results;
 };
 
+/**
+ * Get group task statistics based on timeline data from all clients in the group
+ * @param {Object} filter - Filter to select which groups to get statistics for
+ * @param {Object} options - Query options
+ * @param {number} [options.limit] - Maximum number of results per page (default = 50)
+ * @param {number} [options.page] - Current page (default = 1)
+ * @param {Object} user - User object with role information
+ * @returns {Promise<Object>} - Group task statistics with pagination
+ */
+const getGroupTaskStatistics = async (filter = {}, options = {}, user = null) => {
+  try {
+    console.log('🔍 Getting group task statistics...');
+    
+    // Create a new filter object to avoid modifying the original
+    const mongoFilter = { ...filter };
+    
+    // Apply branch filtering based on user's access
+    if (user && user.role) {
+      // If specific branch is requested in filter
+      if (mongoFilter.branch) {
+        // Check if user has access to this specific branch
+        if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+        }
+      } else {
+        // Get user's allowed branch IDs
+        const allowedBranchIds = getUserBranchIds(user.role);
+        
+        if (allowedBranchIds === null) {
+          // User has access to all branches, no filtering needed
+        } else if (allowedBranchIds.length > 0) {
+          // Filter by user's allowed branches
+          mongoFilter.branch = { $in: allowedBranchIds };
+        } else {
+          // User has no branch access
+          throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+        }
+      }
+    }
+
+    // If name filter exists, convert it to case-insensitive regex
+    if (mongoFilter.name) {
+      mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+    }
+
+    // Get pagination options
+    const page = parseInt(options.page) || 1;
+    const limit = parseInt(options.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    // First, get the groups that match the filter
+    const groups = await Group.find(mongoFilter)
+      .select('_id name branch numberOfClients')
+      .populate('clients', '_id name email')
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    console.log(`📊 Found ${groups.length} groups to analyze`);
+
+    // Get total count for pagination
+    const totalGroups = await Group.countDocuments(mongoFilter);
+
+    // Get all client IDs from all groups
+    const allClientIds = groups.reduce((ids, group) => {
+      if (group.clients && group.clients.length > 0) {
+        ids.push(...group.clients.map(client => client._id));
+      }
+      return ids;
+    }, []);
+
+    if (allClientIds.length === 0) {
+      // No clients in any groups, return empty results
+      const emptyGroupStats = groups.map(group => ({
+        groupId: group._id,
+        groupName: group.name,
+        numberOfClients: group.numberOfClients || 0,
+        clients: group.clients || [],
+        taskStatistics: {
+          total: 0,
+          pending: 0,
+          ongoing: 0,
+          completed: 0,
+          onHold: 0,
+          cancelled: 0,
+          delayed: 0
+        }
+      }));
+
+      return {
+        results: emptyGroupStats,
+        pagination: {
+          page,
+          limit,
+          total: totalGroups,
+          pages: Math.ceil(totalGroups / limit)
+        }
+      };
+    }
+
+    // Get task statistics for all clients using aggregation
+    const clientStats = await Task.aggregate([
+      // Match tasks that have timelines
+      {
+        $match: {
+          timeline: { $exists: true, $ne: [] }
+        }
+      },
+      // Unwind timeline array to get individual timeline references
+      {
+        $unwind: '$timeline'
+      },
+      // Lookup timeline details
+      {
+        $lookup: {
+          from: 'timelines',
+          localField: 'timeline',
+          foreignField: '_id',
+          as: 'timelineDetails'
+        }
+      },
+      // Unwind timeline details
+      {
+        $unwind: '$timelineDetails'
+      },
+      // Lookup client details from timeline
+      {
+        $lookup: {
+          from: 'clients',
+          localField: 'timelineDetails.client',
+          foreignField: '_id',
+          as: 'clientDetails'
+        }
+      },
+      // Unwind client details
+      {
+        $unwind: '$clientDetails'
+      },
+      // Match only the clients we're interested in (from our groups)
+      {
+        $match: {
+          'clientDetails._id': { $in: allClientIds }
+        }
+      },
+      // Group by client and status
+      {
+        $group: {
+          _id: {
+            clientId: '$clientDetails._id',
+            clientName: '$clientDetails.name',
+            clientEmail: '$clientDetails.email',
+            status: '$status'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      // Group by client to get all statuses together
+      {
+        $group: {
+          _id: {
+            clientId: '$_id.clientId',
+            clientName: '$_id.clientName',
+            clientEmail: '$_id.clientEmail'
+          },
+          statusCounts: {
+            $push: {
+              status: '$_id.status',
+              count: '$count'
+            }
+          },
+          totalTasks: { $sum: '$count' }
+        }
+      }
+    ]);
+
+    console.log(`📊 Generated statistics for ${clientStats.length} clients across all groups`);
+
+    // Create a map of client statistics for quick lookup
+    const clientStatsMap = new Map();
+    clientStats.forEach(clientStat => {
+      const statusMap = {
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        on_hold: 0,
+        cancelled: 0,
+        delayed: 0
+      };
+
+      // Fill in the actual counts
+      clientStat.statusCounts.forEach(statusCount => {
+        if (statusCount.status in statusMap) {
+          statusMap[statusCount.status] = statusCount.count;
+        }
+      });
+
+      clientStatsMap.set(clientStat._id.clientId.toString(), {
+        clientId: clientStat._id.clientId,
+        clientName: clientStat._id.clientName,
+        clientEmail: clientStat._id.clientEmail,
+        taskStatistics: {
+          total: clientStat.totalTasks,
+          pending: statusMap.pending,
+          ongoing: statusMap.ongoing,
+          completed: statusMap.completed,
+          onHold: statusMap.on_hold,
+          cancelled: statusMap.cancelled,
+          delayed: statusMap.delayed
+        }
+      });
+    });
+
+    // Transform groups to include task statistics
+    const transformedGroupStats = groups.map(group => {
+      const groupTaskStats = {
+        total: 0,
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        onHold: 0,
+        cancelled: 0,
+        delayed: 0
+      };
+
+      const clientsWithStats = [];
+
+      // Process each client in the group
+      if (group.clients && group.clients.length > 0) {
+        group.clients.forEach(client => {
+          const clientStat = clientStatsMap.get(client._id.toString());
+          
+          if (clientStat) {
+            // Client has tasks, add their statistics
+            clientsWithStats.push(clientStat);
+            
+            // Aggregate group statistics
+            groupTaskStats.total += clientStat.taskStatistics.total;
+            groupTaskStats.pending += clientStat.taskStatistics.pending;
+            groupTaskStats.ongoing += clientStat.taskStatistics.ongoing;
+            groupTaskStats.completed += clientStat.taskStatistics.completed;
+            groupTaskStats.onHold += clientStat.taskStatistics.onHold;
+            groupTaskStats.cancelled += clientStat.taskStatistics.cancelled;
+            groupTaskStats.delayed += clientStat.taskStatistics.delayed;
+          } else {
+            // Client has no tasks, add with 0 counts
+            clientsWithStats.push({
+              clientId: client._id,
+              clientName: client.name,
+              clientEmail: client.email,
+              taskStatistics: {
+                total: 0,
+                pending: 0,
+                ongoing: 0,
+                completed: 0,
+                onHold: 0,
+                cancelled: 0,
+                delayed: 0
+              }
+            });
+          }
+        });
+      }
+
+      return {
+        groupId: group._id,
+        groupName: group.name,
+        numberOfClients: group.numberOfClients || 0,
+        clients: clientsWithStats,
+        taskStatistics: groupTaskStats
+      };
+    });
+
+    // Sort groups by total tasks (highest first)
+    transformedGroupStats.sort((a, b) => b.taskStatistics.total - a.taskStatistics.total);
+
+    return {
+      results: transformedGroupStats,
+      pagination: {
+        page,
+        limit,
+        total: totalGroups,
+        pages: Math.ceil(totalGroups / limit)
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Error getting group task statistics:', error);
+    throw error;
+  }
+};
+
 export {
   createGroup,
   queryGroups,
@@ -359,4 +650,5 @@ export {
   removeClientFromGroup,
   getClientsByGroup,
   bulkImportGroups,
+  getGroupTaskStatistics,
 }; 

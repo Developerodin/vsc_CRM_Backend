@@ -202,6 +202,16 @@ const getClientActivities = {
   }),
 };
 
+const getClientTaskStatistics = {
+  query: Joi.object().keys({
+    name: Joi.string().trim().allow(''),
+    email: Joi.string().trim().allow(''),
+    branch: Joi.string().custom(objectId),
+    limit: Joi.number().integer().min(1).max(100),
+    page: Joi.number().integer().min(1),
+  }),
+};
+
 export default {
   createClient,
   getClients,
@@ -213,4 +223,5 @@ export default {
   removeActivityFromClient,
   updateActivityAssignment,
   getClientActivities,
+  getClientTaskStatistics,
 }; 

@@ -1,5 +1,46 @@
 import { Task } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
+import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
+
+/**
+ * Send task assignment email to team member
+ * @param {Object} task - Created task object
+ * @param {Object} teamMember - Team member details
+ * @param {Object} assignedBy - User who assigned the task
+ * @returns {Promise<void>}
+ */
+const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
+  try {
+    if (!teamMember || !teamMember.email) {
+      console.warn('No team member email found, skipping email notification');
+      return;
+    }
+
+    const taskData = {
+      taskTitle: `Task: ${task.remarks || 'New Task Assigned'}`,
+      taskDescription: task.remarks || 'A new task has been assigned to you',
+      assignedBy: assignedBy ? assignedBy.name : 'System',
+      dueDate: task.endDate ? task.endDate.toLocaleDateString() : null,
+      priority: task.priority || 'medium'
+    };
+
+    // Generate HTML email
+    const html = generateTaskAssignmentHTML(taskData);
+
+    // Send email
+    await sendEmail(
+      teamMember.email,
+      `🎯 New Task Assigned: ${taskData.taskTitle}`,
+      `You have been assigned a new task.\n\nTask: ${taskData.taskTitle}\nDescription: ${taskData.taskDescription}\nPriority: ${taskData.priority.toUpperCase()}\nDue Date: ${taskData.dueDate || 'Not specified'}\nAssigned By: ${taskData.assignedBy}`,
+      html
+    );
+
+    console.log(`✅ Task assignment email sent to ${teamMember.email}`);
+  } catch (error) {
+    console.error('❌ Error sending task assignment email:', error);
+    // Don't throw error - email failure shouldn't prevent task creation
+  }
+};
 
 /**
  * Create a task
@@ -7,7 +48,26 @@ import ApiError from '../utils/ApiError.js';
  * @returns {Promise<Task>}
  */
 const createTask = async (taskBody) => {
-  return Task.create(taskBody);
+  try {
+    // Create the task
+    const task = await Task.create(taskBody);
+    
+    // Populate team member and assigned by details for email
+    const populatedTask = await Task.findById(task._id)
+      .populate('teamMember', 'name email phone')
+      .populate('assignedBy', 'name email')
+      .populate('branch', 'name location');
+
+    // Send email notification to team member
+    if (populatedTask.teamMember) {
+      await sendTaskAssignmentEmail(populatedTask, populatedTask.teamMember, populatedTask.assignedBy);
+    }
+
+    return populatedTask;
+  } catch (error) {
+    console.error('❌ Error creating task:', error);
+    throw error;
+  }
 };
 
 /**
@@ -343,6 +403,67 @@ const bulkUpdateTaskStatus = async (taskIds, status) => {
 };
 
 /**
+ * Bulk create tasks with email notifications
+ * @param {Array<Object>} tasks - Array of task objects
+ * @returns {Promise<Object>} - Result with created count and errors
+ */
+const bulkCreateTasks = async (tasks) => {
+  const results = {
+    created: 0,
+    errors: [],
+    totalProcessed: 0
+  };
+
+  try {
+    console.log(`📧 Starting bulk creation of ${tasks.length} tasks with email notifications...`);
+    
+    for (let i = 0; i < tasks.length; i++) {
+      try {
+        const task = tasks[i];
+        
+        // Create the task
+        const createdTask = await Task.create(task);
+        
+        // Populate details for email
+        const populatedTask = await Task.findById(createdTask._id)
+          .populate('teamMember', 'name email phone')
+          .populate('assignedBy', 'name email')
+          .populate('branch', 'name location');
+
+        // Send email notification
+        if (populatedTask.teamMember) {
+          await sendTaskAssignmentEmail(
+            populatedTask, 
+            populatedTask.teamMember, 
+            populatedTask.assignedBy
+          );
+        }
+
+        results.created++;
+        results.totalProcessed++;
+        
+      } catch (error) {
+        console.error(`❌ Error creating task ${i + 1}:`, error);
+        results.errors.push({
+          index: i,
+          error: error.message,
+          data: tasks[i]
+        });
+        results.totalProcessed++;
+      }
+    }
+    
+    console.log(`✅ Bulk task creation completed: ${results.created} created, ${results.errors.length} errors`);
+    
+  } catch (error) {
+    console.error('❌ Error in bulk task creation:', error);
+    throw error;
+  }
+
+  return results;
+};
+
+/**
  * Bulk delete tasks
  * @param {Array<ObjectId>} taskIds
  * @returns {Promise<Object>}
@@ -373,6 +494,7 @@ export default {
   getTasksDueThisMonth,
   searchTasks,
   getTaskStatistics,
+  bulkCreateTasks,
   bulkUpdateTaskStatus,
   bulkDeleteTasks,
 };

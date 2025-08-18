@@ -84,6 +84,15 @@ const bulkImportGroups = {
   }),
 };
 
+const getGroupTaskStatistics = {
+  query: Joi.object().keys({
+    name: Joi.string().trim().allow(''),
+    branch: Joi.string().custom(objectId),
+    limit: Joi.number().integer().min(1).max(100),
+    page: Joi.number().integer().min(1),
+  }),
+};
+
 export default {
   createGroup,
   getGroups,
@@ -93,4 +102,5 @@ export default {
   addClientToGroup,
   removeClientFromGroup,
   bulkImportGroups,
+  getGroupTaskStatistics,
 }; 

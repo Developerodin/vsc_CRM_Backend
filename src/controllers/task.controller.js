@@ -280,6 +280,26 @@ const bulkUpdateTaskStatus = catchAsync(async (req, res) => {
 });
 
 /**
+ * Bulk create tasks with email notifications
+ * @route POST /v1/tasks/bulk
+ * @access Private
+ */
+const bulkCreateTasks = catchAsync(async (req, res) => {
+  const { tasks } = req.body;
+  
+  if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Tasks array is required');
+  }
+  
+  if (tasks.length > 100) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Maximum 100 tasks can be created at once');
+  }
+  
+  const result = await taskService.bulkCreateTasks(tasks);
+  res.status(httpStatus.CREATED).send(result);
+});
+
+/**
  * Bulk delete tasks
  * @route DELETE /v1/tasks/bulk
  * @access Private
@@ -344,6 +364,7 @@ export default {
   getTasksDueThisMonth,
   searchTasks,
   getTaskStatistics,
+  bulkCreateTasks,
   bulkUpdateTaskStatus,
   bulkDeleteTasks,
   addAttachment,

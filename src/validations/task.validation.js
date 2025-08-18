@@ -265,6 +265,35 @@ const bulkDeleteTasks = {
   }),
 };
 
+const bulkCreateTasks = {
+  body: Joi.object().keys({
+    tasks: Joi.array().items(
+      Joi.object().keys({
+        teamMember: Joi.string().custom(objectId).required(),
+        startDate: Joi.date().required(),
+        endDate: Joi.date().greater(Joi.ref('startDate')).required(),
+        priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical').default('medium'),
+        branch: Joi.string().custom(objectId).required(),
+        assignedBy: Joi.alternatives().try(
+          Joi.string().custom(objectId),
+          Joi.string().allow('').empty('')
+        ),
+        timeline: Joi.array().items(Joi.string().custom(objectId)),
+        remarks: Joi.string().max(1000),
+        status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed').default('pending'),
+        metadata: Joi.object(),
+        attachments: Joi.array().items(
+          Joi.object({
+            fileName: Joi.string().required(),
+            fileUrl: Joi.string().uri().required(),
+            uploadedAt: Joi.date()
+          })
+        )
+      })
+    ).min(1).max(100).required(),
+  }),
+};
+
 const addAttachment = {
   params: Joi.object().keys({
     taskId: Joi.string().custom(objectId).required(),
@@ -302,6 +331,7 @@ export default {
   getTasksDueThisMonth,
   searchTasks,
   getTaskStatistics,
+  bulkCreateTasks,
   bulkUpdateTaskStatus,
   bulkDeleteTasks,
   addAttachment,

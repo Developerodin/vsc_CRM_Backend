@@ -82,12 +82,13 @@ router
 
 // Bulk operations
 router
-  .route('/bulk/status')
-  .patch(validate(taskValidation.bulkUpdateTaskStatus), taskController.bulkUpdateTaskStatus);
+  .route('/bulk')
+  .post(validate(taskValidation.bulkCreateTasks), taskController.bulkCreateTasks)
+  .delete(validate(taskValidation.bulkDeleteTasks), taskController.bulkDeleteTasks);
 
 router
-  .route('/bulk')
-  .delete(validate(taskValidation.bulkDeleteTasks), taskController.bulkDeleteTasks);
+  .route('/bulk/status')
+  .patch(validate(taskValidation.bulkUpdateTaskStatus), taskController.bulkUpdateTaskStatus);
 
 // Attachment management
 router

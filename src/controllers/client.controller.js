@@ -83,6 +83,14 @@ const getClientActivities = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+const getClientTaskStatistics = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['name', 'email', 'branch']);
+  const options = pick(req.query, ['limit', 'page']);
+  
+  const result = await clientService.getClientTaskStatistics(filter, options, req.user);
+  res.send(result);
+});
+
 export {
   createClient,
   getClients,
@@ -94,4 +102,5 @@ export {
   removeActivityFromClient,
   updateActivityAssignment,
   getClientActivities,
+  getClientTaskStatistics,
 }; 

@@ -15,6 +15,11 @@ router
   .route('/bulk-import')
   .post(auth('manageGroups'), validate(groupValidation.bulkImportGroups), groupController.bulkImportGroups);
 
+// Group task statistics route - MUST be before /:groupId routes to avoid routing conflicts
+router
+  .route('/task-statistics')
+  .get(auth('getGroups'), validate(groupValidation.getGroupTaskStatistics), groupController.getGroupTaskStatistics);
+
 router
   .route('/:groupId')
   .get(auth('getGroups'), validate(groupValidation.getGroup), groupController.getGroup)

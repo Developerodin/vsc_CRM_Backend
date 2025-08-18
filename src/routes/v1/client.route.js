@@ -16,6 +16,11 @@ router
   .route('/bulk-import')
   .post(auth('manageClients'), validate(clientValidation.bulkImportClients), clientController.bulkImportClients);
 
+// Task statistics route - MUST be before /:clientId routes to avoid routing conflicts
+router
+  .route('/task-statistics')
+  .get(auth('getClients'), validate(clientValidation.getClientTaskStatistics), clientController.getClientTaskStatistics);
+
 router
   .route('/:clientId')
   .get(auth('getClients'), validate(clientValidation.getClient), clientController.getClient)
