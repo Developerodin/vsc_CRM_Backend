@@ -17,6 +17,7 @@ import commonRoute from './common.route.js';
 import fileManagerRoute from './fileManager.route.js';
 import commonEmailRoute from './common.email.route.js';
 import taskRoute from './task.route.js';
+import cronRoute from './cron.route.js';
 
 const router = express.Router();
 
@@ -72,6 +73,10 @@ const defaultRoutes = [
   {
     path: '/tasks',
     route: taskRoute,
+  },
+  {
+    path: '/cron',
+    route: cronRoute,
   },
   {
     path: '/common',

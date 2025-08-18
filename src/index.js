@@ -2,12 +2,21 @@ import mongoose from 'mongoose';
 import app from './app.js';
 import config from './config/config.js';
 import logger from './config/logger.js';
+import { initializeCronJobs } from './services/cron.service.js';
 
 let server;
 mongoose.connect(config.mongoose.url, config.mongoose.options).then(() => {
   logger.info('Connected to MongoDB');
-  server = app.listen(config.port,"0.0.0.0", () => {
+  server = app.listen(config.port, '0.0.0.0', () => {
     logger.info(`Listening to port ${config.port}`);
+    
+    // Initialize cron jobs after server starts
+    try {
+      initializeCronJobs();
+      logger.info('✅ Cron jobs initialized successfully');
+    } catch (error) {
+      logger.error('❌ Failed to initialize cron jobs:', error);
+    }
   });
 });
 
