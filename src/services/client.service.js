@@ -279,7 +279,6 @@ const createClientSubfolder = async (clientName, branchId) => {
       });
     }
   } catch (error) {
-    console.error(`Error creating subfolder for client ${clientName}:`, error);
     throw error;
   }
 };
@@ -318,7 +317,6 @@ const createClientTimelines = async (client, activities) => {
           timelinePromises.push(timeline.save());
         }
       } catch (error) {
-        console.error(`Error creating timeline for activity ${activityItem.activity}:`, error);
         // Continue with other activities even if one fails
       }
     }
@@ -326,10 +324,8 @@ const createClientTimelines = async (client, activities) => {
     // Wait for all timelines to be created
     if (timelinePromises.length > 0) {
       await Promise.all(timelinePromises);
-      console.log(`Created ${timelinePromises.length} timelines for client ${client.name}`);
     }
   } catch (error) {
-    console.error(`Error creating timelines for client ${client.name}:`, error);
     throw error;
   }
 };
@@ -344,7 +340,6 @@ const bulkImportClients = async (clients) => {
 
   const BATCH_SIZE = 100; // Process in batches to avoid memory issues
   
-  console.log(`Starting bulk import of ${clients.length} clients...`);
   const startTime = Date.now();
 
   // Separate clients for creation and update
@@ -353,10 +348,8 @@ const bulkImportClients = async (clients) => {
 
   // Process creation in batches - allow duplicates
   if (toCreate.length > 0) {
-    console.log(`Processing ${toCreate.length} clients for creation in batches of ${BATCH_SIZE}...`);
     for (let i = 0; i < toCreate.length; i += BATCH_SIZE) {
       const batch = toCreate.slice(i, i + BATCH_SIZE);
-      console.log(`Processing creation batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(toCreate.length/BATCH_SIZE)} (${batch.length} clients)...`);
 
       try {
         // Process activities for each client before creation
@@ -390,10 +383,8 @@ const bulkImportClients = async (clients) => {
         // Create subfolders and timelines for newly created clients
         // Process in smaller batches to avoid overwhelming the system
         const POST_PROCESS_BATCH_SIZE = 20;
-        console.log(`Creating subfolders and timelines for ${insertResult.length} newly created clients...`);
         for (let j = 0; j < insertResult.length; j += POST_PROCESS_BATCH_SIZE) {
           const postProcessBatch = insertResult.slice(j, j + POST_PROCESS_BATCH_SIZE);
-          console.log(`Post-processing batch ${Math.floor(j/POST_PROCESS_BATCH_SIZE) + 1}/${Math.ceil(insertResult.length/POST_PROCESS_BATCH_SIZE)}...`);
           
           await Promise.all(
             postProcessBatch.map(async (createdClient) => {
@@ -406,7 +397,6 @@ const bulkImportClients = async (clients) => {
                   await createClientTimelines(createdClient, createdClient.activities);
                 }
               } catch (error) {
-                console.error(`Error in post-processing for client ${createdClient.name}:`, error);
                 // Add to errors but don't fail the entire batch
                 results.errors.push({
                   index: i + j,
@@ -445,10 +435,8 @@ const bulkImportClients = async (clients) => {
 
   // Process updates in batches
   if (toUpdate.length > 0) {
-    console.log(`Processing ${toUpdate.length} clients for updates in batches of ${BATCH_SIZE}...`);
     for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
       const batch = toUpdate.slice(i, i + BATCH_SIZE);
-      console.log(`Processing update batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(toUpdate.length/BATCH_SIZE)} (${batch.length} clients)...`);
 
       try {
         const updateOps = await Promise.all(
@@ -522,10 +510,8 @@ const bulkImportClients = async (clients) => {
           
           // Process in smaller batches to avoid overwhelming the system
           const POST_PROCESS_BATCH_SIZE = 20;
-          console.log(`Creating/updating subfolders and timelines for ${updatedClients.length} updated clients...`);
           for (let j = 0; j < updatedClients.length; j += POST_PROCESS_BATCH_SIZE) {
             const postProcessBatch = updatedClients.slice(j, j + POST_PROCESS_BATCH_SIZE);
-            console.log(`Post-processing update batch ${Math.floor(j/POST_PROCESS_BATCH_SIZE) + 1}/${Math.ceil(updatedClients.length/POST_PROCESS_BATCH_SIZE)}...`);
             
             await Promise.all(
               postProcessBatch.map(async (updatedClient) => {
@@ -538,7 +524,6 @@ const bulkImportClients = async (clients) => {
                     await createClientTimelines(updatedClient, updatedClient.activities);
                   }
                 } catch (error) {
-                  console.error(`Error in post-processing for updated client ${updatedClient.name}:`, error);
                   // Add to errors but don't fail the entire batch
                   results.errors.push({
                     index: i + j,
@@ -575,13 +560,6 @@ const bulkImportClients = async (clients) => {
       }
     }
   }
-
-  const endTime = Date.now();
-  const totalTime = (endTime - startTime) / 1000;
-  
-  console.log(`Bulk import completed in ${totalTime.toFixed(2)} seconds`);
-  console.log(`Results: ${results.created} created, ${results.updated} updated, ${results.errors.length} errors`);
-  console.log(`Total processed: ${results.totalProcessed}/${clients.length}`);
   
   return results;
 };
@@ -724,8 +702,6 @@ const getClientActivities = async (clientId, query = {}) => {
  */
 const getClientTaskStatistics = async (filter = {}, options = {}, user = null) => {
   try {
-    console.log('🔍 Getting client task statistics...');
-    
     // Create a new filter object to avoid modifying the original
     const mongoFilter = { ...filter };
     
@@ -770,15 +746,11 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
       
       // Remove the search parameter as it's now handled by $or
       delete mongoFilter.search;
-      console.log(`🔍 Search filter applied: "${searchValue}" -> $or:`, mongoFilter.$or);
     }
     // If name filter exists (and no search), convert it to case-insensitive regex
     else if (mongoFilter.name) {
       mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
-      console.log(`🔍 Name filter applied: "${mongoFilter.name.$regex}"`);
     }
-
-    console.log('🔍 mongoFilter before Client.find:', JSON.stringify(mongoFilter, null, 2));
 
     // Get pagination options
     const page = parseInt(options.page) || 1;
@@ -792,18 +764,13 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
       .limit(limit)
       .lean();
 
-    console.log(`📊 Found ${clients.length} clients to analyze. Client IDs:`, clients.map(c => c._id));
-    console.log(`📊 Client details:`, clients.map(c => ({ id: c._id, name: c.name, email: c.email })));
-
     // Get total count for pagination
     const totalClients = await Client.countDocuments(mongoFilter);
 
-    // Debug: Check if there are any tasks at all
+    // Check if there are any tasks at all
     const totalTasks = await Task.countDocuments();
-    console.log(`📊 Total tasks in database: ${totalTasks}`);
     
     if (totalTasks === 0) {
-      console.log('❌ No tasks found in database!');
       return {
         results: clients.map(client => ({
           _id: client._id,
@@ -825,37 +792,10 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
       };
     }
 
-    // Debug: Check if there are any tasks with timelines
-    const tasksWithTimelines = await Task.countDocuments({ timeline: { $exists: true, $ne: [] } });
-    console.log(`📊 Tasks with timelines: ${tasksWithTimelines}`);
+    // Get all client IDs we're interested in
+    const clientIds = clients.map(c => c._id);
     
-    if (tasksWithTimelines === 0) {
-      console.log('❌ No tasks with timelines found!');
-      return {
-        results: clients.map(client => ({
-          _id: client._id,
-          name: client.name,
-          email: client.email,
-          branch: client.branch,
-          totalTasks: 0,
-          pendingTasks: 0,
-          ongoingTasks: 0,
-          completedTasks: 0,
-          on_holdTasks: 0,
-          cancelledTasks: 0,
-          delayedTasks: 0
-        })),
-        page,
-        limit,
-        totalPages: Math.ceil(totalClients / limit),
-        totalResults: totalClients
-      };
-    }
-
-    // Get task statistics for each client using aggregation
-    console.log('🔍 Starting aggregation pipeline...');
-    
-    // First, try to get stats from tasks with timeline references
+    // Simplified aggregation pipeline
     let clientStats = await Task.aggregate([
       // Match tasks that have timelines
       {
@@ -863,7 +803,7 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
           timeline: { $exists: true, $ne: [] }
         }
       },
-      // Unwind timeline array to get individual timeline references
+      // Unwind timeline array
       {
         $unwind: '$timeline'
       },
@@ -893,10 +833,10 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
       {
         $unwind: '$clientDetails'
       },
-      // Match only the clients we're interested in (from our filter)
+      // Match only the clients we're interested in
       {
         $match: {
-          'clientDetails._id': { $in: clients.map(c => c._id) }
+          'clientDetails._id': { $in: clientIds }
         }
       },
       // Group by client and status
@@ -927,18 +867,11 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
           },
           totalTasks: { $sum: '$count' }
         }
-      },
-      {
-        $sort: { clientName: 1 }
       }
     ]);
 
-    console.log(`🔍 Timeline-based aggregation completed. Found ${clientStats.length} clients with timeline-based tasks.`);
-
     // If no results from timeline-based approach, try direct task-to-client mapping
     if (clientStats.length === 0) {
-      console.log('🔍 No timeline-based tasks found. Trying direct task-to-client mapping...');
-      
       // Get all tasks for the clients' branches
       const clientBranchIds = clients.map(c => c.branch);
       const directTaskStats = await Task.aggregate([
@@ -975,8 +908,6 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
         }
       ]);
 
-      console.log(`🔍 Direct task aggregation completed. Found ${directTaskStats.length} branches with tasks.`);
-
       // Map branch stats to clients
       const branchStatsMap = new Map();
       directTaskStats.forEach(stat => {
@@ -1009,11 +940,6 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
         }
       });
     }
-
-    console.log(`🔍 Final aggregation result:`, JSON.stringify(clientStats, null, 2));
-
-    console.log(`📊 Raw clientStats from aggregation:`, JSON.stringify(clientStats, null, 2));
-    console.log(`📊 Number of clients with stats:`, clientStats.length);
 
     // Create a map of client stats by client ID
     const clientStatsMap = new Map();
@@ -1082,8 +1008,6 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
       };
     });
 
-    console.log(`📊 Final result:`, JSON.stringify(result, null, 2));
-
     return {
       results: result,
       page,
@@ -1093,7 +1017,6 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
     };
 
   } catch (error) {
-    console.error('❌ Error getting client task statistics:', error);
     throw error;
   }
 };
@@ -1106,9 +1029,6 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
  * @returns {Promise<Object>} - Results of the reprocessing
  */
 const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
-  console.log('Starting reprocessing of existing clients...');
-  const startTime = Date.now();
-  
   const results = {
     processed: 0,
     subfoldersCreated: 0,
@@ -1123,11 +1043,8 @@ const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
     results.totalClients = totalClients;
     
     if (totalClients === 0) {
-      console.log('No clients found matching the filter criteria');
       return results;
     }
-
-    console.log(`Found ${totalClients} clients to reprocess. Processing in batches of ${batchSize}...`);
     
     // Process clients in batches
     for (let skip = 0; skip < totalClients; skip += batchSize) {
@@ -1135,8 +1052,6 @@ const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
         .skip(skip)
         .limit(batchSize)
         .populate('activities.activity');
-      
-      console.log(`Processing batch ${Math.floor(skip/batchSize) + 1}/${Math.ceil(totalClients/batchSize)} (${clients.length} clients)...`);
       
       await Promise.all(
         clients.map(async (client) => {
@@ -1153,7 +1068,6 @@ const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
             
             results.processed++;
           } catch (error) {
-            console.error(`Error reprocessing client ${client.name}:`, error);
             results.errors.push({
               clientId: client._id,
               clientName: client.name,
@@ -1169,14 +1083,7 @@ const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
       }
     }
     
-    const endTime = Date.now();
-    const totalTime = (endTime - startTime) / 1000;
-    
-    console.log(`Reprocessing completed in ${totalTime.toFixed(2)} seconds`);
-    console.log(`Results: ${results.processed} processed, ${results.subfoldersCreated} subfolders created, ${results.timelinesCreated} timelines created, ${results.errors.length} errors`);
-    
   } catch (error) {
-    console.error('Error during reprocessing:', error);
     throw error;
   }
   
