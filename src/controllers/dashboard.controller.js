@@ -101,6 +101,27 @@ const getTimelineCompletionRates = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(data);
 });
 
+// New controller methods for task analytics
+const getTotalTasksAndStatus = catchAsync(async (req, res) => {
+  const { branchId } = req.query;
+  const data = await dashboardService.getTotalTasksAndStatus(req.user, branchId);
+  res.status(httpStatus.OK).send(data);
+});
+
+const getTaskAnalytics = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, groupBy } = req.query;
+  const cleanedParams = cleanParams({ branchId, startDate, endDate, groupBy });
+  const data = await dashboardService.getTaskAnalytics(req.user, cleanedParams);
+  res.status(httpStatus.OK).send(data);
+});
+
+const getTaskTrends = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, interval } = req.query;
+  const cleanedParams = cleanParams({ branchId, startDate, endDate, interval });
+  const data = await dashboardService.getTaskTrends(req.user, cleanedParams);
+  res.status(httpStatus.OK).send(data);
+});
+
 export { 
   getTotalActivities, 
   getTotalTeams, 
@@ -115,5 +136,8 @@ export {
   getTimelineStatusByPeriod,
   getTimelineFrequencyAnalytics,
   getTimelineStatusTrends,
-  getTimelineCompletionRates
+  getTimelineCompletionRates,
+  getTotalTasksAndStatus,
+  getTaskAnalytics,
+  getTaskTrends
 }; 

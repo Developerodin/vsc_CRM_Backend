@@ -206,6 +206,7 @@ const getClientTaskStatistics = {
   query: Joi.object().keys({
     name: Joi.string().trim().allow(''),
     email: Joi.string().trim().allow(''),
+    search: Joi.string().trim().allow(''), // Add search parameter
     branch: Joi.string().custom(objectId),
     limit: Joi.number().integer().min(1).max(100),
     page: Joi.number().integer().min(1),

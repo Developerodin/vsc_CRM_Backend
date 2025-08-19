@@ -63,4 +63,17 @@ router
   .route('/timeline-completion-rates')
   .get(auth(), validate(dashboardValidation.getTimelineCompletionRates), dashboardController.getTimelineCompletionRates);
 
+// New task analytics routes
+router
+  .route('/total-tasks-and-status')
+  .get(auth(), validate(dashboardValidation.getTotalTasksAndStatus), dashboardController.getTotalTasksAndStatus);
+
+router
+  .route('/task-analytics')
+  .get(auth(), validate(dashboardValidation.getTaskAnalytics), dashboardController.getTaskAnalytics);
+
+router
+  .route('/task-trends')
+  .get(auth(), validate(dashboardValidation.getTaskTrends), dashboardController.getTaskTrends);
+
 export default router;

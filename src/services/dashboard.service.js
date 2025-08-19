@@ -5,6 +5,7 @@ import TeamMember from '../models/teamMember.model.js';
 import Branch from '../models/branch.model.js';
 import Client from '../models/client.model.js';
 import Timeline from '../models/timeline.model.js';
+import Task from '../models/task.model.js';
 import ApiError from '../utils/ApiError.js';
 import { getUserBranchIds, hasBranchAccess } from './role.service.js';
 
@@ -1092,6 +1093,356 @@ const getIntervalKey = (period, frequency, interval) => {
   return period;
 };
 
+/**
+ * Get total count of tasks and their status breakdown
+ * @param {Object} user - User object with role information
+ * @param {string} branchId - Branch ID to get counts for (optional)
+ * @returns {Promise<Object>}
+ */
+const getTotalTasksAndStatus = async (user, branchId) => {
+  if (!user.role) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
+  }
+
+  let filter = {};
+  
+  if (branchId) {
+    // Check if user has access to the specified branch
+    if (!hasBranchAccess(user.role, branchId)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+
+    // Verify the branch exists
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Branch not found');
+    }
+    
+    filter.branch = branchId;
+  } else {
+    // Apply user's branch access restrictions
+    const allowedBranchIds = getUserBranchIds(user.role);
+    if (allowedBranchIds !== null && allowedBranchIds.length > 0) {
+      filter.branch = { $in: allowedBranchIds };
+    } else if (allowedBranchIds !== null) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+    }
+  }
+
+  // Get counts for each status
+  const [pending, ongoing, completed, on_hold, cancelled, delayed] = await Promise.all([
+    Task.countDocuments({ ...filter, status: 'pending' }),
+    Task.countDocuments({ ...filter, status: 'ongoing' }),
+    Task.countDocuments({ ...filter, status: 'completed' }),
+    Task.countDocuments({ ...filter, status: 'on_hold' }),
+    Task.countDocuments({ ...filter, status: 'cancelled' }),
+    Task.countDocuments({ ...filter, status: 'delayed' }),
+  ]);
+
+  const total = pending + ongoing + completed + on_hold + cancelled + delayed;
+
+  return {
+    branch: branchId ? { id: branchId } : null,
+    total,
+    statusBreakdown: {
+      pending,
+      ongoing,
+      completed,
+      on_hold,
+      cancelled,
+      delayed,
+    },
+  };
+};
+
+/**
+ * Get task analytics with date filtering for graph visualization
+ * @param {Object} user - User object with role information
+ * @param {Object} params - Parameters including branchId, startDate, endDate, groupBy
+ * @returns {Promise<Object>}
+ */
+const getTaskAnalytics = async (user, { branchId, startDate, endDate, groupBy = 'status' }) => {
+  if (!user.role) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
+  }
+
+  let filter = {};
+  
+  // Add branch filter if specified
+  if (branchId) {
+    if (!hasBranchAccess(user.role, branchId)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+    filter.branch = branchId;
+  } else {
+    // Apply user's branch access restrictions
+    const allowedBranchIds = getUserBranchIds(user.role);
+    if (allowedBranchIds !== null && allowedBranchIds.length > 0) {
+      filter.branch = { $in: allowedBranchIds };
+    } else if (allowedBranchIds !== null) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+    }
+  }
+
+  // Add date range filter if dates are provided
+  if (startDate && endDate && startDate.trim() !== '' && endDate.trim() !== '') {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // Filter tasks that fall within the date range
+    filter.$or = [
+      // Tasks that start within the range
+      { startDate: { $gte: start, $lte: end } },
+      // Tasks that end within the range
+      { endDate: { $gte: start, $lte: end } },
+      // Tasks that span across the range
+      { startDate: { $lte: start }, endDate: { $gte: end } },
+      // Tasks that start before range and end after range
+      { startDate: { $lte: start }, endDate: { $gte: start } },
+      { startDate: { $lte: end }, endDate: { $gte: end } }
+    ];
+  }
+
+  // Get tasks and populate related data
+  const tasks = await Task.find(filter)
+    .populate('teamMember', 'name')
+    .populate('assignedBy', 'name')
+    .populate('branch', 'name');
+
+  // Process tasks based on groupBy parameter
+  const analyticsData = {};
+  
+  tasks.forEach(task => {
+    let groupKey;
+    
+    switch (groupBy) {
+      case 'status':
+        groupKey = task.status;
+        break;
+      case 'priority':
+        groupKey = task.priority;
+        break;
+      case 'branch':
+        groupKey = task.branch?._id?.toString() || 'unknown';
+        break;
+      case 'teamMember':
+        groupKey = task.teamMember?._id?.toString() || 'unknown';
+        break;
+      case 'month':
+        // Group by month based on start date
+        const startMonth = new Date(task.startDate);
+        groupKey = `${startMonth.getFullYear()}-${String(startMonth.getMonth() + 1).padStart(2, '0')}`;
+        break;
+      case 'week':
+        // Group by week based on start date
+        const startWeek = new Date(task.startDate);
+        const weekNumber = getWeekNumber(startWeek);
+        groupKey = `${startWeek.getFullYear()}-W${weekNumber}`;
+        break;
+      default:
+        groupKey = task.status;
+    }
+    
+    if (!analyticsData[groupKey]) {
+      analyticsData[groupKey] = {
+        count: 0,
+        tasks: [],
+        statusBreakdown: {
+          pending: 0,
+          ongoing: 0,
+          completed: 0,
+          on_hold: 0,
+          cancelled: 0,
+          delayed: 0
+        },
+        priorityBreakdown: {
+          low: 0,
+          medium: 0,
+          high: 0,
+          urgent: 0,
+          critical: 0
+        }
+      };
+      
+      // Add group-specific fields
+      switch (groupBy) {
+        case 'status':
+          analyticsData[groupKey].status = groupKey;
+          break;
+        case 'priority':
+          analyticsData[groupKey].priority = groupKey;
+          break;
+        case 'branch':
+          analyticsData[groupKey].branch = task.branch?.name || 'Unknown Branch';
+          analyticsData[groupKey].branchId = groupKey;
+          break;
+        case 'teamMember':
+          analyticsData[groupKey].teamMember = task.teamMember?.name || 'Unknown Member';
+          analyticsData[groupKey].teamMemberId = groupKey;
+          break;
+        case 'month':
+          analyticsData[groupKey].month = groupKey;
+          break;
+        case 'week':
+          analyticsData[groupKey].week = groupKey;
+          break;
+      }
+    }
+    
+    // Aggregate counts
+    analyticsData[groupKey].count++;
+    analyticsData[groupKey].statusBreakdown[task.status]++;
+    analyticsData[groupKey].priorityBreakdown[task.priority]++;
+    
+    // Add task details (limited to avoid large responses)
+    if (analyticsData[groupKey].tasks.length < 10) {
+      analyticsData[groupKey].tasks.push({
+        id: task._id,
+        title: task.remarks || 'No Title',
+        status: task.status,
+        priority: task.priority,
+        startDate: task.startDate,
+        endDate: task.endDate,
+        teamMember: task.teamMember?.name || 'Unknown',
+        assignedBy: task.assignedBy?.name || 'Unknown'
+      });
+    }
+  });
+  
+  // Convert to array and sort by count descending
+  const analytics = Object.values(analyticsData).sort((a, b) => b.count - a.count);
+
+  return {
+    groupBy,
+    dateRange: startDate && endDate ? { startDate, endDate } : null,
+    totalTasks: tasks.length,
+    totalGroups: analytics.length,
+    analytics
+  };
+};
+
+/**
+ * Get task trends over time for graph visualization
+ * @param {Object} user - User object with role information
+ * @param {Object} params - Parameters including branchId, startDate, endDate, interval
+ * @returns {Promise<Object>}
+ */
+const getTaskTrends = async (user, { branchId, startDate, endDate, interval = 'month' }) => {
+  if (!user.role) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
+  }
+
+  let filter = {};
+  
+  // Add branch filter if specified
+  if (branchId) {
+    if (!hasBranchAccess(user.role, branchId)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+    filter.branch = branchId;
+  } else {
+    // Apply user's branch access restrictions
+    const allowedBranchIds = getUserBranchIds(user.role);
+    if (allowedBranchIds !== null && allowedBranchIds.length > 0) {
+      filter.branch = { $in: allowedBranchIds };
+    } else if (allowedBranchIds !== null) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+    }
+  }
+
+  // Add date range filter if dates are provided
+  if (startDate && endDate && startDate.trim() !== '' && endDate.trim() !== '') {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // Filter tasks that fall within the date range
+    filter.$or = [
+      { startDate: { $gte: start, $lte: end } },
+      { endDate: { $gte: start, $lte: end } },
+      { startDate: { $lte: start }, endDate: { $gte: end } },
+      { startDate: { $lte: start }, endDate: { $gte: start } },
+      { startDate: { $lte: end }, endDate: { $gte: end } }
+    ];
+  }
+
+  // Get tasks
+  const tasks = await Task.find(filter);
+
+  // Process tasks and group by interval
+  const trendData = {};
+  
+  tasks.forEach(task => {
+    const intervalKey = getTaskIntervalKey(task.startDate, interval);
+    
+    if (!trendData[intervalKey]) {
+      trendData[intervalKey] = {
+        interval: intervalKey,
+        totalTasks: 0,
+        statusBreakdown: {
+          pending: 0,
+          ongoing: 0,
+          completed: 0,
+          on_hold: 0,
+          cancelled: 0,
+          delayed: 0
+        },
+        priorityBreakdown: {
+          low: 0,
+          medium: 0,
+          high: 0,
+          urgent: 0,
+          critical: 0
+        }
+      };
+    }
+    
+    trendData[intervalKey].totalTasks++;
+    trendData[intervalKey].statusBreakdown[task.status]++;
+    trendData[intervalKey].priorityBreakdown[task.priority]++;
+  });
+  
+  // Convert to array and sort by interval
+  const trends = Object.values(trendData).sort((a, b) => {
+    if (interval === 'month') {
+      return a.interval.localeCompare(b.interval);
+    } else if (interval === 'week') {
+      return a.interval.localeCompare(b.interval);
+    } else if (interval === 'day') {
+      return new Date(a.interval) - new Date(b.interval);
+    }
+    return 0;
+  });
+
+  return {
+    interval,
+    dateRange: startDate && endDate ? { startDate, endDate } : null,
+    totalTasks: tasks.length,
+    trends
+  };
+};
+
+// Helper function to get week number
+const getWeekNumber = (date) => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+};
+
+// Helper function to get task interval key
+const getTaskIntervalKey = (date, interval) => {
+  if (interval === 'day') {
+    return date.toISOString().split('T')[0]; // YYYY-MM-DD
+  } else if (interval === 'week') {
+    const weekNumber = getWeekNumber(date);
+    return `${date.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+  } else if (interval === 'month') {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return date.toISOString().split('T')[0];
+};
+
 export { 
   getTotalActivities, 
   getTotalTeams, 
@@ -1106,5 +1457,8 @@ export {
   getTimelineStatusByPeriod,
   getTimelineFrequencyAnalytics,
   getTimelineStatusTrends,
-  getTimelineCompletionRates
+  getTimelineCompletionRates,
+  getTotalTasksAndStatus,
+  getTaskAnalytics,
+  getTaskTrends
 }; 

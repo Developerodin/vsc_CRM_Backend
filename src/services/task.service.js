@@ -21,7 +21,8 @@ const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
       taskDescription: task.remarks || 'A new task has been assigned to you',
       assignedBy: assignedBy ? assignedBy.name : 'System',
       dueDate: task.endDate ? task.endDate.toLocaleDateString() : null,
-      priority: task.priority || 'medium'
+      priority: task.priority || 'medium',
+      taskId: task._id ? task._id.toString() : null
     };
 
     // Generate HTML email

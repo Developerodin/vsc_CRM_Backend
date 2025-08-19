@@ -35,9 +35,56 @@ const queryClients = async (filter, options, user) => {
   // Create a new filter object to avoid modifying the original
   const mongoFilter = { ...filter };
   
-  // If name filter exists, convert it to case-insensitive regex
-  if (mongoFilter.name) {
-    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  // Handle global search across multiple fields
+  if (mongoFilter.search) {
+    const searchValue = mongoFilter.search;
+    const searchRegex = { $regex: searchValue, $options: 'i' };
+    
+    // Create an $or condition to search across multiple fields
+    mongoFilter.$or = [
+      { name: searchRegex },
+      { email: searchRegex },
+      { phone: searchRegex },
+      { district: searchRegex },
+      { businessType: searchRegex },
+      { pan: searchRegex }
+    ];
+    
+    // Remove the search parameter as it's now handled by $or
+    delete mongoFilter.search;
+  }
+  
+  // Handle individual field filters (only if no global search)
+  if (!mongoFilter.$or) {
+    // If name filter exists, convert it to case-insensitive regex
+    if (mongoFilter.name) {
+      mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+    }
+    
+    // If email filter exists, convert it to case-insensitive regex
+    if (mongoFilter.email) {
+      mongoFilter.email = { $regex: mongoFilter.email, $options: 'i' };
+    }
+    
+    // If phone filter exists, convert it to case-insensitive regex
+    if (mongoFilter.phone) {
+      mongoFilter.phone = { $regex: mongoFilter.phone, $options: 'i' };
+    }
+    
+    // If district filter exists, convert it to case-insensitive regex
+    if (mongoFilter.district) {
+      mongoFilter.district = { $regex: mongoFilter.district, $options: 'i' };
+    }
+    
+    // If businessType filter exists, convert it to case-insensitive regex
+    if (mongoFilter.businessType) {
+      mongoFilter.businessType = { $regex: mongoFilter.businessType, $options: 'i' };
+    }
+    
+    // If pan filter exists, convert it to case-insensitive regex
+    if (mongoFilter.pan) {
+      mongoFilter.pan = { $regex: mongoFilter.pan, $options: 'i' };
+    }
   }
 
   // Apply branch filtering based on user's access
@@ -706,10 +753,32 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
       }
     }
 
-    // If name filter exists, convert it to case-insensitive regex
-    if (mongoFilter.name) {
-      mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+    // Handle search parameter (searches across name, email, phone, district, businessType, pan)
+    if (mongoFilter.search) {
+      const searchValue = mongoFilter.search;
+      const searchRegex = { $regex: searchValue, $options: 'i' };
+      
+      // Create an $or condition to search across multiple fields
+      mongoFilter.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { phone: searchRegex },
+        { district: searchRegex },
+        { businessType: searchRegex },
+        { pan: searchRegex }
+      ];
+      
+      // Remove the search parameter as it's now handled by $or
+      delete mongoFilter.search;
+      console.log(`🔍 Search filter applied: "${searchValue}" -> $or:`, mongoFilter.$or);
     }
+    // If name filter exists (and no search), convert it to case-insensitive regex
+    else if (mongoFilter.name) {
+      mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+      console.log(`🔍 Name filter applied: "${mongoFilter.name.$regex}"`);
+    }
+
+    console.log('🔍 mongoFilter before Client.find:', JSON.stringify(mongoFilter, null, 2));
 
     // Get pagination options
     const page = parseInt(options.page) || 1;
@@ -723,13 +792,71 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
       .limit(limit)
       .lean();
 
-    console.log(`📊 Found ${clients.length} clients to analyze`);
+    console.log(`📊 Found ${clients.length} clients to analyze. Client IDs:`, clients.map(c => c._id));
+    console.log(`📊 Client details:`, clients.map(c => ({ id: c._id, name: c.name, email: c.email })));
 
     // Get total count for pagination
     const totalClients = await Client.countDocuments(mongoFilter);
 
+    // Debug: Check if there are any tasks at all
+    const totalTasks = await Task.countDocuments();
+    console.log(`📊 Total tasks in database: ${totalTasks}`);
+    
+    if (totalTasks === 0) {
+      console.log('❌ No tasks found in database!');
+      return {
+        results: clients.map(client => ({
+          _id: client._id,
+          name: client.name,
+          email: client.email,
+          branch: client.branch,
+          totalTasks: 0,
+          pendingTasks: 0,
+          ongoingTasks: 0,
+          completedTasks: 0,
+          on_holdTasks: 0,
+          cancelledTasks: 0,
+          delayedTasks: 0
+        })),
+        page,
+        limit,
+        totalPages: Math.ceil(totalClients / limit),
+        totalResults: totalClients
+      };
+    }
+
+    // Debug: Check if there are any tasks with timelines
+    const tasksWithTimelines = await Task.countDocuments({ timeline: { $exists: true, $ne: [] } });
+    console.log(`📊 Tasks with timelines: ${tasksWithTimelines}`);
+    
+    if (tasksWithTimelines === 0) {
+      console.log('❌ No tasks with timelines found!');
+      return {
+        results: clients.map(client => ({
+          _id: client._id,
+          name: client.name,
+          email: client.email,
+          branch: client.branch,
+          totalTasks: 0,
+          pendingTasks: 0,
+          ongoingTasks: 0,
+          completedTasks: 0,
+          on_holdTasks: 0,
+          cancelledTasks: 0,
+          delayedTasks: 0
+        })),
+        page,
+        limit,
+        totalPages: Math.ceil(totalClients / limit),
+        totalResults: totalClients
+      };
+    }
+
     // Get task statistics for each client using aggregation
-    const clientStats = await Task.aggregate([
+    console.log('🔍 Starting aggregation pipeline...');
+    
+    // First, try to get stats from tasks with timeline references
+    let clientStats = await Task.aggregate([
       // Match tasks that have timelines
       {
         $match: {
@@ -766,7 +893,7 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
       {
         $unwind: '$clientDetails'
       },
-      // Match only the clients we're interested in
+      // Match only the clients we're interested in (from our filter)
       {
         $match: {
           'clientDetails._id': { $in: clients.map(c => c._id) }
@@ -801,80 +928,168 @@ const getClientTaskStatistics = async (filter = {}, options = {}, user = null) =
           totalTasks: { $sum: '$count' }
         }
       },
-      // Sort by total tasks descending
       {
-        $sort: { totalTasks: -1 }
+        $sort: { clientName: 1 }
       }
     ]);
 
-    console.log(`📊 Generated statistics for ${clientStats.length} clients`);
+    console.log(`🔍 Timeline-based aggregation completed. Found ${clientStats.length} clients with timeline-based tasks.`);
 
-    // Transform the data to a more user-friendly format
-    const transformedStats = clientStats.map(clientStat => {
-      const statusMap = {
-        pending: 0,
-        ongoing: 0,
-        completed: 0,
-        on_hold: 0,
-        cancelled: 0,
-        delayed: 0
-      };
-
-      // Fill in the actual counts
-      clientStat.statusCounts.forEach(statusCount => {
-        if (statusCount.status in statusMap) {
-          statusMap[statusCount.status] = statusCount.count;
+    // If no results from timeline-based approach, try direct task-to-client mapping
+    if (clientStats.length === 0) {
+      console.log('🔍 No timeline-based tasks found. Trying direct task-to-client mapping...');
+      
+      // Get all tasks for the clients' branches
+      const clientBranchIds = clients.map(c => c.branch);
+      const directTaskStats = await Task.aggregate([
+        // Match tasks in the same branches as our clients
+        {
+          $match: {
+            branch: { $in: clientBranchIds }
+          }
+        },
+        // Group by branch and status to get overall branch statistics
+        {
+          $group: {
+            _id: {
+              branch: '$branch',
+              status: '$status'
+            },
+            count: { $sum: 1 }
+          }
+        },
+        // Group by branch to get all statuses together
+        {
+          $group: {
+            _id: {
+              branch: '$_id.branch'
+            },
+            statusCounts: {
+              $push: {
+                status: '$_id.status',
+                count: '$count'
+              }
+            },
+            totalTasks: { $sum: '$count' }
+          }
         }
+      ]);
+
+      console.log(`🔍 Direct task aggregation completed. Found ${directTaskStats.length} branches with tasks.`);
+
+      // Map branch stats to clients
+      const branchStatsMap = new Map();
+      directTaskStats.forEach(stat => {
+        branchStatsMap.set(stat._id.branch.toString(), stat);
       });
 
-      return {
-        clientId: clientStat._id.clientId,
-        clientName: clientStat._id.clientName,
-        clientEmail: clientStat._id.clientEmail,
-        taskStatistics: {
-          total: clientStat.totalTasks,
-          pending: statusMap.pending,
-          ongoing: statusMap.ongoing,
-          completed: statusMap.completed,
-          onHold: statusMap.on_hold,
-          cancelled: statusMap.cancelled,
-          delayed: statusMap.delayed
+      // Create client stats based on branch statistics
+      clientStats = clients.map(client => {
+        const branchStats = branchStatsMap.get(client.branch.toString());
+        if (branchStats) {
+          return {
+            _id: {
+              clientId: client._id,
+              clientName: client.name,
+              clientEmail: client.email
+            },
+            statusCounts: branchStats.statusCounts,
+            totalTasks: branchStats.totalTasks
+          };
+        } else {
+          return {
+            _id: {
+              clientId: client._id,
+              clientName: client.name,
+              clientEmail: client.email
+            },
+            statusCounts: [],
+            totalTasks: 0
+          };
         }
+      });
+    }
+
+    console.log(`🔍 Final aggregation result:`, JSON.stringify(clientStats, null, 2));
+
+    console.log(`📊 Raw clientStats from aggregation:`, JSON.stringify(clientStats, null, 2));
+    console.log(`📊 Number of clients with stats:`, clientStats.length);
+
+    // Create a map of client stats by client ID
+    const clientStatsMap = new Map();
+    clientStats.forEach(stat => {
+      const clientId = stat._id.clientId.toString();
+      
+      // Initialize stats if not exists
+      if (!clientStatsMap.has(clientId)) {
+        clientStatsMap.set(clientId, {
+          totalTasks: 0,
+          pendingTasks: 0,
+          ongoingTasks: 0,
+          completedTasks: 0,
+          on_holdTasks: 0,
+          cancelledTasks: 0,
+          delayedTasks: 0
+        });
+      }
+      
+      const currentStats = clientStatsMap.get(clientId);
+      currentStats.totalTasks = stat.totalTasks;
+      
+      // Process status counts
+      stat.statusCounts.forEach(statusCount => {
+        switch (statusCount.status) {
+          case 'pending':
+            currentStats.pendingTasks = statusCount.count;
+            break;
+          case 'ongoing':
+            currentStats.ongoingTasks = statusCount.count;
+            break;
+          case 'completed':
+            currentStats.completedTasks = statusCount.count;
+            break;
+          case 'on_hold':
+            currentStats.on_holdTasks = statusCount.count;
+            break;
+          case 'cancelled':
+            currentStats.cancelledTasks = statusCount.count;
+            break;
+          case 'delayed':
+            currentStats.delayedTasks = statusCount.count;
+            break;
+        }
+      });
+    });
+
+    // Merge client info with task statistics
+    const result = clients.map(client => {
+      const stats = clientStatsMap.get(client._id.toString()) || {
+        totalTasks: 0,
+        pendingTasks: 0,
+        ongoingTasks: 0,
+        completedTasks: 0,
+        on_holdTasks: 0,
+        cancelledTasks: 0,
+        delayedTasks: 0
+      };
+
+      return {
+        _id: client._id,
+        name: client.name,
+        email: client.email,
+        branch: client.branch,
+        ...stats
       };
     });
 
-    // Add clients with no tasks (showing 0 counts)
-    const clientsWithNoTasks = clients.filter(client => 
-      !transformedStats.some(stat => stat.clientId.toString() === client._id.toString())
-    );
-
-    const clientsWithNoTasksStats = clientsWithNoTasks.map(client => ({
-      clientId: client._id,
-      clientName: client.name,
-      clientEmail: client.email,
-      taskStatistics: {
-        total: 0,
-        pending: 0,
-        ongoing: 0,
-        completed: 0,
-        onHold: 0,
-        cancelled: 0,
-        delayed: 0
-      }
-    }));
-
-    // Combine both arrays and sort by client name
-    const allClientStats = [...transformedStats, ...clientsWithNoTasksStats]
-      .sort((a, b) => a.clientName.localeCompare(b.clientName));
+    console.log(`📊 Final result:`, JSON.stringify(result, null, 2));
 
     return {
-      results: allClientStats,
-      pagination: {
-        page,
-        limit,
-        total: totalClients,
-        pages: Math.ceil(totalClients / limit)
-      }
+      results: result,
+      page,
+      limit,
+      totalPages: Math.ceil(totalClients / limit),
+      totalResults: totalClients
     };
 
   } catch (error) {

@@ -68,7 +68,8 @@ const sendDailyTaskReminders = async () => {
           taskDescription: `You have ${totalTasks} pending task(s) that require your attention.`,
           assignedBy: 'System Reminder',
           dueDate: null,
-          priority: 'medium'
+          priority: 'medium',
+          taskId: null // For daily reminders, we don't link to specific tasks
         };
 
         // Generate HTML email

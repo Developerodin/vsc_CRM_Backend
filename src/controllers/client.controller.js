@@ -84,7 +84,7 @@ const getClientActivities = catchAsync(async (req, res) => {
 });
 
 const getClientTaskStatistics = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'email', 'branch']);
+  const filter = pick(req.query, ['name', 'email', 'search', 'branch']);
   const options = pick(req.query, ['limit', 'page']);
   
   const result = await clientService.getClientTaskStatistics(filter, options, req.user);

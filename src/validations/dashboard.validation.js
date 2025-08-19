@@ -92,6 +92,31 @@ const getTimelineCompletionRates = {
   }),
 };
 
+// New validation schemas for task analytics
+const getTotalTasksAndStatus = {
+  query: Joi.object().keys({
+    branchId: Joi.string().custom(objectId).optional().allow(''),
+  }),
+};
+
+const getTaskAnalytics = {
+  query: Joi.object().keys({
+    branchId: Joi.string().custom(objectId).optional().allow(''),
+    startDate: Joi.date().iso().optional().allow(''),
+    endDate: Joi.date().iso().optional().allow(''),
+    groupBy: Joi.string().valid('status', 'priority', 'branch', 'teamMember', 'month', 'week').default('status'),
+  }),
+};
+
+const getTaskTrends = {
+  query: Joi.object().keys({
+    branchId: Joi.string().custom(objectId).optional().allow(''),
+    startDate: Joi.date().iso().optional().allow(''),
+    endDate: Joi.date().iso().optional().allow(''),
+    interval: Joi.string().valid('day', 'week', 'month').default('month'),
+  }),
+};
+
 export { 
   getTimelineCountsByBranch, 
   getAssignedTaskCounts, 
@@ -104,5 +129,8 @@ export {
   getTimelineStatusByPeriod,
   getTimelineFrequencyAnalytics,
   getTimelineStatusTrends,
-  getTimelineCompletionRates
+  getTimelineCompletionRates,
+  getTotalTasksAndStatus,
+  getTaskAnalytics,
+  getTaskTrends
 }; 

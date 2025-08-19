@@ -220,7 +220,7 @@ const generateCustomEmailHTML = (text, description) => {
  * @returns {string} HTML content
  */
 const generateTaskAssignmentHTML = (taskData) => {
-  const { taskTitle, taskDescription, assignedBy, dueDate, priority } = taskData;
+  const { taskTitle, taskDescription, assignedBy, dueDate, priority, taskId } = taskData;
   
   const priorityColors = {
     low: '#4caf50',
@@ -230,6 +230,10 @@ const generateTaskAssignmentHTML = (taskData) => {
   };
   
   const priorityColor = priorityColors[priority] || '#666';
+  
+  // Generate the CRM link - if taskId is provided, link to specific task, otherwise to main dashboard
+  const crmBaseUrl = 'https://main.dnmvta02jt3n3.amplifyapp.com';
+  const viewDetailsUrl = taskId ? `${crmBaseUrl}/tasks/${taskId}` : crmBaseUrl;
   
   return `
     <!DOCTYPE html>
@@ -250,7 +254,10 @@ const generateTaskAssignmentHTML = (taskData) => {
         .detail-item { background: #e3f2fd; padding: 10px; border-radius: 5px; }
         .priority-badge { display: inline-block; padding: 5px 15px; border-radius: 20px; color: white; font-weight: bold; background: ${priorityColor}; }
         .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-        .cta-button { display: inline-block; background: #4caf50; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; margin-top: 15px; }
+        .cta-button { display: inline-block; background: #4caf50; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; margin-top: 15px; font-weight: bold; transition: background-color 0.3s ease; }
+        .cta-button:hover { background: #45a049; }
+        .crm-link { color: #667eea; text-decoration: none; font-weight: bold; }
+        .crm-link:hover { text-decoration: underline; }
       </style>
     </head>
     <body>
@@ -284,12 +291,18 @@ const generateTaskAssignmentHTML = (taskData) => {
             </div>
             ` : ''}
             <div style="text-align: center; margin-top: 20px;">
-              <a href="#" class="cta-button">View Task Details</a>
+              <a href="${viewDetailsUrl}" class="cta-button" target="_blank">🚀 View Task Details</a>
+            </div>
+            <div style="text-align: center; margin-top: 15px; font-size: 14px; color: #666;">
+              <a href="${crmBaseUrl}" class="crm-link" target="_blank">📊 Open CRM Dashboard</a>
             </div>
           </div>
         </div>
         <div class="footer">
           <p>Please review and complete this task as soon as possible</p>
+          <p style="margin-top: 10px;">
+            <a href="${crmBaseUrl}" class="crm-link" target="_blank">🔗 Access your CRM system</a>
+          </p>
         </div>
       </div>
     </body>
