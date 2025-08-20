@@ -15,6 +15,7 @@ import * as fileManagerService from './fileManager.service.js';
 import * as emailService from './email.service.js';
 import * as taskService from './task.service.js';
 import * as cronService from './cron.service.js';
+import * as analyticsService from './analytics/index.js';
 
 export {
   teamMemberService,
@@ -30,5 +31,5 @@ export {
   emailService,
   taskService,
   cronService,
+  analyticsService,
 };
-

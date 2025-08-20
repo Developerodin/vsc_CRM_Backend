@@ -18,6 +18,7 @@ import fileManagerRoute from './fileManager.route.js';
 import commonEmailRoute from './common.email.route.js';
 import taskRoute from './task.route.js';
 import cronRoute from './cron.route.js';
+import analyticsRoute from './analytics.route.js';
 
 const router = express.Router();
 
@@ -77,6 +78,10 @@ const defaultRoutes = [
   {
     path: '/cron',
     route: cronRoute,
+  },
+  {
+    path: '/analytics',
+    route: analyticsRoute,
   },
   {
     path: '/common',
