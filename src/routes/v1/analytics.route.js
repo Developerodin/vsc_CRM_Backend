@@ -70,4 +70,14 @@ router.get('/team-members/:teamMemberId/overview',
   analyticsController.getTeamMemberDetailsOverview
 );
 
+/**
+ * @route GET /v1/analytics/clients/:clientId/overview
+ * @desc Get detailed overview for a specific client
+ * @access Private
+ */
+router.get('/clients/:clientId/overview', 
+  validate(analyticsValidation.getClientDetailsOverview),
+  analyticsController.getClientDetailsOverview
+);
+
 export default router;

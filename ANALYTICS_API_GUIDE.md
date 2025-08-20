@@ -41,11 +41,24 @@ Returns information about all available analytics endpoints.
   "success": true,
   "message": "Analytics endpoints information",
   "data": {
-    "available": ["team-members"],
+    "available": ["team-members", "clients"],
     "endpoints": {
       "team-members": {
         "description": "Team member performance analytics",
         "endpoints": [...]
+      },
+      "clients": {
+        "description": "Client performance and relationship analytics",
+        "endpoints": [
+          {
+            "path": "/v1/analytics/clients/:clientId/overview",
+            "method": "GET",
+            "description": "Get detailed overview for a specific client",
+            "params": {
+              "clientId": "Client ID (required)"
+            }
+          }
+        ]
       }
     }
   }
@@ -388,6 +401,123 @@ The API now provides comprehensive client information extracted from timeline da
 - **Task-Client Mapping**: Clear relationship between tasks, timelines, and clients
 
 This ensures that even when client data is nested within timeline structures, it's properly extracted and presented in a user-friendly format.
+
+## Client Analytics
+
+### Client Overview API
+
+**GET** `/v1/analytics/clients/:clientId/overview`
+
+Get comprehensive overview of a specific client including personal information, activities, tasks, team members, and timeline relationships.
+
+#### Parameters
+- `clientId` (path, required): Client ID
+
+#### Response Structure
+```json
+{
+  "success": true,
+  "message": "Client details overview retrieved successfully",
+  "data": {
+    "client": {
+      "_id": "clientId",
+      "name": "Client Name",
+      "email": "client@email.com",
+      "phone": "+1234567890",
+      "address": "Client Address",
+      "businessType": "Proprietorship",
+      "gstNumber": "GST123456789",
+      "entityType": "Private Limited",
+      "branch": {
+        "name": "Branch Name",
+        "address": "Branch Address",
+        "city": "City",
+        "state": "State"
+      }
+    },
+    "performance": {
+      "totalTasks": 15,
+      "completedTasks": 12,
+      "completionRate": 80.0,
+      "totalTimelines": 8,
+      "totalActivities": 5,
+      "totalTeamMembers": 3
+    },
+    "activities": {
+      "assigned": [...],
+      "summary": [
+        {
+          "id": "activityId",
+          "name": "GST Filing",
+          "description": "Monthly GST return filing",
+          "category": "Tax",
+          "frequency": "Monthly"
+        }
+      ],
+      "byCategory": {
+        "Tax": [...],
+        "Compliance": [...]
+      }
+    },
+    "tasks": {
+      "byStatus": {
+        "completed": [...],
+        "ongoing": [...],
+        "pending": [...]
+      },
+      "byPriority": {
+        "high": 5,
+        "medium": 8,
+        "low": 2
+      },
+      "byTeamMember": [...],
+      "byActivity": [...],
+      "recent": [...],
+      "monthlyDistribution": [...]
+    },
+    "teamMembers": {
+      "total": 3,
+      "summary": [
+        {
+          "id": "memberId",
+          "name": "Team Member Name",
+          "email": "member@email.com",
+          "skills": [...],
+          "taskStats": {
+            "totalTasks": 8,
+            "completedTasks": 6,
+            "completionRate": "75.0"
+          }
+        }
+      ],
+      "performance": [...]
+    },
+    "timelines": {
+      "total": 8,
+      "summary": [
+        {
+          "id": "timelineId",
+          "status": "ongoing",
+          "frequency": "Monthly",
+          "activity": {...},
+          "totalPeriods": 12,
+          "completedPeriods": 8
+        }
+      ],
+      "byStatus": {...},
+      "byActivity": {...}
+    }
+  }
+}
+```
+
+#### Key Features
+- **Client Personal Information**: Complete client details including business information
+- **Activity Overview**: All activities assigned to the client with frequency configurations
+- **Task Performance**: Comprehensive task breakdown by status, priority, and team member
+- **Team Member Analysis**: Shows which team members are working on this client's tasks
+- **Timeline Management**: Detailed timeline information with frequency status tracking
+- **Performance Metrics**: Completion rates, task distribution, and monthly trends
 
 ## Error Handling
 

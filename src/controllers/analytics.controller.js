@@ -1,7 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import ApiError from '../utils/ApiError.js';
-import { teamMemberAnalytics } from '../services/analytics/index.js';
+import { teamMemberAnalytics, clientAnalytics } from '../services/analytics/index.js';
 
 /**
  * Get team member analytics dashboard cards
@@ -146,13 +146,41 @@ const getTeamMemberDetailsOverview = catchAsync(async (req, res) => {
 });
 
 /**
+ * Get detailed overview for a specific client
+ * @route GET /v1/analytics/clients/:clientId/overview
+ * @access Private
+ */
+const getClientDetailsOverview = catchAsync(async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    
+    if (!clientId) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Client ID is required');
+    }
+    
+    const overview = await clientAnalytics.getClientDetailsOverview(clientId);
+    
+    res.status(httpStatus.OK).json({
+      success: true,
+      message: 'Client details overview retrieved successfully',
+      data: overview
+    });
+  } catch (error) {
+    if (error.message === 'Client not found') {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+    }
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve client overview');
+  }
+});
+
+/**
  * Get all analytics endpoints info
  * @route GET /v1/analytics
  * @access Private
  */
 const getAnalyticsInfo = catchAsync(async (req, res) => {
   const analyticsInfo = {
-    available: ['team-members'],
+    available: ['team-members', 'clients'],
     endpoints: {
       'team-members': {
         description: 'Team member performance analytics',
@@ -190,19 +218,32 @@ const getAnalyticsInfo = catchAsync(async (req, res) => {
               limit: 'Number of top members per branch (default: 5)'
             }
           },
-                     {
-             path: '/v1/analytics/team-members/summary',
-             method: 'GET',
-             description: 'Get comprehensive analytics summary'
-           },
-           {
-             path: '/v1/analytics/team-members/:teamMemberId/overview',
-             method: 'GET',
-             description: 'Get detailed overview for a specific team member',
-             params: {
-               teamMemberId: 'Team member ID (required)'
-             }
-           }
+          {
+            path: '/v1/analytics/team-members/summary',
+            method: 'GET',
+            description: 'Get comprehensive analytics summary'
+          },
+          {
+            path: '/v1/analytics/team-members/:teamMemberId/overview',
+            method: 'GET',
+            description: 'Get detailed overview for a specific team member',
+            params: {
+              teamMemberId: 'Team member ID (required)'
+            }
+          }
+        ]
+      },
+      'clients': {
+        description: 'Client performance and relationship analytics',
+        endpoints: [
+          {
+            path: '/v1/analytics/clients/:clientId/overview',
+            method: 'GET',
+            description: 'Get detailed overview for a specific client',
+            params: {
+              clientId: 'Client ID (required)'
+            }
+          }
         ]
       }
     }
@@ -222,5 +263,6 @@ export default {
   getTopTeamMembersByBranch,
   getTeamMemberAnalyticsSummary,
   getTeamMemberDetailsOverview,
+  getClientDetailsOverview,
   getAnalyticsInfo
 };

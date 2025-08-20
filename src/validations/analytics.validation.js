@@ -37,9 +37,17 @@ const getTeamMemberDetailsOverview = {
   })
 };
 
+const getClientDetailsOverview = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required()
+      .description('Client ID')
+  })
+};
+
 export default {
   getTaskCompletionTrends,
   getTopTeamMembersByCompletion,
   getTopTeamMembersByBranch,
-  getTeamMemberDetailsOverview
+  getTeamMemberDetailsOverview,
+  getClientDetailsOverview
 };
