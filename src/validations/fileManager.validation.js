@@ -40,7 +40,7 @@ const getFolderContents = {
   }),
   query: Joi.object().keys({
     sortBy: Joi.string().optional(),
-    limit: Joi.number().integer().min(1).max(100).optional(),
+    limit: Joi.number().integer().min(1).max(10000).optional(),
     page: Joi.number().integer().min(1).optional(),
   }),
 };

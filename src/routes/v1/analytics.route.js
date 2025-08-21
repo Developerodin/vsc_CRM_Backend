@@ -71,6 +71,16 @@ router.get('/team-members/:teamMemberId/overview',
 );
 
 /**
+ * @route GET /v1/analytics/team-members/table
+ * @desc Get all team members table data with comprehensive information
+ * @access Private
+ */
+router.get('/team-members/table', 
+  validate(analyticsValidation.getAllTeamMembersTableData),
+  analyticsController.getAllTeamMembersTableData
+);
+
+/**
  * @route GET /v1/analytics/clients/:clientId/overview
  * @desc Get detailed overview for a specific client
  * @access Private
@@ -79,5 +89,31 @@ router.get('/clients/:clientId/overview',
   validate(analyticsValidation.getClientDetailsOverview),
   analyticsController.getClientDetailsOverview
 );
+
+/**
+ * @route GET /v1/analytics/clients/table
+ * @desc Get all clients table data with comprehensive information
+ * @access Private
+ */
+router.get('/clients/table', 
+  validate(analyticsValidation.getAllClientsTableData),
+  analyticsController.getAllClientsTableData
+);
+
+
+
+/**
+ * @route GET /v1/analytics/test-team-members-db
+ * @desc Test team members database relationships
+ * @access Private
+ */
+router.get('/test-team-members-db', analyticsController.testTeamMembersDatabase);
+
+/**
+ * @route GET /v1/analytics/test-timeline-existence
+ * @desc Test timeline existence for team member tasks
+ * @access Private
+ */
+router.get('/test-timeline-existence', analyticsController.testTimelineExistence);
 
 export default router;

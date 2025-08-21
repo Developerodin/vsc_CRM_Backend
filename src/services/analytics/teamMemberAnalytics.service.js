@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import TeamMember from '../../models/teamMember.model.js';
 import Task from '../../models/task.model.js';
-import Branch from '../../models/branch.model.js';
 import Timeline from '../../models/timeline.model.js';
 import Client from '../../models/client.model.js';
+import { hasBranchAccess, getUserBranchIds } from '../role.service.js';
 
 /**
  * Get current month and last month date ranges
@@ -766,11 +766,389 @@ const getAnalyticsSummary = async () => {
   }
 };
 
+/**
+ * Get all team members table data with comprehensive information
+ * @param {Object} filter - Filter options
+ * @param {Object} options - Query options including pagination
+ * @param {Object} user - User object with role information
+ * @returns {Promise<Object>} Team members table data with pagination
+ */
+const getAllTeamMembersTableData = async (filter = {}, options = {}, user = null) => {
+  try {
+    // Create a new filter object to avoid modifying the original
+    const mongoFilter = { ...filter };
+    
+    // Handle search parameter (searches across multiple fields)
+    if (mongoFilter.search) {
+      const searchValue = mongoFilter.search;
+      const searchRegex = { $regex: searchValue, $options: 'i' };
+      
+      // Create an $or condition to search across multiple fields
+      mongoFilter.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { phone: searchRegex },
+        { city: searchRegex },
+        { state: searchRegex },
+        { country: searchRegex }
+      ];
+      
+      // Remove the search parameter as it's now handled by $or
+      delete mongoFilter.search;
+    }
+
+    // Handle individual field filters (only if no global search)
+    if (!mongoFilter.$or) {
+      // If name filter exists, convert it to case-insensitive regex
+      if (mongoFilter.name) {
+        mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+      }
+      
+      // If email filter exists, convert it to case-insensitive regex
+      if (mongoFilter.email) {
+        mongoFilter.email = { $regex: mongoFilter.email, $options: 'i' };
+      }
+      
+      // If phone filter exists, convert it to case-insensitive regex
+      if (mongoFilter.phone) {
+        mongoFilter.phone = { $regex: mongoFilter.phone, $options: 'i' };
+      }
+      
+      // If city filter exists, convert it to case-insensitive regex
+      if (mongoFilter.city) {
+        mongoFilter.city = { $regex: mongoFilter.city, $options: 'i' };
+      }
+      
+      // If state filter exists, convert it to case-insensitive regex
+      if (mongoFilter.state) {
+        mongoFilter.state = { $regex: mongoFilter.state, $options: 'i' };
+      }
+    }
+
+    // Apply branch filtering based on user's access
+    if (user && user.role) {
+      // If specific branch is requested in filter
+      if (mongoFilter.branch) {
+        // Check if user has access to this specific branch
+        if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+          throw new Error('Access denied to this branch');
+        }
+      } else {
+        // Get user's allowed branch IDs
+        const allowedBranchIds = getUserBranchIds(user.role);
+        
+        if (allowedBranchIds === null) {
+          // User has access to all branches, no filtering needed
+        } else if (allowedBranchIds.length > 0) {
+          // Filter by user's allowed branches
+          mongoFilter.branch = { $in: allowedBranchIds };
+        } else {
+          // User has no branch access
+          throw new Error('No branch access granted');
+        }
+      }
+    }
+
+    // Get pagination options
+    const page = parseInt(options.page) || 1;
+    const limit = parseInt(options.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    // Get sorting options
+    let sortOptions = {};
+    if (options.sortBy) {
+      const [field, order] = options.sortBy.split(':');
+      sortOptions[field] = order === 'desc' ? -1 : 1;
+    } else {
+      sortOptions = { name: 1 }; // Default sort by name ascending
+    }
+
+    // First, get the team members that match the filter with pagination
+    const teamMembers = await TeamMember.find(mongoFilter)
+      .populate('branch', 'name address city state country pinCode')
+      .populate('skills', 'name description category')
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Get total count for pagination
+    const totalTeamMembers = await TeamMember.countDocuments(mongoFilter);
+
+    // Get all team member IDs we're interested in
+    const teamMemberIds = teamMembers.map(tm => tm._id);
+
+    console.log('🔍 DEBUG: Team member IDs to search for:', teamMemberIds);
+
+    // Get ALL tasks first (like clients table does), then filter by team member
+    const allTasks = await Task.find()
+      .select('_id status priority startDate endDate timeline branch createdAt teamMember')
+      .populate('teamMember', 'name email phone')
+      .populate({
+        path: 'timeline',
+        populate: [
+          { path: 'client', select: 'name email phone company address city state country businessType entityType' },
+          { path: 'activity', select: 'name description category' }
+        ]
+      })
+      .lean();
+
+    console.log('🔍 DEBUG: Found total tasks in database:', allTasks.length);
+    if (allTasks.length > 0) {
+      console.log('🔍 DEBUG: Sample task:', {
+        id: allTasks[0]._id,
+        teamMember: allTasks[0].teamMember,
+        teamMemberType: typeof allTasks[0].teamMember,
+        hasTeamMember: !!allTasks[0].teamMember,
+        timeline: allTasks[0].timeline,
+        timelineType: typeof allTasks[0].timeline,
+        isArray: Array.isArray(allTasks[0].timeline),
+        hasPopulatedTimeline: allTasks[0].timeline && allTasks[0].timeline.length > 0 && allTasks[0].timeline[0].client
+      });
+    }
+
+    // Filter tasks for our team members
+    const tasks = allTasks.filter(task => 
+      task.teamMember && 
+      teamMemberIds.some(tmId => tmId.toString() === task.teamMember._id.toString())
+    );
+
+    console.log('🔍 DEBUG: Filtered tasks for our team members:', tasks.length);
+
+    // Process each team member to add the required information
+    const processedTeamMembers = teamMembers.map(teamMember => {
+      console.log(`🔍 DEBUG: Processing team member: ${teamMember.name} (${teamMember._id})`);
+      
+      // Get team member's tasks
+      const memberTasks = tasks.filter(task => 
+        task.teamMember && 
+        task.teamMember._id && 
+        task.teamMember._id.toString() === teamMember._id.toString()
+      );
+
+      console.log(`  - Found ${memberTasks.length} tasks for this member`);
+      if (memberTasks.length > 0) {
+        console.log(`  - Sample task:`, {
+          id: memberTasks[0]._id,
+          teamMember: memberTasks[0].teamMember,
+          teamMemberType: typeof memberTasks[0].teamMember,
+          timeline: memberTasks[0].timeline,
+          timelineType: typeof memberTasks[0].timeline,
+          isArray: Array.isArray(memberTasks[0].timeline)
+        });
+      }
+
+      // Get team member's timeline IDs from tasks (timeline is an array in Task model)
+      const memberTimelineIds = [...new Set(memberTasks.flatMap(task => {
+        if (!task.timeline || !Array.isArray(task.timeline) || task.timeline.length === 0) {
+          return [];
+        }
+        // Return all timeline IDs from the array, not just the first one
+        return task.timeline.map(timelineId => 
+          timelineId && timelineId.toString ? timelineId : null
+        ).filter(Boolean);
+      }))];
+
+      console.log(`  - Extracted ${memberTimelineIds.length} timeline IDs:`, memberTimelineIds);
+
+      // Get team member's timelines from populated task data
+      const memberTimelines = memberTasks.flatMap(task => {
+        if (!task.timeline || !Array.isArray(task.timeline)) return [];
+        return task.timeline.filter(timeline => timeline && timeline._id);
+      });
+
+      console.log(`  - Found ${memberTimelines.length} populated timelines for this member`);
+      if (memberTimelines.length > 0) {
+        console.log(`  - Sample timeline:`, {
+          id: memberTimelines[0]._id,
+          client: memberTimelines[0].client,
+          activity: memberTimelines[0].activity
+        });
+      }
+
+      // Get unique client IDs from member's timelines
+      const memberClientIds = [...new Set(memberTimelines.map(timeline => 
+        timeline.client && timeline.client._id
+      ).filter(Boolean))];
+
+      // Get member's clients from populated timeline data
+      const memberClients = memberTimelines
+        .map(timeline => timeline.client)
+        .filter(client => client && client._id)
+        .filter((client, index, arr) => 
+          arr.findIndex(c => c._id.toString() === client._id.toString()) === index
+        );
+
+      // Calculate task status counts
+      const taskStatusCounts = memberTasks.reduce((acc, task) => {
+        const status = task.status || 'pending';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Ensure all status fields are present even if count is 0
+      const allStatuses = ['pending', 'ongoing', 'completed', 'on_hold', 'delayed', 'cancelled'];
+      allStatuses.forEach(status => {
+        if (!taskStatusCounts[status]) {
+          taskStatusCounts[status] = 0;
+        }
+      });
+
+      // Calculate task priority counts
+      const taskPriorityCounts = memberTasks.reduce((acc, task) => {
+        const priority = task.priority || 'medium';
+        acc[priority] = (acc[priority] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Get overdue tasks
+      const overdueTasks = memberTasks.filter(task => 
+        task.endDate && 
+        task.endDate < new Date() && 
+        !['completed', 'cancelled'].includes(task.status)
+      );
+
+      // Get current month tasks
+      const now = new Date();
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      
+      const currentMonthTasks = memberTasks.filter(task => 
+        task.createdAt >= currentMonthStart && task.createdAt <= currentMonthEnd
+      );
+
+      const currentMonthCompleted = currentMonthTasks.filter(task => 
+        task.status === 'completed'
+      ).length;
+
+      // Calculate completion rate
+      const completionRate = memberTasks.length > 0 
+        ? (memberTasks.filter(task => task.status === 'completed').length / memberTasks.length * 100).toFixed(1)
+        : 0;
+
+      return {
+        _id: teamMember._id,
+        // Personal Details
+        name: teamMember.name,
+        email: teamMember.email,
+        phone: teamMember.phone,
+        address: teamMember.address,
+        city: teamMember.city,
+        state: teamMember.state,
+        country: teamMember.country,
+        pinCode: teamMember.pinCode,
+        sortOrder: teamMember.sortOrder,
+        createdAt: teamMember.createdAt,
+        updatedAt: teamMember.updatedAt,
+        
+        // Branch Information
+        branch: teamMember.branch ? {
+          _id: teamMember.branch._id,
+          name: teamMember.branch.name,
+          address: teamMember.branch.address,
+          city: teamMember.branch.city,
+          state: teamMember.branch.state,
+          country: teamMember.branch.country,
+          pinCode: teamMember.branch.pinCode
+        } : null,
+        
+        // Skills Information
+        skills: {
+          total: teamMember.skills ? teamMember.skills.length : 0,
+          list: teamMember.skills ? teamMember.skills.map(skill => ({
+            _id: skill._id,
+            name: skill.name,
+            description: skill.description,
+            category: skill.category
+          })) : []
+        },
+        
+        // Task Information
+        tasks: {
+          total: memberTasks.length,
+          byStatus: taskStatusCounts,
+          byPriority: taskPriorityCounts,
+          overdue: overdueTasks.length,
+          currentMonth: {
+            total: currentMonthTasks.length,
+            completed: currentMonthCompleted
+          },
+          status: {
+            pending: taskStatusCounts.pending || 0,
+            ongoing: taskStatusCounts.ongoing || 0,
+            completed: taskStatusCounts.completed || 0,
+            on_hold: taskStatusCounts.on_hold || 0,
+            delayed: taskStatusCounts.delayed || 0,
+            cancelled: taskStatusCounts.cancelled || 0
+          },
+          completionRate: parseFloat(completionRate)
+        },
+        
+        // Timeline Information
+        timelines: {
+          total: memberTimelines.length,
+          summary: memberTimelines.map(timeline => ({
+            _id: timeline._id,
+            status: timeline.status,
+            startDate: timeline.startDate,
+            endDate: timeline.endDate,
+            frequency: timeline.frequency,
+            client: timeline.client ? {
+              _id: timeline.client._id,
+              name: timeline.client.name,
+              email: timeline.client.email,
+              phone: timeline.client.phone,
+              company: timeline.client.company
+            } : null,
+            activity: timeline.activity ? {
+              _id: timeline.activity._id,
+              name: timeline.activity.name,
+              description: timeline.activity.description,
+              category: timeline.activity.category
+            } : null
+          }))
+        },
+        
+        // Client Information
+        clients: {
+          total: memberClients.length,
+          list: memberClients.map(client => ({
+            _id: client._id,
+            name: client.name,
+            email: client.email,
+            phone: client.phone,
+            company: client.company,
+            address: client.address,
+            city: client.city,
+            state: client.state,
+            country: client.country,
+            businessType: client.businessType,
+            entityType: client.entityType
+          }))
+        }
+      };
+    });
+
+    return {
+      results: processedTeamMembers,
+      page,
+      limit,
+      totalPages: Math.ceil(totalTeamMembers / limit),
+      totalResults: totalTeamMembers,
+      hasNextPage: page < Math.ceil(totalTeamMembers / limit),
+      hasPrevPage: page > 1
+    };
+  } catch (error) {
+    throw new Error(`Failed to get team members table data: ${error.message}`);
+  }
+};
+
 export default {
   getDashboardCards,
   getTaskCompletionTrends,
   getTopTeamMembersByCompletion,
   getTopTeamMembersByBranch,
   getTeamMemberDetailsOverview,
-  getAnalyticsSummary
+  getAnalyticsSummary,
+  getAllTeamMembersTableData
 };

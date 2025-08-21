@@ -5,6 +5,7 @@ import Timeline from '../../models/timeline.model.js';
 import Activity from '../../models/activity.model.js';
 import TeamMember from '../../models/teamMember.model.js';
 import Branch from '../../models/branch.model.js';
+import { hasBranchAccess, getUserBranchIds } from '../role.service.js';
 
 /**
  * Get comprehensive client details overview
@@ -354,6 +355,313 @@ const getClientDetailsOverview = async (clientId) => {
   }
 };
 
+/**
+ * Get all clients table data with comprehensive information
+ * @param {Object} filter - Filter options
+ * @param {Object} options - Query options including pagination
+ * @param {Object} user - User object with role information
+ * @returns {Promise<Object>} Clients table data with pagination
+ */
+const getAllClientsTableData = async (filter = {}, options = {}, user = null) => {
+  try {
+    // Create a new filter object to avoid modifying the original
+    const mongoFilter = { ...filter };
+    
+    // Handle search parameter (searches across multiple fields)
+    if (mongoFilter.search) {
+      const searchValue = mongoFilter.search;
+      const searchRegex = { $regex: searchValue, $options: 'i' };
+      
+      // Create an $or condition to search across multiple fields
+      mongoFilter.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { phone: searchRegex },
+        { district: searchRegex },
+        { businessType: searchRegex },
+        { pan: searchRegex },
+        { gstNumber: searchRegex },
+        { tanNumber: searchRegex },
+        { cinNumber: searchRegex },
+        { udyamNumber: searchRegex },
+        { iecCode: searchRegex }
+      ];
+      
+      // Remove the search parameter as it's now handled by $or
+      delete mongoFilter.search;
+    }
+
+    // Handle individual field filters (only if no global search)
+    if (!mongoFilter.$or) {
+      // If name filter exists, convert it to case-insensitive regex
+      if (mongoFilter.name) {
+        mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+      }
+      
+      // If email filter exists, convert it to case-insensitive regex
+      if (mongoFilter.email) {
+        mongoFilter.email = { $regex: mongoFilter.email, $options: 'i' };
+      }
+      
+      // If phone filter exists, convert it to case-insensitive regex
+      if (mongoFilter.phone) {
+        mongoFilter.phone = { $regex: mongoFilter.phone, $options: 'i' };
+      }
+      
+      // If district filter exists, convert it to case-insensitive regex
+      if (mongoFilter.district) {
+        mongoFilter.district = { $regex: mongoFilter.district, $options: 'i' };
+      }
+      
+      // If businessType filter exists, convert it to case-insensitive regex
+      if (mongoFilter.businessType) {
+        mongoFilter.businessType = { $regex: mongoFilter.businessType, $options: 'i' };
+      }
+      
+      // If pan filter exists, convert it to case-insensitive regex
+      if (mongoFilter.pan) {
+        mongoFilter.pan = { $regex: mongoFilter.pan, $options: 'i' };
+      }
+    }
+
+    // Apply branch filtering based on user's access
+    if (user && user.role) {
+      // If specific branch is requested in filter
+      if (mongoFilter.branch) {
+        // Check if user has access to this specific branch
+        if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+          throw new Error('Access denied to this branch');
+        }
+      } else {
+        // Get user's allowed branch IDs
+        const allowedBranchIds = getUserBranchIds(user.role);
+        
+        if (allowedBranchIds === null) {
+          // User has access to all branches, no filtering needed
+        } else if (allowedBranchIds.length > 0) {
+          // Filter by user's allowed branches
+          mongoFilter.branch = { $in: allowedBranchIds };
+        } else {
+          // User has no branch access
+          throw new Error('No branch access granted');
+        }
+      }
+    }
+
+    // Get pagination options
+    const page = parseInt(options.page) || 1;
+    const limit = parseInt(options.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    // Get sorting options
+    let sortOptions = {};
+    if (options.sortBy) {
+      const [field, order] = options.sortBy.split(':');
+      sortOptions[field] = order === 'desc' ? -1 : 1;
+    } else {
+      sortOptions = { name: 1 }; // Default sort by name ascending
+    }
+
+    // First, get the clients that match the filter with pagination
+    const clients = await Client.find(mongoFilter)
+      .populate('branch', 'name address city state country pinCode')
+      .populate('activities.activity', 'name description category')
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Get total count for pagination
+    const totalClients = await Client.countDocuments(mongoFilter);
+
+    // Get all client IDs we're interested in
+    const clientIds = clients.map(c => c._id);
+
+    // Get timelines for these clients
+    const timelines = await Timeline.find({ client: { $in: clientIds } })
+      .select('_id client activity')
+      .lean();
+
+    // Get tasks for these clients' timelines (only if there are timelines)
+    let tasks = [];
+    let teamMembers = [];
+    
+    if (timelines.length > 0) {
+      const timelineIds = timelines.map(timeline => timeline._id);
+      // Since timeline field is an array in Task model, we need to use $elemMatch or $in with array field
+      tasks = await Task.find({ timeline: { $in: timelineIds } })
+        .select('timeline status teamMember')
+        .populate('teamMember', 'name email phone')
+        .lean();
+
+      // Get team members for these clients
+      const teamMemberIds = [...new Set(tasks.map(task => task.teamMember && task.teamMember._id).filter(Boolean))];
+      if (teamMemberIds.length > 0) {
+        teamMembers = await TeamMember.find({ _id: { $in: teamMemberIds } })
+          .select('name email phone')
+          .lean();
+      }
+    }
+
+    // Process each client to add the required information
+    const processedClients = clients.map(client => {
+      // Get client's timelines
+      const clientTimelines = timelines.filter(timeline => 
+        timeline.client.toString() === client._id.toString()
+      );
+      const clientTimelineIds = clientTimelines.map(timeline => timeline._id);
+
+      // Get client's tasks (timeline is an array in Task model)
+      const clientTasks = tasks.filter(task => 
+        task.timeline && 
+        Array.isArray(task.timeline) &&
+        task.timeline.some(timelineId => 
+          clientTimelineIds.some(clientTimelineId => 
+            timelineId.toString() === clientTimelineId.toString()
+          )
+        )
+      );
+
+      // Debug: Check if tasks have team members
+      if (clientTasks.length > 0 && client.name === 'A V & ASSOCIATES') {
+        console.log(`Debug ${client.name}:`);
+        console.log(`  - Client tasks:`, clientTasks.map(t => ({ 
+          id: t._id, 
+          hasTeamMember: !!t.teamMember, 
+          teamMemberId: t.teamMember && t.teamMember._id,
+          teamMemberName: t.teamMember && t.teamMember.name 
+        })));
+      }
+
+
+
+      // Get unique team members working on this client
+      const clientTeamMemberIds = [...new Set(clientTasks.map(task => 
+        task.teamMember && task.teamMember._id
+      ).filter(Boolean))];
+      
+      const clientTeamMembers = teamMembers.filter(member => 
+        clientTeamMemberIds.some(id => id.toString() === member._id.toString())
+      );
+
+      // Calculate task status counts
+      const taskStatusCounts = clientTasks.reduce((acc, task) => {
+        const status = task.status || 'pending';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Ensure all status fields are present even if count is 0
+      const allStatuses = ['pending', 'ongoing', 'completed', 'on_hold', 'delayed', 'cancelled'];
+      allStatuses.forEach(status => {
+        if (!taskStatusCounts[status]) {
+          taskStatusCounts[status] = 0;
+        }
+      });
+
+      // Get activities for this client
+      const clientActivities = client.activities || [];
+
+      return {
+        _id: client._id,
+        // Personal Details
+        name: client.name,
+        email: client.email,
+        email2: client.email2,
+        phone: client.phone,
+        address: client.address,
+        district: client.district,
+        state: client.state,
+        country: client.country,
+        fNo: client.fNo,
+        pan: client.pan,
+        dob: client.dob,
+        businessType: client.businessType,
+        gstNumber: client.gstNumber,
+        tanNumber: client.tanNumber,
+        cinNumber: client.cinNumber,
+        udyamNumber: client.udyamNumber,
+        iecCode: client.iecCode,
+        entityType: client.entityType,
+        sortOrder: client.sortOrder,
+        createdAt: client.createdAt,
+        updatedAt: client.updatedAt,
+        
+        // Branch Information
+        branch: client.branch ? {
+          _id: client.branch._id,
+          name: client.branch.name,
+          address: client.branch.address,
+          city: client.branch.city,
+          state: client.branch.state,
+          country: client.branch.country,
+          pinCode: client.branch.pinCode
+        } : null,
+        
+        // Activity Information
+        activities: {
+          assigned: clientActivities,
+          total: clientActivities.length,
+          summary: clientActivities.map(act => ({
+            id: act.activity ? act.activity._id : null,
+            name: act.activity ? act.activity.name : 'Unknown',
+            description: act.activity ? act.activity.description : '',
+            category: act.activity ? act.activity.category : 'Uncategorized'
+          }))
+        },
+        
+        // Team Member Information
+        teamMembers: {
+          total: clientTeamMembers.length,
+          members: clientTeamMembers.map(member => ({
+            _id: member._id,
+            name: member.name,
+            email: member.email,
+            phone: member.phone
+          }))
+        },
+        
+        // Task Status Information
+        tasks: {
+          total: clientTasks.length,
+          byStatus: taskStatusCounts,
+          status: {
+            pending: taskStatusCounts.pending || 0,
+            ongoing: taskStatusCounts.ongoing || 0,
+            completed: taskStatusCounts.completed || 0,
+            on_hold: taskStatusCounts.on_hold || 0,
+            delayed: taskStatusCounts.delayed || 0,
+            cancelled: taskStatusCounts.cancelled || 0
+          }
+        },
+        
+        // Timeline Information
+        timelines: {
+          total: clientTimelineIds.length,
+          summary: clientTimelines.map(timeline => ({
+            id: timeline._id,
+            client: timeline.client
+          })),
+          hasTimelines: clientTimelineIds.length > 0
+        }
+      };
+    });
+
+    return {
+      results: processedClients,
+      page,
+      limit,
+      totalPages: Math.ceil(totalClients / limit),
+      totalResults: totalClients,
+      hasNextPage: page < Math.ceil(totalClients / limit),
+      hasPrevPage: page > 1
+    };
+  } catch (error) {
+    throw new Error(`Failed to get clients table data: ${error.message}`);
+  }
+};
+
 export default {
-  getClientDetailsOverview
+  getClientDetailsOverview,
+  getAllClientsTableData
 };

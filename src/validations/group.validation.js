@@ -88,7 +88,7 @@ const getGroupTaskStatistics = {
   query: Joi.object().keys({
     name: Joi.string().trim().allow(''),
     branch: Joi.string().custom(objectId),
-    limit: Joi.number().integer().min(1).max(100),
+    limit: Joi.number().integer().min(1).max(10000),
     page: Joi.number().integer().min(1),
   }),
 };

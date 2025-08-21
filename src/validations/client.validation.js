@@ -208,7 +208,7 @@ const getClientTaskStatistics = {
     email: Joi.string().trim().allow(''),
     search: Joi.string().trim().allow(''), // Add search parameter
     branch: Joi.string().custom(objectId),
-    limit: Joi.number().integer().min(1).max(100),
+    limit: Joi.number().integer().min(1).max(10000),
     page: Joi.number().integer().min(1),
   }),
 };

@@ -44,10 +44,53 @@ const getClientDetailsOverview = {
   })
 };
 
+const getAllClientsTableData = {
+  query: Joi.object().keys({
+    name: Joi.string().trim().allow(''),
+    email: Joi.string().trim().allow(''),
+    phone: Joi.string().trim().allow(''),
+    district: Joi.string().trim().allow(''),
+    state: Joi.string().trim().allow(''),
+    country: Joi.string().trim().allow(''),
+    fNo: Joi.string().trim().allow(''),
+    pan: Joi.string().trim().allow(''),
+    businessType: Joi.string().trim().allow(''),
+    gstNumber: Joi.string().trim().allow(''),
+    tanNumber: Joi.string().trim().allow(''),
+    cinNumber: Joi.string().trim().allow(''),
+    udyamNumber: Joi.string().trim().allow(''),
+    iecCode: Joi.string().trim().allow(''),
+    entityType: Joi.string().trim().allow(''),
+    branch: Joi.string().custom(objectId),
+    search: Joi.string().trim().allow(''),
+    sortBy: Joi.string(),
+    limit: Joi.number().integer().min(1).max(10000).default(50),
+    page: Joi.number().integer().min(1).default(1)
+  })
+};
+
+const getAllTeamMembersTableData = {
+  query: Joi.object().keys({
+    name: Joi.string().trim().allow(''),
+    email: Joi.string().trim().allow(''),
+    phone: Joi.string().trim().allow(''),
+    city: Joi.string().trim().allow(''),
+    state: Joi.string().trim().allow(''),
+    country: Joi.string().trim().allow(''),
+    branch: Joi.string().custom(objectId),
+    search: Joi.string().trim().allow(''),
+    sortBy: Joi.string(),
+    limit: Joi.number().integer().min(1).max(10000).default(50),
+    page: Joi.number().integer().min(1).default(1)
+  })
+};
+
 export default {
   getTaskCompletionTrends,
   getTopTeamMembersByCompletion,
   getTopTeamMembersByBranch,
   getTeamMemberDetailsOverview,
-  getClientDetailsOverview
+  getClientDetailsOverview,
+  getAllClientsTableData,
+  getAllTeamMembersTableData
 };
