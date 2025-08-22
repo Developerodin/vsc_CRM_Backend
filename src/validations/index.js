@@ -11,6 +11,8 @@ import * as dashboardValidation from './dashboard.validation.js';
 import * as fileManagerValidation from './fileManager.validation.js';
 import * as commonEmailValidation from './common.email.validation.js';
 import * as taskValidation from './task.validation.js';
+import * as businessMasterValidation from './businessMaster.validation.js';
+import * as entityTypeMasterValidation from './entityTypeMaster.validation.js';
 
 export {
   authValidation,
@@ -26,4 +28,6 @@ export {
   fileManagerValidation,
   commonEmailValidation,
   taskValidation,
+  businessMasterValidation,
+  entityTypeMasterValidation,
 };

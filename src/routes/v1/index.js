@@ -19,6 +19,8 @@ import commonEmailRoute from './common.email.route.js';
 import taskRoute from './task.route.js';
 import cronRoute from './cron.route.js';
 import analyticsRoute from './analytics.route.js';
+import businessMasterRoute from './businessMaster.route.js';
+import entityTypeMasterRoute from './entityTypeMaster.route.js';
 
 const router = express.Router();
 
@@ -94,6 +96,14 @@ const defaultRoutes = [
   {
     path: '/common-email',
     route: commonEmailRoute,
+  },
+  {
+    path: '/business-master',
+    route: businessMasterRoute,
+  },
+  {
+    path: '/entity-master',
+    route: entityTypeMasterRoute,
   },
 ];
 

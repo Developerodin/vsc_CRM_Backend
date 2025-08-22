@@ -16,6 +16,8 @@ import * as emailService from './email.service.js';
 import * as taskService from './task.service.js';
 import * as cronService from './cron.service.js';
 import * as analyticsService from './analytics/index.js';
+import * as businessMasterService from './businessMaster.service.js';
+import * as entityTypeMasterService from './entityTypeMaster.service.js';
 
 export {
   teamMemberService,
@@ -32,4 +34,6 @@ export {
   taskService,
   cronService,
   analyticsService,
+  businessMasterService,
+  entityTypeMasterService,
 };

@@ -12,6 +12,8 @@ import * as commonController from './common.controller.js';
 import * as fileManagerController from './fileManager.controller.js';
 import * as commonEmailController from './common.email.controller.js';
 import * as taskController from './task.controller.js';
+import * as businessMasterController from './businessMaster.controller.js';
+import * as entityTypeMasterController from './entityTypeMaster.controller.js';
 
 export {
   authController,
@@ -28,5 +30,7 @@ export {
   fileManagerController,
   commonEmailController,
   taskController,
+  businessMasterController,
+  entityTypeMasterController,
 };
 

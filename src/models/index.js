@@ -9,6 +9,8 @@ import Role from './role.model.js';
 import Timeline from './timeline.model.js';
 import FileManager from './fileManager.model.js';
 import Task from './task.model.js';
+import BusinessMaster from './businessMaster.model.js';
+import EntityTypeMaster from './entityTypeMaster.model.js';
 
-export { Token, User, TeamMember, Activity, Branch, Client, Group, Role, Timeline, FileManager, Task };
+export { Token, User, TeamMember, Activity, Branch, Client, Group, Role, Timeline, FileManager, Task, BusinessMaster, EntityTypeMaster };
 

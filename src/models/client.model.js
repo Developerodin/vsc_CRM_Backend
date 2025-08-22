@@ -136,18 +136,6 @@ const clientSchema = mongoose.Schema(
     entityType: {
       type: String,
       trim: true,
-      enum: [
-        'Proprietorship',
-        'Partnership',
-        'Private Limited',
-        'Public Limited',
-        'LLP',
-        'Sole Proprietorship',
-        'HUF',
-        'Trust',
-        'Society',
-        'Other'
-      ],
       description: 'Type of business entity'
     },
     metadata: {
