@@ -1,4 +1,6 @@
-import { Task } from '../models/index.js';
+import httpStatus from 'http-status';
+import mongoose from 'mongoose';
+import { Task, TeamMember } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
 
@@ -112,26 +114,78 @@ const getTaskByIdMinimal = async (id) => {
  * @returns {Promise<QueryResult>}
  */
 const queryTasks = async (filter, options) => {
+  // Create a new filter object to avoid modifying the original
+  const mongoFilter = { ...filter };
+  
+  // Handle global search across multiple fields
+  if (mongoFilter.search && mongoFilter.search.trim() !== '') {
+    const searchValue = mongoFilter.search.trim();
+    const searchRegex = { $regex: searchValue, $options: 'i' };
+    
+    // Create an $or condition to search across multiple fields
+    // Note: We'll need to handle this after population since some fields are references
+    mongoFilter.searchValue = searchValue; // Store for later processing
+    delete mongoFilter.search;
+  }
+  
+  // Handle team member name search
+  if (mongoFilter.teamMember && !mongoose.Types.ObjectId.isValid(mongoFilter.teamMember)) {
+    try {
+      // Search for team member by name (case-insensitive)
+      const teamMember = await TeamMember.findOne({
+        name: { $regex: mongoFilter.teamMember, $options: 'i' }
+      });
+      
+      if (teamMember) {
+        // Replace the name with the actual ObjectId
+        mongoFilter.teamMember = teamMember._id;
+        console.log(`🔍 Found team member: ${teamMember.name} (ID: ${teamMember._id})`);
+      } else {
+        // If no team member found, return empty results
+        console.log(`🔍 No team member found with name: ${mongoFilter.teamMember}`);
+        return {
+          results: [],
+          page: options.page || 1,
+          limit: options.limit || 10,
+          totalPages: 0,
+          totalResults: 0
+        };
+      }
+    } catch (error) {
+      console.error('🔍 Error searching for team member:', error);
+      // If there's an error, return empty results
+      return {
+        results: [],
+        page: options.page || 1,
+        limit: options.limit || 10,
+        totalPages: 0,
+        totalResults: 0
+      };
+    }
+  }
+  
   // Handle date range filtering
-  if (filter.startDateRange && filter.endDateRange) {
-    filter.$or = [
-      { startDate: { $gte: filter.startDateRange, $lte: filter.endDateRange } },
-      { endDate: { $gte: filter.startDateRange, $lte: filter.endDateRange } },
+  if (mongoFilter.startDateRange && mongoFilter.endDateRange) {
+    mongoFilter.$or = [
+      { startDate: { $gte: mongoFilter.startDateRange, $lte: mongoFilter.endDateRange } },
+      { endDate: { $gte: mongoFilter.startDateRange, $lte: mongoFilter.endDateRange } },
       { 
-        startDate: { $lte: filter.startDateRange },
-        endDate: { $gte: filter.endDateRange }
+        startDate: { $lte: mongoFilter.startDateRange },
+        endDate: { $gte: mongoFilter.endDateRange }
       }
     ];
-    delete filter.startDateRange;
-    delete filter.endDateRange;
+    delete mongoFilter.startDateRange;
+    delete mongoFilter.endDateRange;
   }
   
   // Handle today filtering
-  if (filter.startDate && filter.endDate) {
+  if (mongoFilter.startDate && mongoFilter.endDate) {
     // If both dates are set, they're already handled
   }
   
-  const tasks = await Task.paginate(filter, {
+  console.log('🔍 Final task filter:', JSON.stringify(mongoFilter));
+  
+  const tasks = await Task.paginate(mongoFilter, {
     ...options,
     populate: [
       { path: 'teamMember', select: 'name email phone' },
@@ -140,6 +194,66 @@ const queryTasks = async (filter, options) => {
       { path: 'branch', select: 'name location' }
     ],
   });
+  
+  // Handle search filtering after population
+  if (mongoFilter.searchValue) {
+    const searchValue = mongoFilter.searchValue.toLowerCase();
+    tasks.results = tasks.results.filter(task => {
+      // Search in team member name
+      if (task.teamMember && task.teamMember.name && 
+          task.teamMember.name.toLowerCase().includes(searchValue)) {
+        return true;
+      }
+      
+      // Search in assigned by name
+      if (task.assignedBy && task.assignedBy.name && 
+          task.assignedBy.name.toLowerCase().includes(searchValue)) {
+        return true;
+      }
+      
+      // Search in timeline activity
+      if (task.timeline && task.timeline.activity && 
+          task.timeline.activity.toLowerCase().includes(searchValue)) {
+        return true;
+      }
+      
+      // Search in timeline client
+      if (task.timeline && task.timeline.client && 
+          task.timeline.client.toLowerCase().includes(searchValue)) {
+        return true;
+      }
+      
+      // Search in branch name
+      if (task.branch && task.branch.name && 
+          task.branch.name.toLowerCase().includes(searchValue)) {
+        return true;
+      }
+      
+      // Search in status
+      if (task.status && task.status.toLowerCase().includes(searchValue)) {
+        return true;
+      }
+      
+      // Search in priority
+      if (task.priority && task.priority.toLowerCase().includes(searchValue)) {
+        return true;
+      }
+      
+      // Search in remarks
+      if (task.remarks && task.remarks.toLowerCase().includes(searchValue)) {
+        return true;
+      }
+      
+      return false;
+    });
+    
+    // Update total results count
+    tasks.totalResults = tasks.results.length;
+    tasks.totalPages = Math.ceil(tasks.totalResults / (options.limit || 10));
+  }
+  
+  console.log(`🔍 Task search results: Found ${tasks.results.length} tasks`);
+  
   return tasks;
 };
 

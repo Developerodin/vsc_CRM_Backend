@@ -19,15 +19,16 @@ const createTeamMember = {
 
 const getTeamMembers = {
   query: Joi.object().keys({
-    name: Joi.string().trim(),
-    email: Joi.string().email().trim(),
-    phone: Joi.string().trim(),
+    name: Joi.string().trim().allow('', null),
+    email: Joi.string().email().trim().allow('', null),
+    phone: Joi.string().trim().allow('', null),
     branch: Joi.string().custom(objectId),
-    city: Joi.string().trim(),
-    state: Joi.string().trim(),
-    country: Joi.string().trim(),
-    pinCode: Joi.string().trim(),
+    city: Joi.string().trim().allow('', null),
+    state: Joi.string().trim().allow('', null),
+    country: Joi.string().trim().allow('', null),
+    pinCode: Joi.string().trim().allow('', null),
     skills: Joi.array().items(Joi.string().custom(objectId)),
+    search: Joi.string().trim().allow('', null),
     sortBy: Joi.string(),
     limit: Joi.number().integer().min(1),
     page: Joi.number().integer().min(1),

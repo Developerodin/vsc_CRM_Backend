@@ -73,6 +73,7 @@ const getTasks = {
       Joi.boolean(),
       Joi.string().valid('true', 'false').empty('')
     ),
+    search: Joi.string().allow('', null),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),

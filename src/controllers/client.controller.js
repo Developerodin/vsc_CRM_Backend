@@ -26,7 +26,8 @@ const getClients = catchAsync(async (req, res) => {
     'udyamNumber',
     'iecCode',
     'entityType',
-    'branch'
+    'branch',
+    'search'
   ]);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   

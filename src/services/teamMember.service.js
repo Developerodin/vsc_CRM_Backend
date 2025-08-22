@@ -84,9 +84,68 @@ const queryTeamMembers = async (filter, options, user) => {
   // Create a new filter object to avoid modifying the original
   const mongoFilter = { ...filter };
   
-  // If name filter exists, convert it to case-insensitive regex
-  if (mongoFilter.name) {
-    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  // Remove empty or null values from filter
+  Object.keys(mongoFilter).forEach(key => {
+    if (mongoFilter[key] === '' || mongoFilter[key] === null || mongoFilter[key] === undefined) {
+      delete mongoFilter[key];
+    }
+  });
+  
+  // Handle global search across multiple fields
+  if (mongoFilter.search && mongoFilter.search.trim() !== '') {
+    const searchValue = mongoFilter.search.trim();
+    const searchRegex = { $regex: searchValue, $options: 'i' };
+    
+    // Create an $or condition to search across multiple fields
+    mongoFilter.$or = [
+      { name: searchRegex },
+      { email: searchRegex },
+      { phone: searchRegex },
+      { city: searchRegex },
+      { state: searchRegex },
+      { country: searchRegex },
+    ];
+    
+    // Remove the search parameter as it's now handled by $or
+    delete mongoFilter.search;
+    
+    console.log('🔍 Search filter applied:', {
+      searchValue,
+      mongoFilter: JSON.stringify(mongoFilter)
+    });
+  }
+  
+  // Handle individual field filters (only if no global search)
+  if (!mongoFilter.$or) {
+    // If name filter exists, convert it to case-insensitive regex
+    if (mongoFilter.name && mongoFilter.name.trim() !== '') {
+      mongoFilter.name = { $regex: mongoFilter.name.trim(), $options: 'i' };
+    }
+    
+    // If email filter exists, convert it to case-insensitive regex
+    if (mongoFilter.email && mongoFilter.email.trim() !== '') {
+      mongoFilter.email = { $regex: mongoFilter.email.trim(), $options: 'i' };
+    }
+    
+    // If phone filter exists, convert it to case-insensitive regex
+    if (mongoFilter.phone && mongoFilter.phone.trim() !== '') {
+      mongoFilter.phone = { $regex: mongoFilter.phone.trim(), $options: 'i' };
+    }
+    
+    // If city filter exists, convert it to case-insensitive regex
+    if (mongoFilter.city && mongoFilter.city.trim() !== '') {
+      mongoFilter.city = { $regex: mongoFilter.city.trim(), $options: 'i' };
+    }
+    
+    // If state filter exists, convert it to case-insensitive regex
+    if (mongoFilter.state && mongoFilter.state.trim() !== '') {
+      mongoFilter.state = { $regex: mongoFilter.state.trim(), $options: 'i' };
+    }
+    
+    // If country filter exists, convert it to case-insensitive regex
+    if (mongoFilter.country && mongoFilter.country.trim() !== '') {
+      mongoFilter.country = { $regex: mongoFilter.country.trim(), $options: 'i' };
+    }
   }
 
   // Apply branch filtering based on user's access
@@ -113,11 +172,16 @@ const queryTeamMembers = async (filter, options, user) => {
     }
   }
 
+  console.log('🔍 Final MongoDB filter:', JSON.stringify(mongoFilter));
+
   const teamMembers = await TeamMember.paginate(mongoFilter, {
     ...options,
     populate: 'skills,branch',
     sortBy: options.sortBy || 'sortOrder:asc',
   });
+  
+  console.log(`🔍 Search results: Found ${teamMembers.results.length} team members`);
+  
   return teamMembers;
 };
 
