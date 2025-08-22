@@ -10,7 +10,7 @@ const createGroup = catchAsync(async (req, res) => {
 });
 
 const getGroups = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'numberOfClients', 'branch']);
+  const filter = pick(req.query, ['name', 'numberOfClients', 'branch', 'client', 'search']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   
   // Add branch filtering based on user's access
@@ -57,7 +57,7 @@ const bulkImportGroups = catchAsync(async (req, res) => {
 });
 
 const getGroupTaskStatistics = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'branch']);
+  const filter = pick(req.query, ['name', 'branch', 'client', 'search']);
   const options = pick(req.query, ['limit', 'page']);
   
   const result = await groupService.getGroupTaskStatistics(filter, options, req.user);

@@ -13,9 +13,11 @@ const createGroup = {
 
 const getGroups = {
   query: Joi.object().keys({
-    name: Joi.string(),
+    name: Joi.string().allow('', null),
     numberOfClients: Joi.number().integer(),
     branch: Joi.string().custom(objectId),
+    client: Joi.string().allow('', null),
+    search: Joi.string().allow('', null),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -86,8 +88,10 @@ const bulkImportGroups = {
 
 const getGroupTaskStatistics = {
   query: Joi.object().keys({
-    name: Joi.string().trim().allow(''),
+    name: Joi.string().trim().allow('', null),
     branch: Joi.string().custom(objectId),
+    client: Joi.string().trim().allow('', null),
+    search: Joi.string().trim().allow('', null),
     limit: Joi.number().integer().min(1).max(10000),
     page: Joi.number().integer().min(1),
   }),

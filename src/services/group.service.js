@@ -52,9 +52,84 @@ const queryGroups = async (filter, options, user) => {
   // Create a new filter object to avoid modifying the original
   const mongoFilter = { ...filter };
   
-  // If name filter exists, convert it to case-insensitive regex
-  if (mongoFilter.name) {
-    mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
+  // Remove empty or null values from filter
+  Object.keys(mongoFilter).forEach(key => {
+    if (mongoFilter[key] === '' || mongoFilter[key] === null || mongoFilter[key] === undefined) {
+      delete mongoFilter[key];
+    }
+  });
+  
+  // Handle global search across multiple fields
+  if (mongoFilter.search && mongoFilter.search.trim() !== '') {
+    const searchValue = mongoFilter.search.trim();
+    const searchRegex = { $regex: searchValue, $options: 'i' };
+    
+    // Create an $or condition to search across multiple fields
+    mongoFilter.$or = [
+      { name: searchRegex },
+    ];
+    
+    // Remove the search parameter as it's now handled by $or
+    delete mongoFilter.search;
+    
+    console.log('🔍 Group search filter applied:', {
+      searchValue,
+      mongoFilter: JSON.stringify(mongoFilter)
+    });
+  }
+  
+  // Handle client name search
+  if (mongoFilter.client && mongoFilter.client.trim() !== '') {
+    try {
+      const clientName = mongoFilter.client.trim();
+      
+      // Find clients with matching names
+      const matchingClients = await Client.find({
+        name: { $regex: clientName, $options: 'i' }
+      });
+      
+      if (matchingClients.length > 0) {
+        // Get the client IDs
+        const clientIds = matchingClients.map(client => client._id);
+        
+        // Search for groups that contain any of these clients
+        mongoFilter.clients = { $in: clientIds };
+        
+        console.log(`🔍 Found ${matchingClients.length} clients matching "${clientName}":`, 
+          matchingClients.map(c => c.name));
+      } else {
+        // If no clients found, return empty results
+        console.log(`🔍 No clients found with name: ${clientName}`);
+        return {
+          results: [],
+          page: options.page || 1,
+          limit: options.limit || 10,
+          totalPages: 0,
+          totalResults: 0
+        };
+      }
+      
+      // Remove the client parameter as it's now handled by clients filter
+      delete mongoFilter.client;
+    } catch (error) {
+      console.error('🔍 Error searching for clients:', error);
+      // If there's an error, return empty results
+      return {
+        results: [],
+        page: options.page || 1,
+        limit: options.limit || 10,
+        totalPages: 0,
+        totalResults: 0
+      };
+    }
+  }
+  
+  // Handle individual field filters (only if no global search)
+  if (!mongoFilter.$or) {
+    // If name filter exists, convert it to case-insensitive regex
+    if (mongoFilter.name && mongoFilter.name.trim() !== '') {
+      mongoFilter.name = { $regex: mongoFilter.name.trim(), $options: 'i' };
+    }
   }
 
   // Apply branch filtering based on user's access
@@ -81,10 +156,15 @@ const queryGroups = async (filter, options, user) => {
     }
   }
 
+  console.log('🔍 Final group filter:', JSON.stringify(mongoFilter));
+
   const groups = await Group.paginate(mongoFilter, {
     ...options,
     populate: 'clients',
   });
+  
+  console.log(`🔍 Group search results: Found ${groups.results.length} groups`);
+  
   return groups;
 };
 
