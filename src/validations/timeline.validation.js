@@ -96,7 +96,10 @@ const getTimelines = {
   query: Joi.object().keys({
     activity: Joi.string().custom(objectId),
     activityName: Joi.string().trim().allow(''),
-    client: Joi.string().custom(objectId),
+    client: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().trim().allow('')
+    ),
     search: Joi.string().trim().allow(''), // Add search parameter for general search
     status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').allow(''),
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),

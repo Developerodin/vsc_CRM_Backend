@@ -366,12 +366,48 @@ const queryTimelines = async (filter, options, user) => {
     delete mongoFilter.activityName;
   }
 
+  // Handle client name filtering
+  if (mongoFilter.client && typeof mongoFilter.client === 'string' && !mongoose.Types.ObjectId.isValid(mongoFilter.client)) {
+    console.log(`🔍 Searching for client by name: ${mongoFilter.client}`);
+    
+    // Find clients that match the name filter
+    const clients = await Client.find({
+      name: { $regex: mongoFilter.client, $options: 'i' }
+    }).select('_id');
+    
+    // Get the client IDs
+    const clientIds = clients.map(client => client._id);
+    
+    // If no clients found, return empty result
+    if (clientIds.length === 0) {
+      console.log(`🔍 No clients found with name: ${mongoFilter.client}`);
+      return {
+        results: [],
+        page: options.page || 1,
+        limit: options.limit || 10,
+        totalPages: 0,
+        totalResults: 0,
+      };
+    }
+    
+    console.log(`🔍 Found ${clients.length} clients matching "${mongoFilter.client}":`, 
+      clients.map(c => c._id));
+    
+    // Replace client name filter with client ID filter
+    mongoFilter.client = { $in: clientIds };
+  }
+
+  console.log('🔍 Final timeline filter:', JSON.stringify(mongoFilter, null, 2));
+
   const timelines = await Timeline.paginate(mongoFilter, {
     sortBy: options.sortBy || 'createdAt:desc',
     limit: options.limit,
     page: options.page,
     populate: 'activity,client',
   });
+  
+  console.log(`🔍 Timeline search results: Found ${timelines.results.length} timelines`);
+  
   return timelines;
 };
 
