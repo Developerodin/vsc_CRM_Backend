@@ -473,7 +473,7 @@ const getTopTeamMembersByBranch = async (branchId = null, limit = 5) => {
  * @param {ObjectId} teamMemberId - Team member ID
  * @returns {Promise<Object>} Team member detailed overview
  */
-const getTeamMemberDetailsOverview = async (teamMemberId) => {
+const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options = {}) => {
   try {
     // Get team member basic information
     const teamMember = await TeamMember.findById(teamMemberId)
@@ -487,7 +487,7 @@ const getTeamMemberDetailsOverview = async (teamMemberId) => {
     const { currentMonthStart, currentMonthEnd } = getMonthRanges();
     
     // Get all tasks for this team member
-    const allTasks = await Task.find({ teamMember: teamMemberId })
+    let allTasks = await Task.find({ teamMember: teamMemberId })
       .populate({
         path: 'timeline',
         populate: [
@@ -498,6 +498,66 @@ const getTeamMemberDetailsOverview = async (teamMemberId) => {
       .populate('assignedBy', 'name email')
       .populate('branch', 'name location')
       .sort({ createdAt: -1 });
+
+    // Apply filters to tasks
+    if (filters) {
+      // Filter by client search
+      if (filters.clientSearch) {
+        const clientSearchRegex = new RegExp(filters.clientSearch, 'i');
+        allTasks = allTasks.filter(task => 
+          task.timeline && 
+          task.timeline.client && 
+          (clientSearchRegex.test(task.timeline.client.name) ||
+           clientSearchRegex.test(task.timeline.client.email) ||
+           clientSearchRegex.test(task.timeline.client.phone) ||
+           clientSearchRegex.test(task.timeline.client.company || ''))
+        );
+      }
+
+      // Filter by activity search
+      if (filters.activitySearch) {
+        const activitySearchRegex = new RegExp(filters.activitySearch, 'i');
+        allTasks = allTasks.filter(task => 
+          task.timeline && 
+          task.timeline.activity && 
+          (activitySearchRegex.test(task.timeline.activity.name) ||
+           activitySearchRegex.test(task.timeline.activity.description || ''))
+        );
+      }
+
+      // Filter by date range
+      if (filters.startDate || filters.endDate) {
+        allTasks = allTasks.filter(task => {
+          if (!task.startDate || !task.endDate) return false;
+          
+          const taskStartDate = new Date(task.startDate);
+          const taskEndDate = new Date(task.endDate);
+           
+          if (filters.startDate && filters.endDate) {
+            const filterStartDate = new Date(filters.startDate);
+            const filterEndDate = new Date(filters.endDate);
+            return taskStartDate >= filterStartDate && taskEndDate <= filterEndDate;
+          } else if (filters.startDate) {
+            const filterStartDate = new Date(filters.startDate);
+            return taskStartDate >= filterStartDate;
+          } else if (filters.endDate) {
+            const filterEndDate = new Date(filters.endDate);
+            return taskEndDate <= filterEndDate;
+          }
+          return true;
+        });
+      }
+
+      // Filter by priority
+      if (filters.priority) {
+        allTasks = allTasks.filter(task => task.priority === filters.priority);
+      }
+
+      // Filter by status
+      if (filters.status) {
+        allTasks = allTasks.filter(task => task.status === filters.status);
+      }
+    }
 
     // Get completed tasks for current month
     const currentMonthCompletedTasks = allTasks.filter(task => 
@@ -570,6 +630,13 @@ const getTeamMemberDetailsOverview = async (teamMemberId) => {
     const recentTasks = allTasks.filter(task => 
       task.updatedAt >= thirtyDaysAgo
     );
+
+    // Apply pagination to recent tasks
+    const page = parseInt(options.page) || 1;
+    const limit = parseInt(options.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    const paginatedRecentTasks = recentTasks.slice(skip, skip + limit);
 
     // Get task distribution by priority
     const tasksByPriority = allTasks.reduce((acc, task) => {
@@ -696,10 +763,90 @@ const getTeamMemberDetailsOverview = async (teamMemberId) => {
         ).length
       },
       tasks: {
-        byStatus: tasksByStatus,
         byPriority: tasksByPriority,
-        recent: recentTasks.slice(0, 10), // Last 10 recent tasks
-        monthlyDistribution: monthlyTaskDistribution
+        recent: paginatedRecentTasks, // Paginated recent tasks
+        pagination: {
+          page,
+          limit,
+          totalTasks: recentTasks.length,
+          totalPages: Math.ceil(recentTasks.length / limit),
+          hasNextPage: page < Math.ceil(recentTasks.length / limit),
+          hasPrevPage: page > 1
+        },
+        monthlyDistribution: monthlyTaskDistribution,
+        // Tasks organized by client and activity
+        byClientActivity: Object.values(clientSummary).map(client => ({
+          client: {
+            id: client.client._id,
+            name: client.client.name,
+            email: client.client.email,
+            phone: client.client.phone,
+            company: client.client.company,
+            address: client.client.address,
+            state: client.client.state,
+            country: client.client.country
+          },
+          activities: Array.from(client.activities).map(activity => {
+            // Get tasks for this specific client-activity combination
+            const activityTasks = allTasks.filter(task => 
+              task.timeline && 
+              task.timeline.client && 
+              (task.timeline.client._id ? 
+                task.timeline.client._id.toString() === client.client._id.toString() :
+                task.timeline.client.toString() === client.client._id.toString()
+              ) &&
+              task.timeline.activity && 
+              task.timeline.activity._id.toString() === activity._id.toString()
+            );
+
+            return {
+              activity: {
+                id: activity._id,
+                name: activity.name,
+                description: activity.description
+              },
+              totalTasks: activityTasks.length,
+              taskDetails: activityTasks.map(task => ({
+                id: task._id,
+                title: task.title || 'Untitled Task',
+                description: task.description || '',
+                status: task.status,
+                priority: task.priority,
+                remarks: task.remarks,
+                startDate: task.startDate,
+                endDate: task.endDate,
+                createdAt: task.createdAt,
+                updatedAt: task.updatedAt,
+                attachments: task.attachments || [],
+                // Timeline information for this task
+                timeline: task.timeline ? {
+                  id: task.timeline._id,
+                  status: task.timeline.status,
+                  startDate: task.timeline.startDate,
+                  endDate: task.timeline.endDate,
+                  frequency: task.timeline.frequency,
+                  frequencyConfig: task.timeline.frequencyConfig,
+                  frequencyStatus: task.timeline.frequencyStatus || [],
+                  branch: task.timeline.branch || null,
+                  udin: task.timeline.udin || [],
+                  createdAt: task.timeline.createdAt
+                } : null,
+                // Branch information
+                branch: task.branch ? {
+                  id: task.branch._id,
+                  name: task.branch.name,
+                  location: task.branch.location
+                } : null,
+                // Assigned by information
+                assignedBy: task.assignedBy ? {
+                  id: task.assignedBy._id,
+                  name: task.assignedBy.name,
+                  email: task.assignedBy.email
+                } : null
+              }))
+            };
+          })
+        }))
       },
       clients: {
         total: clientSummaryArray.length,

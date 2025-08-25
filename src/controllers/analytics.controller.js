@@ -135,7 +135,20 @@ const getTeamMemberDetailsOverview = catchAsync(async (req, res) => {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Team member ID is required');
     }
     
-    const overview = await teamMemberAnalytics.getTeamMemberDetailsOverview(teamMemberId);
+    // Extract filters from query parameters
+    const filters = pick(req.query, [
+      'clientSearch',
+      'activitySearch',
+      'startDate', 
+      'endDate',
+      'priority',
+      'status'
+    ]);
+    
+    // Extract options from query parameters
+    const options = pick(req.query, ['limit', 'page']);
+    
+    const overview = await teamMemberAnalytics.getTeamMemberDetailsOverview(teamMemberId, filters, options);
     
     res.status(httpStatus.OK).json({
       success: true,

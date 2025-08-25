@@ -34,6 +34,33 @@ const getTeamMemberDetailsOverview = {
   params: Joi.object().keys({
     teamMemberId: Joi.string().custom(objectId).required()
       .description('Team member ID')
+  }),
+  query: Joi.object().keys({
+    // Client search filter
+    clientSearch: Joi.string().trim().allow('')
+      .description('Search clients by name, email, phone, or company'),
+    
+    // Activity search filter
+    activitySearch: Joi.string().trim().allow('')
+      .description('Search activities by name or description'),
+    
+    // Date range filters
+    startDate: Joi.date().iso()
+      .description('Start date for filtering tasks (ISO format)'),
+    endDate: Joi.date().iso().min(Joi.ref('startDate'))
+      .description('End date for filtering tasks (ISO format, must be after startDate)'),
+    
+    // Task filters
+    priority: Joi.string().valid('low', 'medium', 'high', 'urgent')
+      .description('Filter tasks by priority'),
+    status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'delayed', 'cancelled')
+      .description('Filter tasks by status'),
+    
+    // Pagination options
+    limit: Joi.number().integer().min(1).max(100).default(10)
+      .description('Number of recent tasks to return (1-100)'),
+    page: Joi.number().integer().min(1).default(1)
+      .description('Page number for pagination')
   })
 };
 
