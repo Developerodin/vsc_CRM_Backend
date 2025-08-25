@@ -122,14 +122,13 @@ const initializeCronJobs = () => {
   try {
     logger.info('⏰ Initializing cron jobs...');
 
-    // Schedule daily task reminders at 10:00 AM IST (UTC+5:30)
-    // Cron expression: 0 10 * * * (every day at 10:00 AM)
-    // Since we're running in UTC, we need to adjust for IST (UTC+5:30)
-    // 10:00 AM IST = 4:30 AM UTC (10:00 - 5:30 = 4:30)
-    const cronExpression = '0 4 * * *'; // 4:30 AM UTC = 10:00 AM IST
+    // Schedule daily task reminders at 10:00 AM IST
+    // Cron expression: 0 10 * * * (every day at 10:00 AM IST)
+    // Since we're using timezone: "Asia/Kolkata", the cron expression should be in IST
+    const cronExpression = '0 10 * * *'; // 10:00 AM IST
 
     cron.schedule(cronExpression, async () => {
-      logger.info('🕙 Daily task reminder cron job triggered');
+      logger.info('🕙 Daily task reminder cron job triggered at 10:00 AM IST');
       await sendDailyTaskReminders();
     }, {
       scheduled: true,
