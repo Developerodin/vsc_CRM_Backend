@@ -10,9 +10,11 @@ import { hasBranchAccess, getUserBranchIds } from '../role.service.js';
 /**
  * Get comprehensive client details overview
  * @param {ObjectId} clientId - Client ID
+ * @param {Object} filters - Filter options for tasks
+ * @param {Object} options - Query options including pagination
  * @returns {Promise<Object>} Client detailed overview
  */
-const getClientDetailsOverview = async (clientId) => {
+const getClientDetailsOverview = async (clientId, filters = {}, options = {}) => {
   try {
     // Get client basic information
     const client = await Client.findById(clientId)
@@ -31,18 +33,76 @@ const getClientDetailsOverview = async (clientId) => {
 
     // Get all tasks related to this client's timelines
     const timelineIds = timelines.map(timeline => timeline._id);
-    const tasks = await Task.find({ timeline: { $in: timelineIds } })
+    let tasks = await Task.find({ timeline: { $in: timelineIds } })
       .populate('teamMember', 'name email phone skills branch')
       .populate('assignedBy', 'name email')
       .populate('branch', 'name address city state country pinCode')
       .populate({
         path: 'timeline',
+        match: { client: clientId }, // Only populate timelines for this client
         populate: [
           { path: 'client', select: 'name email phone company' },
           { path: 'activity', select: 'name description category' }
         ]
       })
       .sort({ createdAt: -1 });
+
+        // Apply filters to tasks
+    if (filters) {
+      // Filter by activity search
+      if (filters.activitySearch) {
+        const activitySearchRegex = new RegExp(filters.activitySearch, 'i');
+        tasks = tasks.filter(task => 
+          task.timeline && 
+          task.timeline.length > 0 && 
+          task.timeline[0].activity && 
+          (activitySearchRegex.test(task.timeline[0].activity.name) ||
+           activitySearchRegex.test(task.timeline[0].activity.description) ||
+           activitySearchRegex.test(task.timeline[0].activity.category))
+        );
+      }
+
+      // Filter by date range
+      if (filters.startDate || filters.endDate) {
+        tasks = tasks.filter(task => {
+          if (!task.startDate || !task.endDate) return false;
+          
+          const taskStartDate = new Date(task.startDate);
+          const taskEndDate = new Date(task.endDate);
+           
+          if (filters.startDate && filters.endDate) {
+            const filterStartDate = new Date(filters.startDate);
+            const filterEndDate = new Date(filters.endDate);
+            return taskStartDate >= filterStartDate && taskEndDate <= filterEndDate;
+          } else if (filters.startDate) {
+            const filterStartDate = new Date(filters.startDate);
+            return taskStartDate >= filterStartDate;
+          } else if (filters.endDate) {
+            const filterEndDate = new Date(filters.endDate);
+            return taskEndDate <= filterEndDate;
+          }
+          return true;
+        });
+      }
+
+      // Filter by priority
+      if (filters.priority) {
+        tasks = tasks.filter(task => task.priority === filters.priority);
+      }
+
+      // Filter by status
+      if (filters.status) {
+        tasks = tasks.filter(task => task.status === filters.status);
+      }
+
+      // Filter by team member
+      if (filters.teamMemberId) {
+        tasks = tasks.filter(task => 
+          task.teamMember && 
+          task.teamMember._id.toString() === filters.teamMemberId.toString()
+        );
+      }
+    }
 
     // Get unique team members working on this client
     const teamMemberIds = [...new Set(tasks.map(task => task.teamMember && task.teamMember._id).filter(Boolean))];
@@ -120,13 +180,13 @@ const getClientDetailsOverview = async (clientId) => {
         (member.completedTasks / member.totalTasks * 100).toFixed(1) : 0;
     });
 
-    // Group tasks by activity
+    // Group tasks by activity - only include tasks with timelines for this client
     const tasksByActivity = tasks.reduce((acc, task) => {
-      if (task.timeline && task.timeline.activity && task.timeline.activity._id) {
-        const activityId = task.timeline.activity._id.toString();
+      if (task.timeline && task.timeline.length > 0 && task.timeline[0].activity && task.timeline[0].activity._id) {
+        const activityId = task.timeline[0].activity._id.toString();
         if (!acc[activityId]) {
           acc[activityId] = {
-            activity: task.timeline.activity,
+            activity: task.timeline[0].activity,
             tasks: [],
             totalTasks: 0,
             completedTasks: 0,
@@ -193,10 +253,17 @@ const getClientDetailsOverview = async (clientId) => {
         timeline.frequencyStatus.filter(fs => fs.status === 'completed').length : 0
     }));
 
-    // Recent activities (last 10)
-    const recentActivities = tasks
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 10)
+    // Recent activities with pagination - only include tasks with timelines for this client
+    const filteredTasks = tasks.filter(task => task.timeline && task.timeline.length > 0);
+    const sortedTasks = filteredTasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    // Get pagination options
+    const page = parseInt(options.page) || 1;
+    const limit = parseInt(options.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    const recentActivities = sortedTasks
+      .slice(skip, skip + limit)
       .map(task => ({
         id: task._id,
         status: task.status,
@@ -210,10 +277,10 @@ const getClientDetailsOverview = async (clientId) => {
           name: task.teamMember.name,
           email: task.teamMember.email
         } : null,
-        activity: task.timeline && task.timeline.activity ? {
-          id: task.timeline.activity._id,
-          name: task.timeline.activity.name,
-          category: task.timeline.activity.category
+        activity: task.timeline && task.timeline[0] && task.timeline[0].activity ? {
+          id: task.timeline[0].activity._id,
+          name: task.timeline[0].activity.name,
+          category: task.timeline[0].activity.category
         } : null,
         attachments: task.attachments || []
       }));
@@ -296,7 +363,15 @@ const getClientDetailsOverview = async (clientId) => {
         byTeamMember: Object.values(tasksByTeamMember),
         byActivity: Object.values(tasksByActivity),
         recent: recentActivities,
-        monthlyDistribution
+        monthlyDistribution,
+        pagination: {
+          page,
+          limit,
+          totalTasks: filteredTasks.length,
+          totalPages: Math.ceil(filteredTasks.length / limit),
+          hasNextPage: page < Math.ceil(filteredTasks.length / limit),
+          hasPrevPage: page > 1
+        }
       },
       teamMembers: {
         total: teamMembers.length,
@@ -384,7 +459,10 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
         { tanNumber: searchRegex },
         { cinNumber: searchRegex },
         { udyamNumber: searchRegex },
-        { iecCode: searchRegex }
+        { iecCode: searchRegex },
+        { 'activities.activity.name': searchRegex },
+        { 'activities.activity.description': searchRegex },
+        { 'activities.activity.category': searchRegex }
       ];
       
       // Remove the search parameter as it's now handled by $or

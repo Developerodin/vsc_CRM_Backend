@@ -163,7 +163,20 @@ const getClientDetailsOverview = catchAsync(async (req, res) => {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Client ID is required');
     }
     
-    const overview = await clientAnalytics.getClientDetailsOverview(clientId);
+    // Extract filters from query parameters
+    const filters = pick(req.query, [
+      'activitySearch',
+      'startDate', 
+      'endDate',
+      'priority',
+      'status',
+      'teamMemberId'
+    ]);
+    
+    // Extract options from query parameters
+    const options = pick(req.query, ['limit', 'page']);
+    
+    const overview = await clientAnalytics.getClientDetailsOverview(clientId, filters, options);
     
     res.status(httpStatus.OK).json({
       success: true,
