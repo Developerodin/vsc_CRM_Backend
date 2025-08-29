@@ -2,6 +2,12 @@ import Joi from 'joi';
 import { objectId } from './custom.validation.js';
 import { validateFrequencyWithConfig } from '../utils/frequencyValidator.js';
 
+// Subactivity validation schema
+const subactivitySchema = Joi.object({
+  _id: Joi.string().custom(objectId).optional(), // Optional for existing subactivities
+  name: Joi.string().trim().optional(),
+});
+
 // Frequency configuration validation schema
 const frequencyConfigSchema = Joi.object({
   hourlyInterval: Joi.number().min(1).max(24),
@@ -29,6 +35,7 @@ const createActivity = {
     dueDate: Joi.date().optional(),
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
     frequencyConfig: frequencyConfigSchema.optional(),
+    subactivities: Joi.array().items(subactivitySchema).optional(),
   }).custom(validateFrequencyWithConfig),
 };
 
@@ -60,6 +67,7 @@ const updateActivity = {
       dueDate: Joi.date().optional(),
       frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
       frequencyConfig: frequencyConfigSchema.optional(),
+      subactivities: Joi.array().items(subactivitySchema).optional(),
     })
     .min(1)
     .custom(validateFrequencyWithConfig),
@@ -82,11 +90,7 @@ const bulkImportActivities = {
           dueDate: Joi.date().optional(),
           frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
           frequencyConfig: frequencyConfigSchema.optional(),
-          subactivities: Joi.array().items(
-            Joi.object().keys({
-              name: Joi.string().trim(),
-            })
-          ).optional(),
+          subactivities: Joi.array().items(subactivitySchema).optional(),
         }).custom(validateFrequencyWithConfig)
       )
       .min(1)

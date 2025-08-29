@@ -167,6 +167,12 @@ const clientSchema = mongoose.Schema(
         description: 'Additional notes for this activity'
       }
     }],
+    status:{
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active',
+      description: 'Status of the client'
+    },
     branch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Branch',
@@ -184,6 +190,34 @@ const clientSchema = mongoose.Schema(
 // add plugin that converts mongoose to json
 clientSchema.plugin(toJSON);
 clientSchema.plugin(paginate);
+
+// Pre-save middleware to handle activity status when client status changes
+clientSchema.pre('save', function(next) {
+  // Check if this is an update and status is being changed to inactive
+  if (this.isModified('status') && this.status === 'inactive') {
+    // Set all activities to inactive
+    if (this.activities && this.activities.length > 0) {
+      this.activities.forEach(activity => {
+        activity.status = 'inactive';
+      });
+    }
+  }
+  next();
+});
+
+// Pre-update middleware to handle activity status when client status changes via updateOne/findOneAndUpdate
+clientSchema.pre(['updateOne', 'findOneAndUpdate'], function(next) {
+  const update = this.getUpdate();
+  
+  // Check if status is being updated to inactive
+  if (update.status === 'inactive') {
+    // Set all activities to inactive
+    update.$set = update.$set || {};
+    update.$set['activities.$[].status'] = 'inactive';
+  }
+  
+  next();
+});
 
 // Post-save middleware to create client subfolder and timelines
 clientSchema.post('save', async function(doc) {

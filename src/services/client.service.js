@@ -164,6 +164,40 @@ const updateClientById = async (clientId, updateBody, user = null) => {
 };
 
 /**
+ * Update client status by id
+ * @param {ObjectId} clientId
+ * @param {string} status - New status ('active' or 'inactive')
+ * @param {Object} user - User object with role information (optional)
+ * @returns {Promise<Client>}
+ */
+const updateClientStatus = async (clientId, status, user = null) => {
+  const client = await getClientById(clientId);
+  if (!client) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+  
+  // Validate branch access if user is provided
+  if (user && user.role) {
+    if (!hasBranchAccess(user.role, client.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this client');
+    }
+  }
+  
+  // Update status
+  client.status = status;
+  
+  // If status is being set to inactive, set all activities to inactive
+  if (status === 'inactive' && client.activities && client.activities.length > 0) {
+    client.activities.forEach(activity => {
+      activity.status = 'inactive';
+    });
+  }
+  
+  await client.save();
+  return client;
+};
+
+/**
  * Delete client by id
  * @param {ObjectId} clientId
  * @returns {Promise<Client>}
@@ -640,6 +674,11 @@ const updateActivityAssignment = async (clientId, activityId, updateData) => {
     activity.notes = updateData.notes;
   }
   
+  // Update the activity status if provided
+  if (updateData.status !== undefined) {
+    activity.status = updateData.status;
+  }
+  
   await client.save();
   return client.populate([
     { path: 'activities.activity' },
@@ -657,7 +696,10 @@ const getClientActivities = async (clientId, query = {}) => {
   
   let activities = client.activities;
   
-  // Apply filters (assigned team member removed)
+  // Apply filters
+  if (query.status) {
+    activities = activities.filter(activity => activity.status === query.status);
+  }
   
   // Apply sorting
   if (query.sortBy) {
@@ -1096,6 +1138,7 @@ export {
   getClientById, 
   getClientByEmail,
   updateClientById, 
+  updateClientStatus,
   deleteClientById, 
   bulkImportClients,
   addActivityToClient,

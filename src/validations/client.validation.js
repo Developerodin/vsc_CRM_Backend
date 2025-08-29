@@ -89,6 +89,15 @@ const updateClient = {
     .min(1),
 };
 
+const updateClientStatus = {
+  params: Joi.object().keys({
+    clientId: Joi.required().custom(objectId),
+  }),
+  body: Joi.object().keys({
+    status: Joi.string().valid('active', 'inactive').required(),
+  }),
+};
+
 const deleteClient = {
   params: Joi.object().keys({
     clientId: Joi.string().custom(objectId),
@@ -138,6 +147,7 @@ const addActivityToClient = {
   body: Joi.object().keys({
     activity: Joi.string().custom(objectId).required(),
     notes: Joi.string().optional(),
+    status: Joi.string().valid('active', 'inactive').default('active'),
   }),
 };
 
@@ -155,6 +165,7 @@ const updateActivityAssignment = {
   }),
   body: Joi.object().keys({
     notes: Joi.string().optional(),
+    status: Joi.string().valid('active', 'inactive').optional(),
   }).min(1),
 };
 
@@ -163,7 +174,7 @@ const getClientActivities = {
     clientId: Joi.string().custom(objectId).required(),
   }),
   query: Joi.object().keys({
-    status: Joi.string().valid('pending', 'in_progress', 'completed', 'cancelled'),
+    status: Joi.string().valid('active', 'inactive'),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -186,6 +197,7 @@ export default {
   getClients,
   getClient,
   updateClient,
+  updateClientStatus,
   deleteClient,
   bulkImportClients,
   addActivityToClient,

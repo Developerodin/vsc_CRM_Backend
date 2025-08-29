@@ -38,4 +38,9 @@ router
   .patch(auth('manageClients'), validate(clientValidation.updateActivityAssignment), clientController.updateActivityAssignment)
   .delete(auth('manageClients'), validate(clientValidation.removeActivityFromClient), clientController.removeActivityFromClient);
 
+// Client status update route
+router
+  .route('/:clientId/status')
+  .patch(auth('manageClients'), validate(clientValidation.updateClientStatus), clientController.updateClientStatus);
+
 export default router; 

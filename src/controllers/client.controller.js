@@ -49,6 +49,16 @@ const updateClient = catchAsync(async (req, res) => {
   res.send(client);
 });
 
+const updateClientStatus = catchAsync(async (req, res) => {
+  const { status } = req.body;
+  if (!status || !['active', 'inactive'].includes(status)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Status must be either "active" or "inactive"');
+  }
+  
+  const client = await clientService.updateClientStatus(req.params.clientId, status, req.user);
+  res.send(client);
+});
+
 const deleteClient = catchAsync(async (req, res) => {
   await clientService.deleteClientById(req.params.clientId);
   res.status(httpStatus.NO_CONTENT).send();
@@ -97,6 +107,7 @@ export {
   getClients,
   getClient,
   updateClient,
+  updateClientStatus,
   deleteClient,
   bulkImportClients,
   addActivityToClient,

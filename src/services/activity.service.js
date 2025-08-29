@@ -2,6 +2,8 @@ import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
 import Activity from '../models/activity.model.js';
 
+
+
 /**
  * Create an activity
  * @param {Object} activityBody
@@ -54,7 +56,40 @@ const updateActivityById = async (activityId, updateBody) => {
   if (!activity) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
   }
-  Object.assign(activity, updateBody);
+  
+  // Handle subactivity updates if provided
+  if (updateBody.subactivities && Array.isArray(updateBody.subactivities)) {
+    // Extract subactivities from update body
+    const { subactivities, ...otherUpdates } = updateBody;
+    
+    // Process subactivities array - handle updates and additions
+    const processedSubactivities = [];
+    
+    subactivities.forEach(subactivity => {
+      if (subactivity._id) {
+        // This is an existing subactivity - find and update it
+        const existingSubactivity = activity.subactivities.id(subactivity._id);
+        if (existingSubactivity) {
+          // Update existing subactivity
+          Object.assign(existingSubactivity, subactivity);
+          processedSubactivities.push(existingSubactivity);
+        }
+      } else {
+        // This is a new subactivity - add it
+        processedSubactivities.push(subactivity);
+      }
+    });
+    
+    // Replace the entire subactivities array with processed one
+    activity.subactivities = processedSubactivities;
+    
+    // Apply other updates
+    Object.assign(activity, otherUpdates);
+  } else {
+    // No subactivities to update, apply all updates normally
+    Object.assign(activity, updateBody);
+  }
+  
   await activity.save();
   return activity;
 };
@@ -203,6 +238,41 @@ const updateSubactivity = async (activityId, subactivityId, updateBody) => {
 };
 
 /**
+ * Get a specific subactivity by ID
+ * @param {ObjectId} activityId
+ * @param {ObjectId} subactivityId
+ * @returns {Promise<Object>}
+ */
+const getSubactivityById = async (activityId, subactivityId) => {
+  const activity = await getActivityById(activityId);
+  if (!activity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
+  }
+  
+  const subactivity = activity.subactivities.id(subactivityId);
+  if (!subactivity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Subactivity not found');
+  }
+  
+  return subactivity;
+};
+
+/**
+ * Check if a subactivity exists
+ * @param {ObjectId} activityId
+ * @param {ObjectId} subactivityId
+ * @returns {Promise<boolean>}
+ */
+const subactivityExists = async (activityId, subactivityId) => {
+  try {
+    await getSubactivityById(activityId, subactivityId);
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+/**
  * Delete a subactivity
  * @param {ObjectId} activityId
  * @param {ObjectId} subactivityId
@@ -233,5 +303,7 @@ export {
   bulkImportActivities,
   createSubactivity,
   updateSubactivity,
-  deleteSubactivity
+  deleteSubactivity,
+  getSubactivityById,
+  subactivityExists
 }; 
