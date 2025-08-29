@@ -6,6 +6,8 @@ import { validateFrequencyWithConfig } from '../utils/frequencyValidator.js';
 const subactivitySchema = Joi.object({
   _id: Joi.string().custom(objectId).optional(), // Optional for existing subactivities
   name: Joi.string().trim().optional(),
+  createdAt: Joi.date().optional(),
+  updatedAt: Joi.date().optional(),
 });
 
 // Frequency configuration validation schema
@@ -36,6 +38,10 @@ const createActivity = {
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
     frequencyConfig: frequencyConfigSchema.optional(),
     subactivities: Joi.array().items(subactivitySchema).optional(),
+    // Allow common fields that might be sent by frontend
+    id: Joi.string().custom(objectId).optional(),
+    createdAt: Joi.date().optional(),
+    updatedAt: Joi.date().optional(),
   }).custom(validateFrequencyWithConfig),
 };
 
@@ -68,6 +74,10 @@ const updateActivity = {
       frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
       frequencyConfig: frequencyConfigSchema.optional(),
       subactivities: Joi.array().items(subactivitySchema).optional(),
+      // Allow common fields that might be sent by frontend
+      id: Joi.string().custom(objectId).optional(),
+      createdAt: Joi.date().optional(),
+      updatedAt: Joi.date().optional(),
     })
     .min(1)
     .custom(validateFrequencyWithConfig),
@@ -91,6 +101,9 @@ const bulkImportActivities = {
           frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
           frequencyConfig: frequencyConfigSchema.optional(),
           subactivities: Joi.array().items(subactivitySchema).optional(),
+          // Allow common fields that might be sent by frontend
+          createdAt: Joi.date().optional(),
+          updatedAt: Joi.date().optional(),
         }).custom(validateFrequencyWithConfig)
       )
       .min(1)
