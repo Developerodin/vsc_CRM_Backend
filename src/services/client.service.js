@@ -290,17 +290,32 @@ const processActivitiesFromFrontend = async (activityData) => {
 
 // Helper function to process GST numbers from frontend data
 const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers = []) => {
+  console.log('🔍 processGstNumbersFromFrontend called with:');
+  console.log('gstNumbersData:', JSON.stringify(gstNumbersData, null, 2));
+  console.log('existingGstNumbers:', JSON.stringify(existingGstNumbers, null, 2));
+  
   if (!gstNumbersData || !Array.isArray(gstNumbersData)) {
+    console.log('❌ Invalid input data, returning early');
     return { isValid: true, gstNumbers: existingGstNumbers, errors: [] };
   }
 
-  const gstNumbers = [...existingGstNumbers]; // Start with existing GST numbers
+  // Start with empty array - we'll rebuild it from the frontend data
+  const gstNumbers = [];
   const errors = [];
+  console.log('Starting with empty GST numbers array, will rebuild from frontend data');
   
   for (const gstRow of gstNumbersData) {
     try {
+      console.log(`🔍 Processing GST row:`, gstRow);
+      
       // Validate GST number format
-      if (!gstRow.gstNumber || !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstRow.gstNumber)) {
+      console.log(`🔍 Validating GST number: ${gstRow.gstNumber}`);
+      const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+      const isValidFormat = gstRegex.test(gstRow.gstNumber);
+      console.log(`GST format validation result: ${isValidFormat}`);
+      
+      if (!gstRow.gstNumber || !isValidFormat) {
+        console.log(`❌ GST format validation failed for: ${gstRow.gstNumber}`);
         errors.push({
           type: 'INVALID_GST_FORMAT',
           message: `Invalid GST number format: ${gstRow.gstNumber}`,
@@ -308,6 +323,8 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
         });
         continue;
       }
+      
+      console.log(`✅ GST format validation passed for: ${gstRow.gstNumber}`);
 
       // Validate state is provided
       if (!gstRow.state || gstRow.state.trim() === '') {
@@ -321,15 +338,17 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
 
       // Check if this is an update (has _id) or new entry
       if (gstRow._id) {
-        // Update existing GST number
-        const existingIndex = gstNumbers.findIndex(gst => gst._id.toString() === gstRow._id);
-        if (existingIndex !== -1) {
-          // Check if updating state would conflict with other existing GST
-          const stateConflict = gstNumbers.find(gst => 
-            gst.state === gstRow.state && gst._id.toString() !== gstRow._id
-          );
+        console.log(`🔄 Processing UPDATE for existing GST with ID: ${gstRow._id}`);
+        
+        // Find the existing GST number to update
+        const existingGst = existingGstNumbers.find(gst => gst._id && gst._id.toString() === gstRow._id);
+        if (existingGst) {
+          console.log(`✅ Found existing GST to update:`, existingGst);
           
+          // Check if updating state would conflict with other GST numbers in the same request
+          const stateConflict = gstNumbers.find(gst => gst.state === gstRow.state && gst._id !== gstRow._id);
           if (stateConflict) {
+            console.log(`❌ State conflict detected: ${gstRow.state} already exists in this update`);
             errors.push({
               type: 'DUPLICATE_STATE',
               message: `GST number already exists for state: ${gstRow.state}`,
@@ -337,14 +356,16 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
             });
             continue;
           }
-
-          // Update existing GST
-          gstNumbers[existingIndex] = {
-            ...gstNumbers[existingIndex],
-            state: gstRow.state,
-            gstNumber: gstRow.gstNumber
-          };
+          
+          // Add the updated GST number
+          gstNumbers.push({
+            _id: gstRow._id,
+            state: gstRow.state.trim(),
+            gstNumber: gstRow.gstNumber.trim()
+          });
+          console.log(`✅ Updated GST added to result:`, gstNumbers[gstNumbers.length - 1]);
         } else {
+          console.log(`❌ GST with ID ${gstRow._id} not found in existing data`);
           errors.push({
             type: 'GST_NOT_FOUND',
             message: `GST number with ID '${gstRow._id}' not found`,
@@ -352,10 +373,24 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
           });
         }
       } else {
-        // Add new GST number
-        // Check if state already exists
-        const existingGst = gstNumbers.find(gst => gst.state === gstRow.state);
-        if (existingGst) {
+        console.log(`➕ Processing NEW GST for state: ${gstRow.state}`);
+        
+        // Check if state already exists in this update request
+        const stateConflict = gstNumbers.find(gst => gst.state === gstRow.state);
+        if (stateConflict) {
+          console.log(`❌ State conflict detected: ${gstRow.state} already exists in this update`);
+          errors.push({
+            type: 'DUPLICATE_STATE',
+            message: `GST number already exists for state: ${gstRow.state}`,
+            data: gstRow
+          });
+          continue;
+        }
+        
+        // Check if state already exists in existing data
+        const existingStateConflict = existingGstNumbers.find(gst => gst.state === gstRow.state);
+        if (existingStateConflict) {
+          console.log(`❌ State conflict with existing data: ${gstRow.state} already exists`);
           errors.push({
             type: 'DUPLICATE_STATE',
             message: `GST number already exists for state: ${gstRow.state}`,
@@ -369,6 +404,7 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
           state: gstRow.state.trim(),
           gstNumber: gstRow.gstNumber.trim()
         });
+        console.log(`✅ New GST added to result:`, gstNumbers[gstNumbers.length - 1]);
       }
     } catch (error) {
       console.error('Error processing GST row:', error, gstRow);
@@ -378,6 +414,14 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
         data: gstRow
       });
     }
+  }
+  
+  console.log('🔍 processGstNumbersFromFrontend returning:');
+  console.log('isValid:', errors.length === 0);
+  console.log('gstNumbers count:', gstNumbers.length);
+  console.log('errors count:', errors.length);
+  if (errors.length > 0) {
+    console.log('Errors:', JSON.stringify(errors, null, 2));
   }
   
   return {
