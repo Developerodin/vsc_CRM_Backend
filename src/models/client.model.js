@@ -83,16 +83,25 @@ const clientSchema = mongoose.Schema(
       trim: true,
       description: 'Type of business or trade'
     },
-    gstNumber: {
-      type: String,
-      trim: true,
-      validate(value) {
-        if (value && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(value)) {
-          throw new Error('Invalid GST number format');
-        }
+    gstNumbers: [{
+      state: {
+        type: String,
+        trim: true,
+        required: true,
+        description: 'State for which GST number is registered'
       },
-      description: 'GST Registration Number'
-    },
+      gstNumber: {
+        type: String,
+        trim: true,
+        required: true,
+        validate(value) {
+          if (value && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(value)) {
+            throw new Error('Invalid GST number format');
+          }
+        },
+        description: 'GST Registration Number for the specific state'
+      }
+    }],
     tanNumber: {
       type: String,
       trim: true,

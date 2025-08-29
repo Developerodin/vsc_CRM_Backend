@@ -25,7 +25,10 @@
     "migrate:roles": "node src/scripts/createDefaultRoles.js",
     "migrate:frequency-status": "node scripts/migrate-frequency-status-console.js",
     "test:migration": "node scripts/test-migration-console.js",
-    "fix:frequency-status": "node scripts/fix-frequency-status.js"
+    "fix:frequency-status": "node scripts/fix-frequency-status.js",
+    "migrate:gst": "node scripts/migrate-gst-to-array.js",
+    "test:gst": "node scripts/test-gst-functionality.js",
+    "test:gst-update": "node scripts/test-gst-update-logic.js"
   },
   "keywords": [
     "node",

@@ -15,7 +15,12 @@ const createClient = {
     pan: Joi.string().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/),
     dob: Joi.date().max('now'),
     businessType: Joi.string(),
-    gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/),
+    gstNumbers: Joi.array().items(
+      Joi.object({
+        state: Joi.string().required(),
+        gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required()
+      })
+    ),
     tanNumber: Joi.string().pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/),
     cinNumber: Joi.string().pattern(/^[A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/),
     udyamNumber: Joi.string().pattern(/^UDYAM-[A-Z]{2}[0-9]{2}[0-9]{7}$/),
@@ -38,7 +43,12 @@ const getClients = {
     fNo: Joi.string().allow('', null),
     pan: Joi.string().allow('', null),
     businessType: Joi.string().allow('', null),
-    gstNumber: Joi.string().allow('', null),
+    gstNumbers: Joi.array().items(
+      Joi.object({
+        state: Joi.string(),
+        gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
+      })
+    ).allow('', null),
     tanNumber: Joi.string().allow('', null),
     cinNumber: Joi.string().allow('', null),
     udyamNumber: Joi.string().allow('', null),
@@ -76,7 +86,12 @@ const updateClient = {
       pan: Joi.string().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/),
       dob: Joi.date().max('now'),
       businessType: Joi.string(),
-      gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/),
+      gstNumbers: Joi.array().items(
+        Joi.object({
+          state: Joi.string().required(),
+          gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required()
+        })
+      ),
       tanNumber: Joi.string().pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/),
       cinNumber: Joi.string().pattern(/^[A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/),
       udyamNumber: Joi.string().pattern(/^UDYAM-[A-Z]{2}[0-9]{2}[0-9]{7}$/),
@@ -122,7 +137,12 @@ const bulkImportClients = {
           pan: Joi.string().pattern(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/),
           dob: Joi.date().max('now'),
           businessType: Joi.string(),
-          gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/),
+          gstNumbers: Joi.array().items(
+            Joi.object({
+              state: Joi.string().required(),
+              gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required()
+            })
+          ),
           tanNumber: Joi.string().pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/),
           cinNumber: Joi.string().pattern(/^[A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/),
           udyamNumber: Joi.string().pattern(/^UDYAM-[A-Z]{2}[0-9]{2}[0-9]{7}$/),
@@ -192,6 +212,41 @@ const getClientTaskStatistics = {
   }),
 };
 
+// GST Number management validations
+const addGstNumber = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    state: Joi.string().required(),
+    gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required(),
+  }),
+};
+
+const removeGstNumber = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+    gstId: Joi.string().required(),
+  }),
+};
+
+const updateGstNumber = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+    gstId: Joi.string().required(),
+  }),
+  body: Joi.object().keys({
+    state: Joi.string(),
+    gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/),
+  }).min(1),
+};
+
+const getGstNumbers = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 export default {
   createClient,
   getClients,
@@ -205,4 +260,8 @@ export default {
   updateActivityAssignment,
   getClientActivities,
   getClientTaskStatistics,
+  addGstNumber,
+  removeGstNumber,
+  updateGstNumber,
+  getGstNumbers,
 }; 

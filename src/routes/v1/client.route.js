@@ -43,4 +43,15 @@ router
   .route('/:clientId/status')
   .patch(auth('manageClients'), validate(clientValidation.updateClientStatus), clientController.updateClientStatus);
 
+// GST Number management routes
+router
+  .route('/:clientId/gst-numbers')
+  .get(auth('getClients'), validate(clientValidation.getGstNumbers), clientController.getGstNumbers)
+  .post(auth('manageClients'), validate(clientValidation.addGstNumber), clientController.addGstNumber);
+
+router
+  .route('/:clientId/gst-numbers/:gstId')
+  .patch(auth('manageClients'), validate(clientValidation.updateGstNumber), clientController.updateGstNumber)
+  .delete(auth('manageClients'), validate(clientValidation.removeGstNumber), clientController.removeGstNumber);
+
 export default router; 

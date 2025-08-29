@@ -16,6 +16,20 @@ const createClient = async (clientBody, user = null) => {
       throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
     }
   }
+
+  // Process GST numbers if provided
+  if (clientBody.gstNumbers && Array.isArray(clientBody.gstNumbers)) {
+    const gstResult = await processGstNumbersFromFrontend(clientBody.gstNumbers, []);
+    
+    if (!gstResult.isValid) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'GST numbers validation failed', {
+        errors: gstResult.errors
+      });
+    }
+    
+    // Replace the gstNumbers field with processed result
+    clientBody.gstNumbers = gstResult.gstNumbers;
+  }
   
   const client = await Client.create(clientBody);
   return client;
@@ -47,7 +61,9 @@ const queryClients = async (filter, options, user) => {
       { phone: searchRegex },
       { district: searchRegex },
       { businessType: searchRegex },
-      { pan: searchRegex }
+      { pan: searchRegex },
+      { 'gstNumbers.gstNumber': searchRegex },
+      { 'gstNumbers.state': searchRegex }
     ];
     
     // Remove the search parameter as it's now handled by $or
@@ -157,6 +173,20 @@ const updateClientById = async (clientId, updateBody, user = null) => {
       throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
     }
   }
+
+  // Process GST numbers if provided
+  if (updateBody.gstNumbers !== undefined) {
+    const gstResult = await processGstNumbersFromFrontend(updateBody.gstNumbers, client.gstNumbers);
+    
+    if (!gstResult.isValid) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'GST numbers validation failed', {
+        errors: gstResult.errors
+      });
+    }
+    
+    // Replace the gstNumbers field with processed result
+    updateBody.gstNumbers = gstResult.gstNumbers;
+  }
   
   Object.assign(client, updateBody);
   await client.save();
@@ -254,6 +284,105 @@ const processActivitiesFromFrontend = async (activityData) => {
   return {
     isValid: errors.length === 0,
     activities,
+    errors
+  };
+};
+
+// Helper function to process GST numbers from frontend data
+const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers = []) => {
+  if (!gstNumbersData || !Array.isArray(gstNumbersData)) {
+    return { isValid: true, gstNumbers: existingGstNumbers, errors: [] };
+  }
+
+  const gstNumbers = [...existingGstNumbers]; // Start with existing GST numbers
+  const errors = [];
+  
+  for (const gstRow of gstNumbersData) {
+    try {
+      // Validate GST number format
+      if (!gstRow.gstNumber || !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstRow.gstNumber)) {
+        errors.push({
+          type: 'INVALID_GST_FORMAT',
+          message: `Invalid GST number format: ${gstRow.gstNumber}`,
+          data: gstRow
+        });
+        continue;
+      }
+
+      // Validate state is provided
+      if (!gstRow.state || gstRow.state.trim() === '') {
+        errors.push({
+          type: 'MISSING_STATE',
+          message: 'State is required for GST number',
+          data: gstRow
+        });
+        continue;
+      }
+
+      // Check if this is an update (has _id) or new entry
+      if (gstRow._id) {
+        // Update existing GST number
+        const existingIndex = gstNumbers.findIndex(gst => gst._id.toString() === gstRow._id);
+        if (existingIndex !== -1) {
+          // Check if updating state would conflict with other existing GST
+          const stateConflict = gstNumbers.find(gst => 
+            gst.state === gstRow.state && gst._id.toString() !== gstRow._id
+          );
+          
+          if (stateConflict) {
+            errors.push({
+              type: 'DUPLICATE_STATE',
+              message: `GST number already exists for state: ${gstRow.state}`,
+              data: gstRow
+            });
+            continue;
+          }
+
+          // Update existing GST
+          gstNumbers[existingIndex] = {
+            ...gstNumbers[existingIndex],
+            state: gstRow.state,
+            gstNumber: gstRow.gstNumber
+          };
+        } else {
+          errors.push({
+            type: 'GST_NOT_FOUND',
+            message: `GST number with ID '${gstRow._id}' not found`,
+            data: gstRow
+          });
+        }
+      } else {
+        // Add new GST number
+        // Check if state already exists
+        const existingGst = gstNumbers.find(gst => gst.state === gstRow.state);
+        if (existingGst) {
+          errors.push({
+            type: 'DUPLICATE_STATE',
+            message: `GST number already exists for state: ${gstRow.state}`,
+            data: gstRow
+          });
+          continue;
+        }
+
+        // Add new GST number
+        gstNumbers.push({
+          state: gstRow.state.trim(),
+          gstNumber: gstRow.gstNumber.trim()
+        });
+      }
+    } catch (error) {
+      console.error('Error processing GST row:', error, gstRow);
+      errors.push({
+        type: 'VALIDATION_ERROR',
+        message: 'Error processing GST data',
+        data: gstRow
+      });
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    gstNumbers,
     errors
   };
 };
@@ -386,9 +515,12 @@ const bulkImportClients = async (clients) => {
       const batch = toCreate.slice(i, i + BATCH_SIZE);
 
       try {
-        // Process activities for each client before creation
+        // Process activities and GST numbers for each client before creation
         const processedBatch = await Promise.all(
           batch.map(async (client) => {
+            let processedClient = { ...client };
+            
+            // Process activities if provided
             if (client.activities && Array.isArray(client.activities)) {
               const result = await processActivitiesFromFrontend(client.activities);
               if (!result.isValid) {
@@ -401,9 +533,26 @@ const bulkImportClients = async (clients) => {
                   });
                 });
               }
-              return { ...client, activities: result.activities };
+              processedClient.activities = result.activities;
             }
-            return client;
+
+            // Process GST numbers if provided
+            if (client.gstNumbers && Array.isArray(client.gstNumbers)) {
+              const gstResult = await processGstNumbersFromFrontend(client.gstNumbers, []);
+              if (!gstResult.isValid) {
+                // Add validation errors to results
+                gstResult.errors.forEach(error => {
+                  results.errors.push({
+                    index: i,
+                    error: error.message,
+                    data: { ...client, gstError: error }
+                  });
+                });
+              }
+              processedClient.gstNumbers = gstResult.gstNumbers;
+            }
+
+            return processedClient;
           })
         );
 
@@ -493,6 +642,36 @@ const bulkImportClients = async (clients) => {
               }
             }
 
+            // Process GST numbers if provided
+            let gstNumbers = undefined;
+            if (client.gstNumbers && Array.isArray(client.gstNumbers)) {
+              // For updates, we need to fetch existing GST numbers to process properly
+              try {
+                const existingClient = await Client.findById(client.id);
+                if (existingClient) {
+                  const gstResult = await processGstNumbersFromFrontend(client.gstNumbers, existingClient.gstNumbers);
+                  if (gstResult.isValid) {
+                    gstNumbers = gstResult.gstNumbers;
+                  } else {
+                    // Add validation errors to results
+                    gstResult.errors.forEach(error => {
+                      results.errors.push({
+                        index: i,
+                        error: error.message,
+                        data: { ...client, gstError: error }
+                      });
+                    });
+                  }
+                }
+              } catch (error) {
+                results.errors.push({
+                  index: i,
+                  error: `Failed to process GST numbers: ${error.message}`,
+                  data: client
+                });
+              }
+            }
+
             return {
               updateOne: {
                 filter: { _id: client.id },
@@ -513,7 +692,7 @@ const bulkImportClients = async (clients) => {
                     sortOrder: client.sortOrder,
                     // New business fields
                     businessType: client.businessType,
-                    gstNumber: client.gstNumber,
+                    gstNumbers: gstNumbers,
                     tanNumber: client.tanNumber,
                     cinNumber: client.cinNumber,
                     udyamNumber: client.udyamNumber,
@@ -1132,6 +1311,111 @@ const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
   return results;
 };
 
+/**
+ * Add a new GST number to a client
+ * @param {ObjectId} clientId - Client ID
+ * @param {Object} gstData - GST data with state and gstNumber
+ * @returns {Promise<Client>}
+ */
+const addGstNumber = async (clientId, gstData) => {
+  const client = await Client.findById(clientId);
+  if (!client) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+
+  // Check if GST number already exists for this state
+  const existingGst = client.gstNumbers.find(
+    gst => gst.state === gstData.state
+  );
+  
+  if (existingGst) {
+    throw new ApiError(httpStatus.CONFLICT, 'GST number already exists for this state');
+  }
+
+  // Add new GST number
+  client.gstNumbers.push(gstData);
+  await client.save();
+  
+  return client;
+};
+
+/**
+ * Remove a GST number from a client
+ * @param {ObjectId} clientId - Client ID
+ * @param {string} gstId - GST ID (state)
+ * @returns {Promise<void>}
+ */
+const removeGstNumber = async (clientId, gstId) => {
+  const client = await Client.findById(clientId);
+  if (!client) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+
+  const gstIndex = client.gstNumbers.findIndex(
+    gst => gst._id.toString() === gstId
+  );
+  
+  if (gstIndex === -1) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'GST number not found');
+  }
+
+  client.gstNumbers.splice(gstIndex, 1);
+  await client.save();
+};
+
+/**
+ * Update a GST number for a client
+ * @param {ObjectId} clientId - Client ID
+ * @param {string} gstId - GST ID
+ * @param {Object} updateData - Updated GST data
+ * @returns {Promise<Client>}
+ */
+const updateGstNumber = async (clientId, gstId, updateData) => {
+  const client = await Client.findById(clientId);
+  if (!client) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+
+  const gstIndex = client.gstNumbers.findIndex(
+    gst => gst._id.toString() === gstId
+  );
+  
+  if (gstIndex === -1) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'GST number not found');
+  }
+
+  // Check if updating state would conflict with existing GST
+  if (updateData.state && updateData.state !== client.gstNumbers[gstIndex].state) {
+    const existingGst = client.gstNumbers.find(
+      gst => gst.state === updateData.state && gst._id.toString() !== gstId
+    );
+    
+    if (existingGst) {
+      throw new ApiError(httpStatus.CONFLICT, 'GST number already exists for this state');
+    }
+  }
+
+  // Update GST data
+  Object.assign(client.gstNumbers[gstIndex], updateData);
+  await client.save();
+  
+  return client;
+};
+
+/**
+ * Get all GST numbers for a client
+ * @param {ObjectId} clientId - Client ID
+ * @returns {Promise<Array>}
+ */
+const getGstNumbers = async (clientId) => {
+  const client = await Client.findById(clientId);
+  if (!client) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+
+  return client.gstNumbers;
+};
+
 export { 
   createClient, 
   queryClients, 
@@ -1147,4 +1431,8 @@ export {
   getClientActivities,
   getClientTaskStatistics,
   reprocessExistingClients,
+  addGstNumber,
+  removeGstNumber,
+  updateGstNumber,
+  getGstNumbers,
 }; 

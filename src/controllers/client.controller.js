@@ -20,7 +20,7 @@ const getClients = catchAsync(async (req, res) => {
     'fNo', 
     'pan', 
     'businessType',
-    'gstNumber',
+    'gstNumbers',
     'tanNumber',
     'cinNumber',
     'udyamNumber',
@@ -102,6 +102,31 @@ const getClientTaskStatistics = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+// GST Number management methods
+const addGstNumber = catchAsync(async (req, res) => {
+  const result = await clientService.addGstNumber(req.params.clientId, req.body);
+  res.status(httpStatus.CREATED).send(result);
+});
+
+const removeGstNumber = catchAsync(async (req, res) => {
+  await clientService.removeGstNumber(req.params.clientId, req.params.gstId);
+  res.status(httpStatus.NO_CONTENT).send();
+});
+
+const updateGstNumber = catchAsync(async (req, res) => {
+  const result = await clientService.updateGstNumber(
+    req.params.clientId, 
+    req.params.gstId, 
+    req.body
+  );
+  res.send(result);
+});
+
+const getGstNumbers = catchAsync(async (req, res) => {
+  const result = await clientService.getGstNumbers(req.params.clientId);
+  res.send(result);
+});
+
 export {
   createClient,
   getClients,
@@ -115,4 +140,8 @@ export {
   updateActivityAssignment,
   getClientActivities,
   getClientTaskStatistics,
+  addGstNumber,
+  removeGstNumber,
+  updateGstNumber,
+  getGstNumbers,
 }; 
