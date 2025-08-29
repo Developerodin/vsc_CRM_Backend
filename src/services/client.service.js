@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import { Client, Activity, FileManager, Timeline, Task } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
+import { createTimelinesForClient } from './timelineCreation.service.js';
 
 /**
  * Create a client
@@ -899,6 +900,15 @@ const addActivityToClient = async (clientId, activityData) => {
   });
   
   await client.save();
+  
+  // Automatically create timelines for this activity
+  try {
+    await createTimelinesForClient(clientId, activityData.activity);
+  } catch (error) {
+    console.error('Failed to create timelines for activity:', error.message);
+    // Don't fail the entire operation if timeline creation fails
+  }
+  
   return client.populate([
     { path: 'activities.activity' },
   ]);

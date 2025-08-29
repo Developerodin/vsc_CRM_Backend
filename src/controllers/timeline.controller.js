@@ -10,7 +10,7 @@ const createTimeline = catchAsync(async (req, res) => {
 });
 
 const getTimelines = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['activity', 'activityName', 'client', 'search', 'status', 'frequency', 'assignedMember', 'branch', 'today']);
+  const filter = pick(req.query, ['activity', 'activityName', 'client', 'search', 'status', 'branch', 'today']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   
   // Add branch filtering based on user's access
@@ -41,61 +41,6 @@ const bulkImportTimelines = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
-// Get UDIN array for a timeline
-const getTimelineUdin = catchAsync(async (req, res) => {
-  const timeline = await timelineService.getTimelineById(req.params.timelineId);
-  if (!timeline) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Timeline not found');
-  }
-  res.send({ udin: timeline.udin });
-});
-
-// Update UDIN array for a timeline
-const updateTimelineUdin = catchAsync(async (req, res) => {
-  const timeline = await timelineService.updateTimelineUdin(req.params.timelineId, req.body.udin, req.user);
-  res.send({ udin: timeline.udin });
-});
-
-// Get frequency status for a timeline
-const getFrequencyStatus = catchAsync(async (req, res) => {
-  const frequencyStatus = await timelineService.getFrequencyStatus(req.params.timelineId, req.user);
-  res.send(frequencyStatus);
-});
-
-// Update frequency status for a specific period
-const updateFrequencyStatus = catchAsync(async (req, res) => {
-  try {
-    const timeline = await timelineService.updateFrequencyStatus(
-      req.params.timelineId, 
-      req.params.period, 
-      req.body, 
-      req.user
-    );
-    res.send(timeline);
-  } catch (error) {
-    // Provide more specific error messages
-    if (error.message.includes('Frequency period')) {
-      throw new ApiError(httpStatus.NOT_FOUND, error.message);
-    } else if (error.message.includes('validation failed')) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid frequency status data. Please check the period and status values.');
-    } else {
-      throw error;
-    }
-  }
-});
-
-// Initialize or regenerate frequency status for a timeline
-const initializeFrequencyStatus = catchAsync(async (req, res) => {
-  const timeline = await timelineService.initializeOrRegenerateFrequencyStatus(req.params.timelineId, req.user);
-  res.send(timeline);
-});
-
-// Get frequency status statistics across all timelines
-const getFrequencyStatusStats = catchAsync(async (req, res) => {
-  const stats = await timelineService.getFrequencyStatusStats(req.user);
-  res.send(stats);
-});
-
 export {
   createTimeline,
   getTimelines,
@@ -103,10 +48,4 @@ export {
   updateTimeline,
   deleteTimeline,
   bulkImportTimelines,
-  getTimelineUdin,
-  updateTimelineUdin,
-  getFrequencyStatus,
-  updateFrequencyStatus,
-  initializeFrequencyStatus,
-  getFrequencyStatusStats,
 }; 
