@@ -36,10 +36,11 @@ const generateToken = (userId, expires, type, secret = config.jwt.secret) => {
  * @param {boolean} [blacklisted]
  * @returns {Promise<Token>}
  */
-const saveToken = async (token, userId, expires, type, blacklisted = false) => {
+const saveToken = async (token, userId, expires, type, blacklisted = false, userModel = 'User') => {
   const tokenDoc = await Token.create({
     token,
     user: userId,
+    userModel,
     expires: expires.toDate(),
     type,
     blacklisted,
@@ -70,10 +71,37 @@ const verifyToken = async (token, type) => {
 const generateAuthTokens = async (user) => {
   const accessTokenExpires = moment().add(config.jwt.accessExpirationMinutes, 'minutes');
   const accessToken = generateToken(user.id, accessTokenExpires, tokenTypes.ACCESS);
+  await saveToken(accessToken, user.id, accessTokenExpires, tokenTypes.ACCESS, false, 'User');
 
   const refreshTokenExpires = moment().add(config.jwt.refreshExpirationDays, 'days');
   const refreshToken = generateToken(user.id, refreshTokenExpires, tokenTypes.REFRESH);
-  await saveToken(refreshToken, user.id, refreshTokenExpires, tokenTypes.REFRESH);
+  await saveToken(refreshToken, user.id, refreshTokenExpires, tokenTypes.REFRESH, false, 'User');
+
+  return {
+    access: {
+      token: accessToken,
+      expires: accessTokenExpires.toDate(),
+    },
+    refresh: {
+      token: refreshToken,
+      expires: refreshTokenExpires.toDate(),
+    },
+  };
+};
+
+/**
+ * Generate team member auth tokens
+ * @param {TeamMember} teamMember
+ * @returns {Promise<Object>}
+ */
+const generateTeamMemberAuthTokens = async (teamMember) => {
+  const accessTokenExpires = moment().add(config.jwt.accessExpirationMinutes, 'minutes');
+  const accessToken = generateToken(teamMember.id, accessTokenExpires, tokenTypes.TEAM_MEMBER_ACCESS);
+  await saveToken(accessToken, teamMember.id, accessTokenExpires, tokenTypes.TEAM_MEMBER_ACCESS, false, 'TeamMember');
+
+  const refreshTokenExpires = moment().add(config.jwt.refreshExpirationDays, 'days');
+  const refreshToken = generateToken(teamMember.id, refreshTokenExpires, tokenTypes.TEAM_MEMBER_REFRESH);
+  await saveToken(refreshToken, teamMember.id, refreshTokenExpires, tokenTypes.TEAM_MEMBER_REFRESH, false, 'TeamMember');
 
   return {
     access: {
@@ -99,7 +127,7 @@ const generateResetPasswordToken = async (email) => {
   }
   const expires = moment().add(config.jwt.resetPasswordExpirationMinutes, 'minutes');
   const resetPasswordToken = generateToken(user.id, expires, tokenTypes.RESET_PASSWORD);
-  await saveToken(resetPasswordToken, user.id, expires, tokenTypes.RESET_PASSWORD);
+  await saveToken(resetPasswordToken, user.id, expires, tokenTypes.RESET_PASSWORD, false, 'User');
   return resetPasswordToken;
 };
 
@@ -111,7 +139,7 @@ const generateResetPasswordToken = async (email) => {
 const generateVerifyEmailToken = async (user) => {
   const expires = moment().add(config.jwt.verifyEmailExpirationMinutes, 'minutes');
   const verifyEmailToken = generateToken(user.id, expires, tokenTypes.VERIFY_EMAIL);
-  await saveToken(verifyEmailToken, user.id, expires, tokenTypes.VERIFY_EMAIL);
+  await saveToken(verifyEmailToken, user.id, expires, tokenTypes.VERIFY_EMAIL, false, 'User');
   return verifyEmailToken;
 };
 
@@ -120,6 +148,7 @@ export {
   saveToken,
   verifyToken,
   generateAuthTokens,
+  generateTeamMemberAuthTokens,
   generateResetPasswordToken,
   generateVerifyEmailToken,
 };

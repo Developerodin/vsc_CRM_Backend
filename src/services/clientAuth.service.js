@@ -37,6 +37,7 @@ const generateClientOTP = async (email) => {
   await Token.create({
     token: otpToken,
     user: client.id,
+    userModel: 'Client',
     expires: expires.toDate(),
     type: tokenTypes.CLIENT_OTP,
     blacklisted: false,
@@ -112,6 +113,7 @@ const verifyClientOTP = async (email, otp) => {
   await Token.create({
     token: accessToken,
     user: client.id,
+    userModel: 'Client',
     expires: accessTokenExpires.toDate(),
     type: tokenTypes.CLIENT_ACCESS,
     blacklisted: false,

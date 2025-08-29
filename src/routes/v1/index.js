@@ -6,6 +6,7 @@ import activityRoute from './activity.route.js';
 import branchRoute from './branch.route.js';
 import clientRoute from './client.route.js';
 import clientAuthRoute from './clientAuth.route.js';
+import teamMemberAuthRoute from './teamMemberAuth.route.js';
 import clientFileManagerRoute from './clientFileManager.route.js';
 import groupRoute from './group.route.js';
 import roleRoute from './role.route.js';
@@ -52,6 +53,10 @@ const defaultRoutes = [
   {
     path: '/client-auth',
     route: clientAuthRoute,
+  },
+  {
+    path: '/team-member-auth',
+    route: teamMemberAuthRoute,
   },
   {
     path: '/client-file-manager',

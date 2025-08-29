@@ -12,12 +12,17 @@ const tokenSchema = mongoose.Schema(
     },
     user: {
       type: mongoose.SchemaTypes.ObjectId,
-      ref: 'User',
+      refPath: 'userModel',
       required: true,
+    },
+    userModel: {
+      type: String,
+      required: true,
+      enum: ['User', 'TeamMember', 'Client'],
     },
     type: {
       type: String,
-      enum: [tokenTypes.REFRESH, tokenTypes.RESET_PASSWORD, tokenTypes.VERIFY_EMAIL, tokenTypes.CLIENT_OTP, tokenTypes.CLIENT_ACCESS],
+      enum: [tokenTypes.ACCESS, tokenTypes.REFRESH, tokenTypes.RESET_PASSWORD, tokenTypes.VERIFY_EMAIL, tokenTypes.CLIENT_OTP, tokenTypes.CLIENT_ACCESS, tokenTypes.TEAM_MEMBER_ACCESS, tokenTypes.TEAM_MEMBER_REFRESH],
       required: true,
     },
     expires: {
