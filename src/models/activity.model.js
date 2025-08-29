@@ -10,11 +10,11 @@ const frequencyConfigSchema = mongoose.Schema({
     max: 24,
   },
   
-  // For Daily: At time [HH:MM AM/PM]
+  // For Daily: At time [HH:MM AM/PM] or [HH:MM] (24-hour)
   dailyTime: {
     type: String,
-    // Format: "HH:MM AM/PM" e.g., "09:30 AM", "02:15 PM"
-    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/,
+    // Format: "HH:MM AM/PM" e.g., "09:30 AM", "02:15 PM" or "17:07" (24-hour)
+    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/,
   },
   
   // For Weekly: On [Mon, Tue, ...] and At time [HH:MM AM/PM]
@@ -24,7 +24,7 @@ const frequencyConfigSchema = mongoose.Schema({
   }],
   weeklyTime: {
     type: String,
-    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/,
+    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/,
   },
   
   // For Monthly: Day [1-31] and At time [HH:MM AM/PM]
@@ -35,7 +35,7 @@ const frequencyConfigSchema = mongoose.Schema({
   },
   monthlyTime: {
     type: String,
-    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/,
+    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/,
   },
   
   // For Quarterly: On Months: [Jan, Apr, Jul, Oct] (or allow selection of custom months in sets of 3)
@@ -50,7 +50,7 @@ const frequencyConfigSchema = mongoose.Schema({
   },
   quarterlyTime: {
     type: String,
-    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/,
+    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/,
   },
   
   // For Yearly: On [Month] [Date] and At time [HH:MM AM/PM]
@@ -65,7 +65,7 @@ const frequencyConfigSchema = mongoose.Schema({
   },
   yearlyTime: {
     type: String,
-    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/,
+    match: /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/,
   },
 }, { _id: false });
 

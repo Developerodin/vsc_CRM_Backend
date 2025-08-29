@@ -4,12 +4,13 @@ import { validateFrequencyWithConfig } from '../utils/frequencyValidator.js';
 
 // Field validation schema for subactivities
 const fieldSchema = Joi.object({
+  _id: Joi.string().custom(objectId).optional(), // Allow _id for existing fields
   name: Joi.string().trim().required(),
   type: Joi.string().valid('text', 'number', 'date', 'email', 'phone', 'url', 'select', 'textarea', 'checkbox', 'radio').required().default('text'),
   required: Joi.boolean().default(false),
   options: Joi.array().items(Joi.string().trim()).optional(), // For select, radio types
   defaultValue: Joi.any().optional(),
-  placeholder: Joi.string().trim().optional(),
+  placeholder: Joi.string().trim().allow('', null).optional(),
   validation: Joi.object({
     minLength: Joi.number().min(0).optional(),
     maxLength: Joi.number().min(0).optional(),
@@ -21,22 +22,33 @@ const fieldSchema = Joi.object({
 
 // Frequency configuration validation schema
 const frequencyConfigSchema = Joi.object({
-  hourlyInterval: Joi.number().min(1).max(24),
-  dailyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/),
+  // Hourly frequency fields
+  hourlyInterval: Joi.number().min(1).max(24).optional(),
+  
+  // Daily frequency fields
+  dailyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
+  
+  // Weekly frequency fields
   weeklyDays: Joi.array().items(
     Joi.string().valid('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
-  ),
-  weeklyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/),
-  monthlyDay: Joi.number().min(1).max(31),
-  monthlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/),
+  ).allow(null).optional(),
+  weeklyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
+  
+  // Monthly frequency fields
+  monthlyDay: Joi.number().min(1).max(31).allow(null).optional(),
+  monthlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
+  
+  // Quarterly frequency fields
   quarterlyMonths: Joi.array().items(
     Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
-  ),
-  quarterlyDay: Joi.number().min(1).max(31),
-  quarterlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/),
-  yearlyMonth: Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'),
-  yearlyDate: Joi.number().min(1).max(31),
-  yearlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/),
+  ).allow(null).optional(),
+  quarterlyDay: Joi.number().min(1).max(31).allow(null).optional(),
+  quarterlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
+  
+  // Yearly frequency fields
+  yearlyMonth: Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December').allow('', null).optional(),
+  yearlyDate: Joi.number().min(1).max(31).allow(null).optional(),
+  yearlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
 });
 
 // Subactivity validation schema
