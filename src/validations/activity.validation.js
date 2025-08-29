@@ -82,6 +82,11 @@ const bulkImportActivities = {
           dueDate: Joi.date().optional(),
           frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
           frequencyConfig: frequencyConfigSchema.optional(),
+          subactivities: Joi.array().items(
+            Joi.object().keys({
+              name: Joi.string().trim(),
+            })
+          ).optional(),
         }).custom(validateFrequencyWithConfig)
       )
       .min(1)

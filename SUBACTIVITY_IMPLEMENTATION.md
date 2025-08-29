@@ -56,11 +56,13 @@ DELETE /api/v1/activities/:activityId/subactivities/:subactivityId
 
 ## Features
 - ✅ Subactivities can be added to any activity
+- ✅ **New activities can be created with subactivities in the same request**
 - ✅ Subactivities can be updated individually
 - ✅ Subactivities can be deleted individually
 - ✅ Each subactivity gets unique ID and timestamps
 - ✅ Validation ensures proper activity and subactivity IDs
 - ✅ Error handling for non-existent activities/subactivities
+- ✅ Bulk import supports subactivities
 
 ## Database Schema
 ```javascript

@@ -155,6 +155,12 @@ const clientSchema = mongoose.Schema(
         default: Date.now,
         description: 'Date when the activity was assigned'
       },
+      status:{
+        type: String,
+        enum: ['active', 'inactive'],
+        default: 'active',
+        description: 'Status of the activity'
+      },
       notes: {
         type: String,
         trim: true,
