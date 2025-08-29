@@ -161,4 +161,76 @@ const bulkImportActivities = async (activities) => {
   return results;
 };
 
-export { createActivity, queryActivities, getActivityById, updateActivityById, deleteActivityById, bulkImportActivities }; 
+/**
+ * Create a subactivity for an activity
+ * @param {ObjectId} activityId
+ * @param {Object} subactivityBody
+ * @returns {Promise<Activity>}
+ */
+const createSubactivity = async (activityId, subactivityBody) => {
+  const activity = await getActivityById(activityId);
+  if (!activity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
+  }
+  
+  activity.subactivities.push(subactivityBody);
+  await activity.save();
+  return activity;
+};
+
+/**
+ * Update a subactivity
+ * @param {ObjectId} activityId
+ * @param {ObjectId} subactivityId
+ * @param {Object} updateBody
+ * @returns {Promise<Activity>}
+ */
+const updateSubactivity = async (activityId, subactivityId, updateBody) => {
+  const activity = await getActivityById(activityId);
+  if (!activity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
+  }
+  
+  const subactivity = activity.subactivities.id(subactivityId);
+  if (!subactivity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Subactivity not found');
+  }
+  
+  Object.assign(subactivity, updateBody);
+  await activity.save();
+  return activity;
+};
+
+/**
+ * Delete a subactivity
+ * @param {ObjectId} activityId
+ * @param {ObjectId} subactivityId
+ * @returns {Promise<Activity>}
+ */
+const deleteSubactivity = async (activityId, subactivityId) => {
+  const activity = await getActivityById(activityId);
+  if (!activity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
+  }
+  
+  const subactivity = activity.subactivities.id(subactivityId);
+  if (!subactivity) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Subactivity not found');
+  }
+  
+  subactivity.deleteOne();
+  await activity.save();
+  return activity;
+};
+
+export { 
+  createActivity, 
+  queryActivities, 
+  getActivityById, 
+  updateActivityById, 
+  deleteActivityById, 
+  bulkImportActivities,
+  createSubactivity,
+  updateSubactivity,
+  deleteSubactivity
+}; 

@@ -76,4 +76,33 @@ const bulkImportActivities = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
-export { createActivity, getActivities, getActivity, updateActivity, deleteActivity, bulkImportActivities }; 
+const createSubactivity = catchAsync(async (req, res) => {
+  const activity = await activityService.createSubactivity(req.params.activityId, req.body);
+  res.status(httpStatus.CREATED).send(activity);
+});
+
+const updateSubactivity = catchAsync(async (req, res) => {
+  const activity = await activityService.updateSubactivity(
+    req.params.activityId, 
+    req.params.subactivityId, 
+    req.body
+  );
+  res.send(activity);
+});
+
+const deleteSubactivity = catchAsync(async (req, res) => {
+  await activityService.deleteSubactivity(req.params.activityId, req.params.subactivityId);
+  res.status(httpStatus.NO_CONTENT).send();
+});
+
+export { 
+  createActivity, 
+  getActivities, 
+  getActivity, 
+  updateActivity, 
+  deleteActivity, 
+  bulkImportActivities,
+  createSubactivity,
+  updateSubactivity,
+  deleteSubactivity
+}; 

@@ -69,6 +69,17 @@ const frequencyConfigSchema = mongoose.Schema({
   },
 }, { _id: false });
 
+const subactivitySchema = mongoose.Schema({
+  name: {
+    type: String,
+    required: false,
+    trim: true,
+  },
+}, { 
+  timestamps: true,
+  _id: true 
+});
+
 const activitySchema = mongoose.Schema(
   {
     name: {
@@ -92,7 +103,8 @@ const activitySchema = mongoose.Schema(
     frequencyConfig: {
       type: frequencyConfigSchema,
       required: false,
-    }
+    },
+    subactivities: [subactivitySchema]
   },
   {
     timestamps: true,

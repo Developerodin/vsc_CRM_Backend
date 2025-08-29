@@ -29,4 +29,14 @@ router
   .patch(validate(activityValidation.updateActivity), activityController.updateActivity)
   .delete(validate(activityValidation.deleteActivity), activityController.deleteActivity);
 
+// Subactivity routes
+router
+  .route('/:activityId/subactivities')
+  .post(validate(activityValidation.createSubactivity), activityController.createSubactivity);
+
+router
+  .route('/:activityId/subactivities/:subactivityId')
+  .patch(validate(activityValidation.updateSubactivity), activityController.updateSubactivity)
+  .delete(validate(activityValidation.deleteSubactivity), activityController.deleteSubactivity);
+
 export default router;

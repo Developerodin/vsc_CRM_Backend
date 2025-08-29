@@ -90,4 +90,40 @@ const bulkImportActivities = {
   }),
 };
 
-export { createActivity, getActivities, getActivity, updateActivity, deleteActivity, bulkImportActivities }; 
+const createSubactivity = {
+  params: Joi.object().keys({
+    activityId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    name: Joi.string().trim(),
+  }),
+};
+
+const updateSubactivity = {
+  params: Joi.object().keys({
+    activityId: Joi.string().custom(objectId).required(),
+    subactivityId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    name: Joi.string().trim(),
+  }),
+};
+
+const deleteSubactivity = {
+  params: Joi.object().keys({
+    activityId: Joi.string().custom(objectId).required(),
+    subactivityId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+export { 
+  createActivity, 
+  getActivities, 
+  getActivity, 
+  updateActivity, 
+  deleteActivity, 
+  bulkImportActivities,
+  createSubactivity,
+  updateSubactivity,
+  deleteSubactivity
+};
