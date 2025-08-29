@@ -2,15 +2,21 @@ import Joi from 'joi';
 import { objectId } from './custom.validation.js';
 import { validateFrequencyWithConfig } from '../utils/frequencyValidator.js';
 
-// Subactivity validation schema
-const subactivitySchema = Joi.object({
-  _id: Joi.string().custom(objectId).optional(), // Optional for existing subactivities
-  name: Joi.string().trim().optional(),
-  dueDate: Joi.date().optional(),
-  frequency: Joi.string().valid('None', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().default('None'),
-  frequencyConfig: frequencyConfigSchema.optional(),
-  createdAt: Joi.date().optional(),
-  updatedAt: Joi.date().optional(),
+// Field validation schema for subactivities
+const fieldSchema = Joi.object({
+  name: Joi.string().trim().required(),
+  type: Joi.string().valid('text', 'number', 'date', 'email', 'phone', 'url', 'select', 'textarea', 'checkbox', 'radio').required().default('text'),
+  required: Joi.boolean().default(false),
+  options: Joi.array().items(Joi.string().trim()).optional(), // For select, radio types
+  defaultValue: Joi.any().optional(),
+  placeholder: Joi.string().trim().optional(),
+  validation: Joi.object({
+    minLength: Joi.number().min(0).optional(),
+    maxLength: Joi.number().min(0).optional(),
+    min: Joi.number().optional(),
+    max: Joi.number().optional(),
+    pattern: Joi.string().optional(), // Regex pattern for validation
+  }).optional(),
 });
 
 // Frequency configuration validation schema
@@ -31,6 +37,18 @@ const frequencyConfigSchema = Joi.object({
   yearlyMonth: Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'),
   yearlyDate: Joi.number().min(1).max(31),
   yearlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/),
+});
+
+// Subactivity validation schema
+const subactivitySchema = Joi.object({
+  _id: Joi.string().custom(objectId).optional(), // Optional for existing subactivities
+  name: Joi.string().trim().optional(),
+  dueDate: Joi.date().optional(),
+  frequency: Joi.string().valid('None', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().default('None'),
+  frequencyConfig: frequencyConfigSchema.optional(),
+  fields: Joi.array().items(fieldSchema).optional(),
+  createdAt: Joi.date().optional(),
+  updatedAt: Joi.date().optional(),
 });
 
 const createActivity = {
@@ -112,6 +130,7 @@ const createSubactivity = {
     dueDate: Joi.date().optional(),
     frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().default('None'),
     frequencyConfig: frequencyConfigSchema.optional(),
+    fields: Joi.array().items(fieldSchema).optional(),
   }),
 };
 
@@ -125,6 +144,7 @@ const updateSubactivity = {
     dueDate: Joi.date().optional(),
     frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
     frequencyConfig: frequencyConfigSchema.optional(),
+    fields: Joi.array().items(fieldSchema).optional(),
   }),
 };
 

@@ -89,6 +89,41 @@ const subactivitySchema = mongoose.Schema({
     type: frequencyConfigSchema,
     required: false,
   },
+  fields: [{
+    name: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    type: {
+      type: String,
+      enum: ['text', 'number', 'date', 'email', 'phone', 'url', 'select', 'textarea', 'checkbox', 'radio'],
+      required: false,
+      default: 'text',
+    },
+    required: {
+      type: Boolean,
+      default: false,
+    },
+    options: [{
+      type: String,
+      trim: false,
+    }], // For select, radio types
+    defaultValue: {
+      type: mongoose.Schema.Types.Mixed,
+    },
+    placeholder: {
+      type: String,
+      trim: false,
+    },
+    validation: {
+      minLength: Number,
+      maxLength: Number,
+      min: Number,
+      max: Number,
+      pattern: String, // Regex pattern for validation
+    },
+  }],
 }, { 
   timestamps: true,
   _id: true 
