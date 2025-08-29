@@ -159,6 +159,12 @@ const clientSchema = mongoose.Schema(
         required: true,
         description: 'Reference to the activity'
       },
+      subactivity: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Activity.subactivities',
+        required: false,
+        description: 'Reference to specific subactivity (optional)'
+      },
       assignedDate: {
         type: Date,
         default: Date.now,
@@ -285,27 +291,79 @@ clientSchema.post('save', async function(doc) {
       
       for (const activityItem of doc.activities) {
         try {
-          // Get the full activity document to check frequency
+          // Get the full activity document to check subactivities
           const Activity = mongoose.model('Activity');
           const activity = await Activity.findById(activityItem.activity);
           
-          // Only create timeline if activity has frequency and frequencyConfig
-          if (activity && activity.frequency && activity.frequencyConfig) {
-            // Calculate start and end dates (1 year from today)
+          // Only create timelines if activity has subactivities with frequency
+          if (activity && activity.subactivities && activity.subactivities.length > 0) {
+            for (const subactivity of activity.subactivities) {
+              // Check if specific subactivity is assigned to this client
+              const isAssignedSubactivity = activityItem.subactivity && 
+                activityItem.subactivity.toString() === subactivity._id.toString();
+              
+              // If no specific subactivity is assigned, or this is the assigned one
+              if (!activityItem.subactivity || isAssignedSubactivity) {
+                if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
+                  // Create recurring timeline for subactivities with frequency
+                  const startDate = new Date();
+                  const endDate = new Date();
+                  endDate.setFullYear(endDate.getFullYear() + 1);
+                  
+                  const timeline = new Timeline({
+                    activity: activity._id,
+                    subactivity: subactivity._id,
+                    client: doc._id,
+                    status: 'pending',
+                    startDate: startDate,
+                    endDate: endDate,
+                    frequency: subactivity.frequency,
+                    frequencyConfig: subactivity.frequencyConfig,
+                    branch: doc.branch,
+                    timelineType: 'recurring'
+                  });
+                  
+                  timelinePromises.push(timeline.save());
+                } else {
+                  // Create one-time timeline for subactivities without frequency
+                  const startDate = new Date();
+                  const endDate = new Date();
+                  endDate.setDate(endDate.getDate() + 30); // Due in 30 days
+                  
+                  const timeline = new Timeline({
+                    activity: activity._id,
+                    subactivity: subactivity._id,
+                    client: doc._id,
+                    status: 'pending',
+                    startDate: startDate,
+                    endDate: endDate,
+                    frequency: 'OneTime',
+                    frequencyConfig: null,
+                    branch: doc.branch,
+                    timelineType: 'oneTime'
+                  });
+                  
+                  timelinePromises.push(timeline.save());
+                }
+              }
+            }
+          } else if (activity && (!activity.subactivities || activity.subactivities.length === 0)) {
+            // Handle legacy activities without subactivities - create one-time timeline
             const startDate = new Date();
             const endDate = new Date();
-            endDate.setFullYear(endDate.getFullYear() + 1);
+            endDate.setDate(endDate.getDate() + 30); // Due in 30 days
             
-            // Create timeline
             const timeline = new Timeline({
               activity: activity._id,
+              subactivity: null,
               client: doc._id,
               status: 'pending',
               startDate: startDate,
               endDate: endDate,
-              frequency: activity.frequency,
-              frequencyConfig: activity.frequencyConfig,
-              branch: doc.branch
+              frequency: 'OneTime',
+              frequencyConfig: null,
+              branch: doc.branch,
+              timelineType: 'oneTime'
             });
             
             timelinePromises.push(timeline.save());

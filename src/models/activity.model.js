@@ -75,6 +75,20 @@ const subactivitySchema = mongoose.Schema({
     required: false,
     trim: true,
   },
+  dueDate: {
+    type: Date,
+    required: false,
+  },
+  frequency: {
+    type: String,
+    enum: ['None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'],
+    required: false,
+    default: 'None',
+  },
+  frequencyConfig: {
+    type: frequencyConfigSchema,
+    required: false,
+  },
 }, { 
   timestamps: true,
   _id: true 
@@ -90,19 +104,6 @@ const activitySchema = mongoose.Schema(
     sortOrder: {
       type: Number,
       required: true,
-    },
-    dueDate: {
-      type: Date,
-      required: false,
-    },
-    frequency: {
-      type: String,
-      enum: ['Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'],
-      required: false,
-    },
-    frequencyConfig: {
-      type: frequencyConfigSchema,
-      required: false,
     },
     subactivities: [subactivitySchema]
   },

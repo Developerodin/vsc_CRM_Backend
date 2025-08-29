@@ -6,6 +6,9 @@ import { validateFrequencyWithConfig } from '../utils/frequencyValidator.js';
 const subactivitySchema = Joi.object({
   _id: Joi.string().custom(objectId).optional(), // Optional for existing subactivities
   name: Joi.string().trim().optional(),
+  dueDate: Joi.date().optional(),
+  frequency: Joi.string().valid('None', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().default('None'),
+  frequencyConfig: frequencyConfigSchema.optional(),
   createdAt: Joi.date().optional(),
   updatedAt: Joi.date().optional(),
 });
@@ -34,22 +37,17 @@ const createActivity = {
   body: Joi.object().keys({
     name: Joi.string().required(),
     sortOrder: Joi.number().required(),
-    dueDate: Joi.date().optional(),
-    frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
-    frequencyConfig: frequencyConfigSchema.optional(),
     subactivities: Joi.array().items(subactivitySchema).optional(),
     // Allow common fields that might be sent by frontend
     id: Joi.string().custom(objectId).optional(),
     createdAt: Joi.date().optional(),
     updatedAt: Joi.date().optional(),
-  }).custom(validateFrequencyWithConfig),
+  }),
 };
 
 const getActivities = {
   query: Joi.object().keys({
     name: Joi.string().allow(''),
-    frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').allow(''),
-    dueDate: Joi.date().allow(''),
     sortBy: Joi.string().pattern(/^[a-zA-Z]+:(asc|desc)$/),
     limit: Joi.number().integer().min(1).default(10),
     page: Joi.number().integer().min(1).default(1),
@@ -70,17 +68,13 @@ const updateActivity = {
     .keys({
       name: Joi.string(),
       sortOrder: Joi.number(),
-      dueDate: Joi.date().optional(),
-      frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
-      frequencyConfig: frequencyConfigSchema.optional(),
       subactivities: Joi.array().items(subactivitySchema).optional(),
       // Allow common fields that might be sent by frontend
       id: Joi.string().custom(objectId).optional(),
       createdAt: Joi.date().optional(),
       updatedAt: Joi.date().optional(),
     })
-    .min(1)
-    .custom(validateFrequencyWithConfig),
+    .min(1),
 };
 
 const deleteActivity = {
@@ -97,14 +91,11 @@ const bulkImportActivities = {
           id: Joi.string().custom(objectId).optional(),
           name: Joi.string().required(),
           sortOrder: Joi.number().required(),
-          dueDate: Joi.date().optional(),
-          frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
-          frequencyConfig: frequencyConfigSchema.optional(),
           subactivities: Joi.array().items(subactivitySchema).optional(),
           // Allow common fields that might be sent by frontend
           createdAt: Joi.date().optional(),
           updatedAt: Joi.date().optional(),
-        }).custom(validateFrequencyWithConfig)
+        })
       )
       .min(1)
       .max(1000)
@@ -118,6 +109,9 @@ const createSubactivity = {
   }),
   body: Joi.object().keys({
     name: Joi.string().trim(),
+    dueDate: Joi.date().optional(),
+    frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().default('None'),
+    frequencyConfig: frequencyConfigSchema.optional(),
   }),
 };
 
@@ -128,6 +122,9 @@ const updateSubactivity = {
   }),
   body: Joi.object().keys({
     name: Joi.string().trim(),
+    dueDate: Joi.date().optional(),
+    frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
+    frequencyConfig: frequencyConfigSchema.optional(),
   }),
 };
 

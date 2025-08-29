@@ -10,11 +10,7 @@ describe('Activity routes', () => {
     test('should create a new activity', async () => {
       const activityData = {
         name: 'Test Activity',
-        sortOrder: 1,
-        frequency: 'Daily',
-        frequencyConfig: {
-          dailyTime: '09:00 AM'
-        }
+        sortOrder: 1
       };
 
       const res = await request(app)
@@ -26,40 +22,57 @@ describe('Activity routes', () => {
         id: expect.anything(),
         name: activityData.name,
         sortOrder: activityData.sortOrder,
-        frequency: activityData.frequency,
-        frequencyConfig: activityData.frequencyConfig,
         createdAt: expect.anything(),
         updatedAt: expect.anything(),
       });
     });
 
-    test('should return 400 if frequency is provided without frequencyConfig', async () => {
+    test('should create activity with subactivities', async () => {
       const activityData = {
-        name: 'Test Activity',
+        name: 'Test Activity with Subactivities',
         sortOrder: 1,
-        frequency: 'Daily'
+        subactivities: [
+          {
+            name: 'Subactivity 1',
+            frequency: 'Daily',
+            frequencyConfig: {
+              dailyTime: '09:00 AM'
+            }
+          },
+          {
+            name: 'Subactivity 2',
+            frequency: 'None'
+          }
+        ]
       };
 
-      await request(app)
+      const res = await request(app)
         .post('/v1/activities')
         .send(activityData)
-        .expect(httpStatus.BAD_REQUEST);
-    });
+        .expect(httpStatus.CREATED);
 
-    test('should return 400 if frequencyConfig is invalid for frequency type', async () => {
-      const activityData = {
-        name: 'Test Activity',
-        sortOrder: 1,
-        frequency: 'Daily',
-        frequencyConfig: {
-          hourlyInterval: 2 // Wrong config for Daily frequency
-        }
-      };
-
-      await request(app)
-        .post('/v1/activities')
-        .send(activityData)
-        .expect(httpStatus.BAD_REQUEST);
+      expect(res.body).toEqual({
+        id: expect.anything(),
+        name: activityData.name,
+        sortOrder: activityData.sortOrder,
+        subactivities: expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.anything(),
+            name: 'Subactivity 1',
+            frequency: 'Daily',
+            frequencyConfig: {
+              dailyTime: '09:00 AM'
+            }
+          }),
+          expect.objectContaining({
+            id: expect.anything(),
+            name: 'Subactivity 2',
+            frequency: 'None'
+          })
+        ]),
+        createdAt: expect.anything(),
+        updatedAt: expect.anything(),
+      });
     });
   });
 
@@ -79,9 +92,9 @@ describe('Activity routes', () => {
       });
     });
 
-    test('should filter activities by frequency', async () => {
+    test('should filter activities by name', async () => {
       const res = await request(app)
-        .get('/v1/activities?frequency=Daily')
+        .get('/v1/activities?name=Test')
         .send()
         .expect(httpStatus.OK);
 

@@ -158,9 +158,6 @@ const bulkImportActivities = async (activities) => {
       };
       
       // Include optional fields if they exist
-      if (activity.dueDate !== undefined) updateData.dueDate = activity.dueDate;
-      if (activity.frequency !== undefined) updateData.frequency = activity.frequency;
-      if (activity.frequencyConfig !== undefined) updateData.frequencyConfig = activity.frequencyConfig;
       if (activity.subactivities !== undefined) updateData.subactivities = activity.subactivities;
       
       return {

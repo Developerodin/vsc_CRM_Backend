@@ -345,8 +345,12 @@ const getClientDetailsOverview = async (clientId, filters = {}, options = {}) =>
           name: activity.name,
           description: activity.description,
           category: activity.category,
-          frequency: activity.frequency,
-          frequencyConfig: activity.frequencyConfig
+          subactivities: activity.subactivities ? activity.subactivities.map(sub => ({
+            id: sub._id,
+            name: sub.name,
+            frequency: sub.frequency || 'None',
+            frequencyConfig: sub.frequencyConfig
+          })) : []
         })),
         byCategory: activities.reduce((acc, activity) => {
           const category = activity.category || 'Uncategorized';
