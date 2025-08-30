@@ -95,7 +95,13 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
         const timeline = await Timeline.create({
           activity: activity._id,
           client: client._id,
-          subactivity: subactivity._id,
+          subactivity: {
+            _id: subactivity._id,
+            name: subactivity.name,
+            frequency: subactivity.frequency,
+            frequencyConfig: subactivity.frequencyConfig,
+            fields: subactivity.fields
+          },
           period,
           dueDate,
           fields: timelineFields,
@@ -132,7 +138,13 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
         const timeline = await Timeline.create({
           activity: activity._id,
           client: client._id,
-          subactivity: subactivity._id,
+          subactivity: {
+            _id: subactivity._id,
+            name: subactivity.name,
+            frequency: subactivity.frequency,
+            frequencyConfig: subactivity.frequencyConfig,
+            fields: subactivity.fields
+          },
           period,
           dueDate,
           fields: timelineFields,
@@ -165,7 +177,13 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
       const timeline = await Timeline.create({
         activity: activity._id,
         client: client._id,
-        subactivity: subactivity._id,
+        subactivity: {
+          _id: subactivity._id,
+          name: subactivity.name,
+          frequency: subactivity.frequency,
+          frequencyConfig: subactivity.frequencyConfig,
+          fields: subactivity.fields
+        },
         period,
         dueDate,
         fields: timelineFields,
@@ -192,7 +210,13 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
         const timeline = await Timeline.create({
           activity: activity._id,
           client: client._id,
-          subactivity: subactivity._id,
+          subactivity: {
+            _id: subactivity._id,
+            name: subactivity.name,
+            frequency: subactivity.frequency,
+            frequencyConfig: subactivity.frequencyConfig,
+            fields: subactivity.fields
+          },
           period,
           dueDate,
           fields: timelineFields,
@@ -220,7 +244,13 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
         const timeline = await Timeline.create({
           activity: activity._id,
           client: client._id,
-          subactivity: subactivity._id,
+          subactivity: {
+            _id: subactivity._id,
+            name: subactivity.name,
+            frequency: subactivity.frequency,
+            frequencyConfig: subactivity.frequencyConfig,
+            fields: subactivity.fields
+          },
           period,
           dueDate,
           fields: timelineFields,
@@ -247,7 +277,13 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
         const timeline = await Timeline.create({
           activity: activity._id,
           client: client._id,
-          subactivity: subactivity._id,
+          subactivity: {
+            _id: subactivity._id,
+            name: subactivity.name,
+            frequency: subactivity.frequency,
+            frequencyConfig: subactivity.frequencyConfig,
+            fields: subactivity.fields
+          },
           period,
           dueDate,
           fields: timelineFields,

@@ -160,10 +160,9 @@ const clientSchema = mongoose.Schema(
         description: 'Reference to the activity'
       },
       subactivity: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Activity.subactivities',
+        type: mongoose.Schema.Types.Mixed,
         required: false,
-        description: 'Reference to specific subactivity (optional)'
+        description: 'Reference to specific subactivity (optional) - stores subactivity data directly'
       },
       assignedDate: {
         type: Date,

@@ -519,7 +519,13 @@ const createClientTimelines = async (client, activities) => {
                 
                 const timeline = new Timeline({
                   activity: activity._id,
-                  subactivity: subactivity._id,
+                  subactivity: {
+                    _id: subactivity._id,
+                    name: subactivity.name,
+                    frequency: subactivity.frequency,
+                    frequencyConfig: subactivity.frequencyConfig,
+                    fields: subactivity.fields
+                  },
                   client: client._id,
                   status: 'pending',
                   startDate: startDate,
@@ -539,7 +545,13 @@ const createClientTimelines = async (client, activities) => {
                 
                 const timeline = new Timeline({
                   activity: activity._id,
-                  subactivity: subactivity._id,
+                  subactivity: {
+                    _id: subactivity._id,
+                    name: subactivity.name,
+                    frequency: subactivity.frequency,
+                    frequencyConfig: subactivity.frequencyConfig,
+                    fields: subactivity.fields
+                  },
                   client: client._id,
                   status: 'pending',
                   startDate: startDate,

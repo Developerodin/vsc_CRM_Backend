@@ -21,9 +21,10 @@ const timelineSchema = mongoose.Schema(
       default: 'pending',
     },
     subactivity: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Activity.subactivities',
+      type: mongoose.Schema.Types.Mixed,
       required: false,
+      // Store subactivity data directly since it's an embedded document
+      // This will contain: { _id, name, frequency, frequencyConfig, fields }
     },
     period: {
       type: String,

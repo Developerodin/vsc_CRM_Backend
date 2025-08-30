@@ -114,13 +114,25 @@ const queryTimelines = async (filter, options, user) => {
 
   const result = await Timeline.paginate(mongoFilter, options);
   
-  // Populate the results with activity, subactivity, and client data
+  // Populate the results with activity and client data
   if (result.results && result.results.length > 0) {
     await Timeline.populate(result.results, [
-      { path: 'activity', select: 'name sortOrder' },
-      { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+      { path: 'activity', select: 'name sortOrder subactivities' },
       { path: 'client', select: 'name email phone' }
     ]);
+    
+    // Process subactivity data since it's stored as embedded document
+    result.results.forEach(timeline => {
+      if (timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
+        // Find the matching subactivity in the populated activity
+        const subactivity = timeline.activity.subactivities.find(
+          sub => sub._id.toString() === timeline.subactivity._id.toString()
+        );
+        if (subactivity) {
+          timeline.subactivity = subactivity;
+        }
+      }
+    });
   }
   
   return result;
@@ -132,11 +144,22 @@ const queryTimelines = async (filter, options, user) => {
  * @returns {Promise<Timeline>}
  */
 const getTimelineById = async (id) => {
-  return Timeline.findById(id).populate([
-    { path: 'activity', select: 'name sortOrder' },
-    { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+  const timeline = await Timeline.findById(id).populate([
+    { path: 'activity', select: 'name sortOrder subactivities' },
     { path: 'client', select: 'name email phone' }
   ]);
+  
+  // Process subactivity data since it's stored as embedded document
+  if (timeline && timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
+    const subactivity = timeline.activity.subactivities.find(
+      sub => sub._id.toString() === timeline.subactivity._id.toString()
+    );
+    if (subactivity) {
+      timeline.subactivity = subactivity;
+    }
+  }
+  
+  return timeline;
 };
 
 /**
@@ -329,7 +352,13 @@ export const createClientTimelines = async (client, activities) => {
               for (const dueDate of timelineDates) {
                 const timeline = new Timeline({
                   activity: activity._id,
-                  subactivity: subactivity._id,
+                  subactivity: {
+                    _id: subactivity._id,
+                    name: subactivity.name,
+                    frequency: subactivity.frequency,
+                    frequencyConfig: subactivity.frequencyConfig,
+                    fields: subactivity.fields
+                  },
                   client: client._id,
                   status: 'pending',
                   dueDate: dueDate,
@@ -360,7 +389,13 @@ export const createClientTimelines = async (client, activities) => {
               
               const timeline = new Timeline({
                 activity: activity._id,
-                subactivity: subactivity._id,
+                subactivity: {
+                  _id: subactivity._id,
+                  name: subactivity.name,
+                  frequency: subactivity.frequency,
+                  frequencyConfig: subactivity.frequencyConfig,
+                  fields: subactivity.fields
+                },
                 client: client._id,
                 status: 'pending',
                 dueDate: dueDate,
@@ -458,15 +493,28 @@ const getPeriodFromDate = (date) => {
  * @returns {Promise<Array>} Array of timeline documents
  */
 export const getClientTimelines = async (clientId, branchId) => {
-  return Timeline.find({
+  const timelines = await Timeline.find({
     client: clientId,
     branch: branchId,
     isDeleted: { $ne: true }
   }).populate([
-    { path: 'activity', select: 'name sortOrder' },
-    { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+    { path: 'activity', select: 'name sortOrder subactivities' },
     { path: 'client', select: 'name email phone' }
   ]);
+  
+  // Process subactivity data since it's stored as embedded document
+  timelines.forEach(timeline => {
+    if (timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
+      const subactivity = timeline.activity.subactivities.find(
+        sub => sub._id.toString() === timeline.subactivity._id.toString()
+      );
+      if (subactivity) {
+        timeline.subactivity = subactivity;
+      }
+    }
+  });
+  
+  return timelines;
 };
 
 /**
@@ -491,14 +539,27 @@ export const getAllTimelines = async (filter = {}, options = {}) => {
     query.sort(options.sortBy);
   }
   
-  // Always populate with activity, subactivity, and client data
+  // Always populate with activity and client data
   query.populate([
-    { path: 'activity', select: 'name sortOrder' },
-    { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+    { path: 'activity', select: 'name sortOrder subactivities' },
     { path: 'client', select: 'name email phone' }
   ]);
   
-  return query.exec();
+  const timelines = await query.exec();
+  
+  // Process subactivity data since it's stored as embedded document
+  timelines.forEach(timeline => {
+    if (timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
+      const subactivity = timeline.activity.subactivities.find(
+        sub => sub._id.toString() === timeline.subactivity._id.toString()
+      );
+      if (subactivity) {
+        timeline.subactivity = subactivity;
+      }
+    }
+  });
+  
+  return timelines;
 };
 
 
@@ -517,11 +578,22 @@ export const updateTimelineStatus = async (timelineId, status) => {
   );
   
   // Populate the updated timeline before returning
-  return Timeline.populate(timeline, [
-    { path: 'activity', select: 'name sortOrder' },
-    { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+  const populatedTimeline = await Timeline.populate(timeline, [
+    { path: 'activity', select: 'name sortOrder subactivities' },
     { path: 'client', select: 'name email phone' }
   ]);
+  
+  // Process subactivity data since it's stored as embedded document
+  if (populatedTimeline && populatedTimeline.subactivity && populatedTimeline.subactivity._id && populatedTimeline.activity && populatedTimeline.activity.subactivities) {
+    const subactivity = populatedTimeline.activity.subactivities.find(
+      sub => sub._id.toString() === populatedTimeline.subactivity._id.toString()
+    );
+    if (subactivity) {
+      populatedTimeline.subactivity = subactivity;
+    }
+  }
+  
+  return populatedTimeline;
 };
 
 export {

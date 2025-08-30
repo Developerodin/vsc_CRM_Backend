@@ -118,7 +118,11 @@ const checkTimelines = async (testClient) => {
       timelines.forEach((timeline, index) => {
         console.log(`\n${index + 1}. Timeline ID: ${timeline._id}`);
         console.log(`   Activity: ${timeline.activity}`);
-        console.log(`   Subactivity: ${timeline.subactivity || 'None'}`);
+        if (timeline.subactivity && typeof timeline.subactivity === 'object') {
+          console.log(`   Subactivity: ${timeline.subactivity.name || 'Unnamed'} (ID: ${timeline.subactivity._id})`);
+        } else {
+          console.log(`   Subactivity: ${timeline.subactivity || 'None'}`);
+        }
         console.log(`   Status: ${timeline.status}`);
         console.log(`   Due Date: ${timeline.dueDate}`);
         console.log(`   Start Date: ${timeline.startDate}`);
