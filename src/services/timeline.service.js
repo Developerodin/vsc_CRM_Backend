@@ -708,7 +708,7 @@ export const updateTimelineStatus = async (timelineId, status) => {
  * @param {String} [financialYear] - Financial year (e.g., '2025-2026'). If not provided, uses current financial year
  * @returns {Promise<Object>} Object containing frequency periods and their details
  */
-export const getFrequencyPeriods = async (frequency, financialYear = null) => {
+const getFrequencyPeriods = async (frequency, financialYear = null) => {
   // Get current financial year if not provided
   if (!financialYear) {
     const currentDate = new Date();
