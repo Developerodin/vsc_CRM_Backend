@@ -743,27 +743,30 @@ const getFrequencyPeriods = async (frequency, financialYear = null) => {
       break;
 
     case 'Quarterly':
-      // Generate quarterly periods for the financial year
-      const quarters = [
-        { name: 'Q1', months: [3, 4, 5], startMonth: 3, endMonth: 5 },      // April, May, June
-        { name: 'Q2', months: [6, 7, 8], startMonth: 6, endMonth: 8 },      // July, August, September
-        { name: 'Q3', months: [9, 10, 11], startMonth: 9, endMonth: 11 },   // October, November, December
-        { name: 'Q4', months: [0, 1, 2], startMonth: 0, endMonth: 2 }       // January, February, March
+      // For quarterly frequency, return monthly periods (April, July, October, January)
+      // These are the key months when quarterly tasks are due
+      const quarterlyMonths = [
+        { monthIndex: 3, monthName: 'April', year: startYear },      // April
+        { monthIndex: 6, monthName: 'July', year: startYear },       // July  
+        { monthIndex: 9, monthName: 'October', year: startYear },    // October
+        { monthIndex: 0, monthName: 'January', year: endYear }       // January (next year)
       ];
 
-      for (const quarter of quarters) {
-        const period = `${quarter.name}-${financialYear}`;
-        const startDate = new Date(startYear, quarter.startMonth, 1);
-        const endDate = new Date(endYear, quarter.endMonth + 1, 0); // Last day of the last month
+      for (const monthData of quarterlyMonths) {
+        const period = `${monthData.monthName}-${monthData.year}`;
+        const startDate = new Date(monthData.year, monthData.monthIndex, 1);
+        const endDate = new Date(monthData.year, monthData.monthIndex + 1, 0); // Last day of the month
         
         periods.push({
           period,
-          quarter: quarter.name,
-          months: quarter.months.map(m => getMonthName(m)),
+          month: monthData.monthName,
+          year: monthData.year,
+          monthIndex: monthData.monthIndex,
           startDate,
           endDate,
-          displayName: `${quarter.name} ${financialYear}`,
-          financialYear
+          displayName: `${monthData.monthName} ${monthData.year}`,
+          financialYear,
+          quarter: getQuarterFromMonth(monthData.monthIndex)
         });
       }
       break;
@@ -807,6 +810,18 @@ const getMonthName = (monthIndex) => {
 };
 
 /**
+ * Helper function to get quarter from month
+ * @param {number} monthIndex - Month index (0-11)
+ * @returns {string} - Quarter (Q1, Q2, Q3, Q4)
+ */
+const getQuarterFromMonth = (monthIndex) => {
+  if (monthIndex >= 3 && monthIndex <= 5) return 'Q1';      // April, May, June
+  if (monthIndex >= 6 && monthIndex <= 8) return 'Q2';      // July, August, September
+  if (monthIndex >= 9 && monthIndex <= 11) return 'Q3';     // October, November, December
+  return 'Q4';                                               // January, February, March
+};
+
+/**
  * Helper function to get frequency description
  * @param {string} frequency - Frequency type
  * @param {string} financialYear - Financial year
@@ -817,7 +832,7 @@ const getFrequencyDescription = (frequency, financialYear) => {
     case 'Monthly':
       return `Monthly periods for financial year ${financialYear} (April ${financialYear.split('-')[0]} to March ${financialYear.split('-')[1]})`;
     case 'Quarterly':
-      return `Quarterly periods for financial year ${financialYear}`;
+      return `Monthly periods for quarterly frequency in financial year ${financialYear} (April, July, October, January)`;
     case 'Yearly':
       return `Financial year ${financialYear}`;
     default:
