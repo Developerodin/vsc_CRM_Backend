@@ -10,6 +10,7 @@ import * as clientAuthService from './clientAuth.service.js';
 import * as groupService from './group.service.js';
 import * as roleService from './role.service.js';
 import * as timelineService from './timeline.service.js';
+import * as timelineBulkImportService from './timelineBulkImport.service.js';
 import * as dashboardService from './dashboard.service.js';
 import * as fileManagerService from './fileManager.service.js';
 import * as emailService from './email.service.js';
@@ -28,6 +29,7 @@ export {
   groupService,
   roleService,
   timelineService,
+  timelineBulkImportService,
   dashboardService,
   fileManagerService,
   emailService,
