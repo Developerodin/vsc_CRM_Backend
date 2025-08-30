@@ -434,8 +434,13 @@ export const createClientTimelines = async (client, activities) => {
           console.log(`🔍 [TIMELINE SERVICE] Processing subactivity: ${subactivity.name} (ID: ${subactivity._id})`);
           
           // Check if specific subactivity is assigned to this client
-          const isAssignedSubactivity = activityItem.subactivity && 
-            activityItem.subactivity.toString() === subactivity._id.toString();
+          let isAssignedSubactivity = false;
+          
+          if (activityItem.subactivity) {
+            // Handle both object and ObjectId formats
+            const clientSubactivityId = activityItem.subactivity._id || activityItem.subactivity;
+            isAssignedSubactivity = clientSubactivityId.toString() === subactivity._id.toString();
+          }
           
           console.log(`🔍 [TIMELINE SERVICE] Subactivity assignment check:`, {
             clientSubactivity: activityItem.subactivity,

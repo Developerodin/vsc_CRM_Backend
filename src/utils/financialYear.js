@@ -90,14 +90,14 @@ export const calculateNextOccurrence = (frequencyConfig, frequency, startDate = 
       
     case 'Monthly':
       if (frequencyConfig.monthlyDay) {
+        // Always move to next month for monthly frequency
+        nextDate.setMonth(nextDate.getMonth() + 1);
         nextDate.setDate(frequencyConfig.monthlyDay);
-        if (nextDate <= startDate) {
-          nextDate.setMonth(nextDate.getMonth() + 1);
-          nextDate.setDate(frequencyConfig.monthlyDay);
-        }
         
         if (frequencyConfig.monthlyTime) {
-          const [hours, minutes] = parse12HourTime(frequencyConfig.monthlyTime);
+          const [hours, minutes] = frequencyConfig.monthlyTime.includes('AM') || frequencyConfig.monthlyTime.includes('PM') 
+            ? parse12HourTime(frequencyConfig.monthlyTime)
+            : parse24HourTime(frequencyConfig.monthlyTime);
           nextDate.setHours(hours, minutes, 0, 0);
         }
       }
@@ -127,9 +127,14 @@ export const calculateNextOccurrence = (frequencyConfig, frequency, startDate = 
         }
         
         if (frequencyConfig.quarterlyTime) {
-          const [hours, minutes] = parse12HourTime(frequencyConfig.quarterlyTime);
+          const [hours, minutes] = frequencyConfig.quarterlyTime.includes('AM') || frequencyConfig.quarterlyTime.includes('PM') 
+            ? parse12HourTime(frequencyConfig.quarterlyTime)
+            : parse24HourTime(frequencyConfig.quarterlyTime);
           nextDate.setHours(hours, minutes, 0, 0);
         }
+      } else {
+        // Default quarterly: every 3 months
+        nextDate.setMonth(nextDate.getMonth() + 3);
       }
       break;
       
@@ -209,8 +214,8 @@ export const generateTimelineDates = (frequencyConfig, frequency) => {
     dates.push(new Date(currentDate));
     currentDate = calculateNextOccurrence(frequencyConfig, frequency, currentDate);
     
-    // Prevent infinite loop
-    if (dates.length > 1000) break;
+    // Prevent infinite loop - for monthly should be ~12, quarterly ~4, yearly ~1
+    if (dates.length > 50) break;
   }
   
   return dates;

@@ -238,11 +238,13 @@ clientSchema.pre('save', function(next) {
   // Track original activities for comparison in post-save
   if (this.isNew) {
     // For new clients, all activities are new
+    this._isNewClient = true;
     this._newActivities = this.activities || [];
+    console.log(`🔍 [CLIENT PRE-SAVE] New client detected: ${this.name}, will create timelines for ${this._newActivities.length} activities`);
   } else if (this.isModified('activities')) {
     // For existing clients, find newly added activities
-    const originalDoc = this.constructor.findById(this._id).select('activities');
     this._checkForNewActivities = true;
+    console.log(`🔍 [CLIENT PRE-SAVE] Existing client modified: ${this.name}, will check for new activities`);
   }
   next();
 });
@@ -301,7 +303,7 @@ clientSchema.post('save', async function(doc) {
     // Create timelines only for new activities or new clients
     let activitiesToProcess = [];
 
-    if (doc.isNew) {
+    if (doc._isNewClient) {
       // New client - create timelines for all activities
       activitiesToProcess = doc.activities || [];
       console.log(`🆕 [CLIENT POST-SAVE] New client: ${doc.name}, processing ${activitiesToProcess.length} activities`);
