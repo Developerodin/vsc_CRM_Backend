@@ -255,36 +255,62 @@ const bulkImportTimelines = async (timelinesData) => {
  * @returns {Promise<Array>} Array of created timeline documents
  */
 export const createClientTimelines = async (client, activities) => {
+  console.log(`🔍 [TIMELINE SERVICE] createClientTimelines called for client: ${client.name}`);
+  console.log(`📊 [TIMELINE SERVICE] Activities count: ${activities?.length || 0}`);
+  
   if (!activities || activities.length === 0) {
+    console.log(`⚠️ [TIMELINE SERVICE] No activities provided, returning empty array`);
     return [];
   }
 
   const timelinePromises = [];
   const { yearString: financialYear } = getCurrentFinancialYear();
+  console.log(`📅 [TIMELINE SERVICE] Financial year: ${financialYear}`);
 
   for (const activityItem of activities) {
     try {
+      console.log(`🔍 [TIMELINE SERVICE] Processing activity: ${activityItem.activity}`);
+      
       // Get the full activity document to check subactivities
       const Activity = mongoose.model('Activity');
       const activity = await Activity.findById(activityItem.activity);
       
       if (!activity) {
-        console.warn(`Activity ${activityItem.activity} not found for client ${client.name}`);
+        console.warn(`⚠️ [TIMELINE SERVICE] Activity ${activityItem.activity} not found for client ${client.name}`);
         continue;
       }
+      
+      console.log(`✅ [TIMELINE SERVICE] Found activity: ${activity.name}`);
+      console.log(`📊 [TIMELINE SERVICE] Activity has ${activity.subactivities?.length || 0} subactivities`);
 
       // Handle activities with subactivities
       if (activity.subactivities && activity.subactivities.length > 0) {
+        console.log(`🔍 [TIMELINE SERVICE] Processing ${activity.subactivities.length} subactivities`);
+        
         for (const subactivity of activity.subactivities) {
+          console.log(`🔍 [TIMELINE SERVICE] Processing subactivity: ${subactivity.name} (ID: ${subactivity._id})`);
+          
           // Check if specific subactivity is assigned to this client
           const isAssignedSubactivity = activityItem.subactivity && 
             activityItem.subactivity.toString() === subactivity._id.toString();
           
+          console.log(`🔍 [TIMELINE SERVICE] Subactivity assignment check:`, {
+            clientSubactivity: activityItem.subactivity,
+            subactivityId: subactivity._id.toString(),
+            isAssigned: isAssignedSubactivity,
+            shouldProcess: !activityItem.subactivity || isAssignedSubactivity
+          });
+          
           // If no specific subactivity is assigned, or this is the assigned one
           if (!activityItem.subactivity || isAssignedSubactivity) {
             if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
+              console.log(`🔄 [TIMELINE SERVICE] Creating recurring timelines for subactivity: ${subactivity.name}`);
+              console.log(`📅 [TIMELINE SERVICE] Frequency: ${subactivity.frequency}`);
+              console.log(`⚙️ [TIMELINE SERVICE] Frequency config:`, subactivity.frequencyConfig);
+              
               // Create recurring timelines for subactivities with frequency
               const timelineDates = generateTimelineDates(subactivity.frequencyConfig, subactivity.frequency);
+              console.log(`📅 [TIMELINE SERVICE] Generated ${timelineDates.length} timeline dates`);
               
               for (const dueDate of timelineDates) {
                 const timeline = new Timeline({
@@ -303,9 +329,11 @@ export const createClientTimelines = async (client, activities) => {
                   period: getPeriodFromDate(dueDate)
                 });
                 
+                console.log(`📝 [TIMELINE SERVICE] Created timeline object for date: ${dueDate.toDateString()}`);
                 timelinePromises.push(timeline.save());
               }
             } else {
+              console.log(`🔄 [TIMELINE SERVICE] Creating one-time timeline for subactivity: ${subactivity.name}`);
               // Create one-time timeline for subactivities without frequency
               const dueDate = new Date();
               dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
@@ -361,11 +389,13 @@ export const createClientTimelines = async (client, activities) => {
   
   // Wait for all timelines to be created
   if (timelinePromises.length > 0) {
+    console.log(`⏳ [TIMELINE SERVICE] Waiting for ${timelinePromises.length} timelines to be saved...`);
     const createdTimelines = await Promise.all(timelinePromises);
-    console.log(`Created ${createdTimelines.length} timelines for client ${client.name}`);
+    console.log(`✅ [TIMELINE SERVICE] Successfully created ${createdTimelines.length} timelines for client ${client.name}`);
     return createdTimelines;
   }
   
+  console.log(`⚠️ [TIMELINE SERVICE] No timelines to create for client ${client.name}`);
   return [];
 };
 

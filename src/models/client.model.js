@@ -287,11 +287,19 @@ clientSchema.post('save', async function(doc) {
 
     // Create timelines for activities using the timeline service
     if (doc.activities && doc.activities.length > 0) {
+      console.log(`🔄 [CLIENT POST-SAVE] Starting timeline creation for client: ${doc.name}`);
+      console.log(`📊 [CLIENT POST-SAVE] Client has ${doc.activities.length} activities`);
+      
       try {
-        await createClientTimelines(doc, doc.activities);
+        console.log(`🚀 [CLIENT POST-SAVE] Calling createClientTimelines service...`);
+        const createdTimelines = await createClientTimelines(doc, doc.activities);
+        console.log(`✅ [CLIENT POST-SAVE] Successfully created ${createdTimelines.length} timelines`);
       } catch (error) {
-        console.error('Error creating timelines for client:', error);
+        console.error('❌ [CLIENT POST-SAVE] Error creating timelines for client:', error);
+        console.error('❌ [CLIENT POST-SAVE] Error stack:', error.stack);
       }
+    } else {
+      console.log(`⚠️ [CLIENT POST-SAVE] No activities found for client: ${doc.name}`);
     }
   } catch (error) {
     console.error('Error in client post-save middleware:', error);
