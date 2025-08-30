@@ -80,12 +80,97 @@ const createTimeline = async (timelineBody, user = null) => {
 const queryTimelines = async (filter, options, user) => {
   const mongoFilter = { ...filter };
 
+  // Clean up empty filters
   if (mongoFilter.status === '') {
     delete mongoFilter.status;
   }
 
   if (mongoFilter.activityName === '') {
     delete mongoFilter.activityName;
+  }
+
+  // Handle activity filter (can be activity ID or activity name)
+  if (mongoFilter.activity) {
+    // If it's an ObjectId, keep as is
+    if (mongoose.Types.ObjectId.isValid(mongoFilter.activity)) {
+      // Keep the activity filter as is
+    } else {
+      // If it's a string (activity name), we'll need to handle this differently
+      // For now, we'll search by activity name in the populated data
+      delete mongoFilter.activity;
+      mongoFilter['$or'] = [
+        { 'activity': { $exists: true } } // We'll filter this after population
+      ];
+    }
+  }
+
+  // Handle subactivity filter
+  if (mongoFilter.subactivity) {
+    if (mongoose.Types.ObjectId.isValid(mongoFilter.subactivity)) {
+      // If it's an ObjectId, search in the subactivity._id field
+      mongoFilter['subactivity._id'] = mongoFilter.subactivity;
+      delete mongoFilter.subactivity;
+    } else {
+      // If it's a string (subactivity name), search in the subactivity.name field
+      mongoFilter['subactivity.name'] = { $regex: mongoFilter.subactivity, $options: 'i' };
+      delete mongoFilter.subactivity;
+    }
+  }
+
+  // Handle period filter
+  if (mongoFilter.period) {
+    // Support exact match or partial match
+    if (mongoFilter.period.includes('*') || mongoFilter.period.includes('%')) {
+      // Wildcard search - convert * or % to regex
+      const regexPattern = mongoFilter.period.replace(/[*%]/g, '.*');
+      mongoFilter.period = { $regex: regexPattern, $options: 'i' };
+    } else {
+      // Exact match
+      mongoFilter.period = { $regex: mongoFilter.period, $options: 'i' };
+    }
+  }
+
+  // Handle frequency filter
+  if (mongoFilter.frequency) {
+    // Support exact match or partial match
+    if (mongoFilter.frequency.includes('*') || mongoFilter.frequency.includes('%')) {
+      // Wildcard search - convert * or % to regex
+      const regexPattern = mongoFilter.frequency.replace(/[*%]/g, '.*');
+      mongoFilter.frequency = { $regex: regexPattern, $options: 'i' };
+    } else {
+      // Exact match
+      mongoFilter.frequency = { $regex: mongoFilter.frequency, $options: 'i' };
+    }
+  }
+
+  // Handle date range filters
+  if (mongoFilter.startDate || mongoFilter.endDate) {
+    mongoFilter.dueDate = {};
+    if (mongoFilter.startDate) {
+      mongoFilter.dueDate.$gte = new Date(mongoFilter.startDate);
+      delete mongoFilter.startDate;
+    }
+    if (mongoFilter.endDate) {
+      mongoFilter.dueDate.$lte = new Date(mongoFilter.endDate);
+      delete mongoFilter.endDate;
+    }
+  }
+
+  // Handle financial year filter
+  if (mongoFilter.financialYear) {
+    mongoFilter.financialYear = { $regex: mongoFilter.financialYear, $options: 'i' };
+  }
+
+  // Handle client filter
+  if (mongoFilter.client) {
+    if (mongoose.Types.ObjectId.isValid(mongoFilter.client)) {
+      // Keep as is if it's an ObjectId
+    } else {
+      // If it's a string (client name), we'll filter after population
+      delete mongoFilter.client;
+      mongoFilter['$or'] = mongoFilter['$or'] || [];
+      mongoFilter['$or'].push({ 'client': { $exists: true } });
+    }
   }
 
   // Apply branch filtering based on user's access
@@ -133,6 +218,27 @@ const queryTimelines = async (filter, options, user) => {
         }
       }
     });
+
+    // Apply post-query filters for text-based searches
+    if (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) {
+      // Filter by activity name
+      result.results = result.results.filter(timeline => 
+        timeline.activity && timeline.activity.name && 
+        timeline.activity.name.toLowerCase().includes(filter.activity.toLowerCase())
+      );
+    }
+
+    if (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
+      // Filter by client name
+      result.results = result.results.filter(timeline => 
+        timeline.client && timeline.client.name && 
+        timeline.client.name.toLowerCase().includes(filter.client.toLowerCase())
+      );
+    }
+
+    // Update total count after filtering
+    result.totalResults = result.results.length;
+    result.totalPages = Math.ceil(result.totalResults / (options.limit || 10));
   }
   
   return result;
