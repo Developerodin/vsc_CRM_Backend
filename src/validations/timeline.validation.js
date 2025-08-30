@@ -33,6 +33,13 @@ const getTimelines = {
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
+    // New filter parameters
+    subactivity: Joi.string().custom(objectId),
+    frequency: Joi.string(),
+    period: Joi.string().trim(),
+    startDate: Joi.date().iso(),
+    endDate: Joi.date().iso(),
+    financialYear: Joi.string().trim(),
   }),
 };
 
