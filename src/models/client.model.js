@@ -308,22 +308,48 @@ clientSchema.post('save', async function(doc) {
       activitiesToProcess = doc.activities || [];
       console.log(`🆕 [CLIENT POST-SAVE] New client: ${doc.name}, processing ${activitiesToProcess.length} activities`);
     } else if (doc._checkForNewActivities && doc.activities && doc.activities.length > 0) {
-      // Existing client - only process newly added activities
+      // Existing client - process new activities AND new subactivities within existing activities
       const originalClient = await doc.constructor.findById(doc._id).select('activities');
-      const originalActivityIds = originalClient ? originalClient.activities.map(a => a.activity.toString()) : [];
+      const originalActivities = originalClient ? originalClient.activities : [];
+      
+      // Create a map of original activities and their subactivities
+      const originalActivityMap = new Map();
+      originalActivities.forEach(activity => {
+        const activityId = activity.activity.toString();
+        const subactivityId = activity.subactivity ? 
+          (activity.subactivity._id ? activity.subactivity._id.toString() : activity.subactivity.toString()) : null;
+        
+        if (!originalActivityMap.has(activityId)) {
+          originalActivityMap.set(activityId, new Set());
+        }
+        if (subactivityId) {
+          originalActivityMap.get(activityId).add(subactivityId);
+        }
+      });
       
       activitiesToProcess = doc.activities.filter(activity => {
         const activityId = activity.activity.toString();
-        const isNewActivity = !originalActivityIds.includes(activityId);
+        const subactivityId = activity.subactivity ? 
+          (activity.subactivity._id ? activity.subactivity._id.toString() : activity.subactivity.toString()) : null;
+        
+        // Check if this is a completely new activity
+        const isNewActivity = !originalActivityMap.has(activityId);
+        
+        // Check if this is a new subactivity for an existing activity
+        const isNewSubactivity = originalActivityMap.has(activityId) && 
+          subactivityId && 
+          !originalActivityMap.get(activityId).has(subactivityId);
         
         if (isNewActivity) {
           console.log(`➕ [CLIENT POST-SAVE] Found new activity: ${activityId} for client: ${doc.name}`);
+        } else if (isNewSubactivity) {
+          console.log(`➕ [CLIENT POST-SAVE] Found new subactivity: ${subactivityId} for existing activity: ${activityId} for client: ${doc.name}`);
         }
         
-        return isNewActivity;
+        return isNewActivity || isNewSubactivity;
       });
       
-      console.log(`🔄 [CLIENT POST-SAVE] Client update: ${doc.name}, found ${activitiesToProcess.length} new activities out of ${doc.activities.length} total`);
+      console.log(`🔄 [CLIENT POST-SAVE] Client update: ${doc.name}, found ${activitiesToProcess.length} new activity/subactivity combinations out of ${doc.activities.length} total`);
     }
 
     if (activitiesToProcess.length > 0) {
@@ -331,22 +357,36 @@ clientSchema.post('save', async function(doc) {
         // Import Timeline model to check for existing timelines
         const { Timeline } = await import('./index.js');
         
-        // Filter out activities that already have timelines
+        // Filter out activities that already have timelines for the specific subactivity
         const activitiesNeedingTimelines = [];
         
         for (const activity of activitiesToProcess) {
-          const existingTimeline = await Timeline.findOne({
+          const subactivityId = activity.subactivity ? 
+            (activity.subactivity._id ? activity.subactivity._id.toString() : activity.subactivity.toString()) : null;
+          
+          // Build query to check for existing timelines
+          const query = {
             client: doc._id,
-            activity: activity.activity,
-            // Check for subactivity match if it exists
-            ...(activity.subactivity ? { 'subactivity._id': activity.subactivity._id || activity.subactivity } : {})
-          });
+            activity: activity.activity
+          };
+          
+          // Add subactivity filter if it exists
+          if (subactivityId) {
+            query['subactivity._id'] = subactivityId;
+          } else {
+            // If no subactivity, check for timelines with null subactivity
+            query['subactivity'] = null;
+          }
+          
+          const existingTimeline = await Timeline.findOne(query);
           
           if (!existingTimeline) {
             activitiesNeedingTimelines.push(activity);
-            console.log(`📋 [CLIENT POST-SAVE] Activity ${activity.activity} needs timeline creation`);
+            const subactivityInfo = subactivityId ? ` with subactivity ${subactivityId}` : ' without subactivity';
+            console.log(`📋 [CLIENT POST-SAVE] Activity ${activity.activity}${subactivityInfo} needs timeline creation`);
           } else {
-            console.log(`⏭️ [CLIENT POST-SAVE] Activity ${activity.activity} already has timeline, skipping`);
+            const subactivityInfo = subactivityId ? ` with subactivity ${subactivityId}` : ' without subactivity';
+            console.log(`⏭️ [CLIENT POST-SAVE] Activity ${activity.activity}${subactivityInfo} already has timeline, skipping`);
           }
         }
         
