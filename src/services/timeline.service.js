@@ -113,6 +113,16 @@ const queryTimelines = async (filter, options, user) => {
   }
 
   const result = await Timeline.paginate(mongoFilter, options);
+  
+  // Populate the results with activity, subactivity, and client data
+  if (result.results && result.results.length > 0) {
+    await Timeline.populate(result.results, [
+      { path: 'activity', select: 'name sortOrder' },
+      { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+      { path: 'client', select: 'name email phone' }
+    ]);
+  }
+  
   return result;
 };
 
@@ -122,7 +132,11 @@ const queryTimelines = async (filter, options, user) => {
  * @returns {Promise<Timeline>}
  */
 const getTimelineById = async (id) => {
-  return Timeline.findById(id);
+  return Timeline.findById(id).populate([
+    { path: 'activity', select: 'name sortOrder' },
+    { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+    { path: 'client', select: 'name email phone' }
+  ]);
 };
 
 /**
@@ -326,10 +340,16 @@ export const createClientTimelines = async (client, activities) => {
                   branch: client.branch,
                   timelineType: 'recurring',
                   financialYear: financialYear,
-                  period: getPeriodFromDate(dueDate)
+                  period: getPeriodFromDate(dueDate),
+                  fields: subactivity.fields ? subactivity.fields.map(field => ({
+                    fileName: field.name,
+                    fieldType: field.type,
+                    fieldValue: null // Empty value as requested
+                  })) : []
                 });
                 
                 console.log(`📝 [TIMELINE SERVICE] Created timeline object for date: ${dueDate.toDateString()}`);
+                console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields?.length || 0} fields from subactivity`);
                 timelinePromises.push(timeline.save());
               }
             } else {
@@ -351,9 +371,15 @@ export const createClientTimelines = async (client, activities) => {
                 branch: client.branch,
                 timelineType: 'oneTime',
                 financialYear: financialYear,
-                period: getPeriodFromDate(dueDate)
+                period: getPeriodFromDate(dueDate),
+                fields: subactivity.fields ? subactivity.fields.map(field => ({
+                  fileName: field.name,
+                  fieldType: field.type,
+                  fieldValue: null // Empty value as requested
+                })) : []
               });
               
+              console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields?.length || 0} fields from subactivity`);
               timelinePromises.push(timeline.save());
             }
           }
@@ -376,9 +402,11 @@ export const createClientTimelines = async (client, activities) => {
           branch: client.branch,
           timelineType: 'oneTime',
           financialYear: financialYear,
-          period: getPeriodFromDate(dueDate)
+          period: getPeriodFromDate(dueDate),
+          fields: [] // No fields for legacy activities
         });
         
+        console.log(`📋 [TIMELINE SERVICE] No fields to copy for legacy activity`);
         timelinePromises.push(timeline.save());
       }
     } catch (error) {
@@ -434,8 +462,46 @@ export const getClientTimelines = async (clientId, branchId) => {
     client: clientId,
     branch: branchId,
     isDeleted: { $ne: true }
-  }).populate('activity subactivity client');
+  }).populate([
+    { path: 'activity', select: 'name sortOrder' },
+    { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+    { path: 'client', select: 'name email phone' }
+  ]);
 };
+
+/**
+ * Get all timelines with populated data
+ * @param {Object} filter - Filter criteria
+ * @param {Object} options - Query options
+ * @returns {Promise<Array>} Array of timeline documents with populated data
+ */
+export const getAllTimelines = async (filter = {}, options = {}) => {
+  const query = Timeline.find(filter);
+  
+  // Apply pagination if provided
+  if (options.limit) {
+    query.limit(options.limit);
+  }
+  if (options.skip) {
+    query.skip(options.skip);
+  }
+  
+  // Apply sorting if provided
+  if (options.sortBy) {
+    query.sort(options.sortBy);
+  }
+  
+  // Always populate with activity, subactivity, and client data
+  query.populate([
+    { path: 'activity', select: 'name sortOrder' },
+    { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+    { path: 'client', select: 'name email phone' }
+  ]);
+  
+  return query.exec();
+};
+
+
 
 /**
  * Update timeline status
@@ -444,11 +510,18 @@ export const getClientTimelines = async (clientId, branchId) => {
  * @returns {Promise<Object>} Updated timeline document
  */
 export const updateTimelineStatus = async (timelineId, status) => {
-  return Timeline.findByIdAndUpdate(
+  const timeline = await Timeline.findByIdAndUpdate(
     timelineId,
     { status },
     { new: true, runValidators: true }
   );
+  
+  // Populate the updated timeline before returning
+  return Timeline.populate(timeline, [
+    { path: 'activity', select: 'name sortOrder' },
+    { path: 'subactivity', select: 'name frequency frequencyConfig fields' },
+    { path: 'client', select: 'name email phone' }
+  ]);
 };
 
 export {
