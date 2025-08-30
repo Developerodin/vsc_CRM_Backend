@@ -108,7 +108,7 @@ const queryTimelines = async (filter, options, user) => {
   if (mongoFilter.subactivity) {
     if (mongoose.Types.ObjectId.isValid(mongoFilter.subactivity)) {
       // If it's an ObjectId, search in the subactivity._id field
-      mongoFilter['subactivity._id'] = mongoFilter.subactivity;
+      mongoFilter['subactivity._id'] = new mongoose.Types.ObjectId(mongoFilter.subactivity);
       delete mongoFilter.subactivity;
     } else {
       // If it's a string (subactivity name), search in the subactivity.name field
