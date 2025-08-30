@@ -234,7 +234,7 @@ clientSchema.pre(['updateOne', 'findOneAndUpdate'], function(next) {
 });
 
 // Pre-save middleware to track new activities
-clientSchema.pre('save', function(next) {
+clientSchema.pre('save', async function(next) {
   // Track original activities for comparison in post-save
   if (this.isNew) {
     // For new clients, all activities are new
@@ -242,9 +242,17 @@ clientSchema.pre('save', function(next) {
     this._newActivities = this.activities || [];
     console.log(`🔍 [CLIENT PRE-SAVE] New client detected: ${this.name}, will create timelines for ${this._newActivities.length} activities`);
   } else if (this.isModified('activities')) {
-    // For existing clients, find newly added activities
-    this._checkForNewActivities = true;
-    console.log(`🔍 [CLIENT PRE-SAVE] Existing client modified: ${this.name}, will check for new activities`);
+    // For existing clients, get the original state from database
+    try {
+      const originalClient = await this.constructor.findById(this._id).select('activities');
+      this._originalActivities = originalClient ? originalClient.activities : [];
+      this._checkForNewActivities = true;
+      console.log(`🔍 [CLIENT PRE-SAVE] Existing client modified: ${this.name}, storing ${this._originalActivities.length} original activities`);
+    } catch (error) {
+      console.error('❌ [CLIENT PRE-SAVE] Error fetching original client:', error);
+      this._originalActivities = [];
+      this._checkForNewActivities = true;
+    }
   }
   next();
 });
@@ -309,8 +317,9 @@ clientSchema.post('save', async function(doc) {
       console.log(`🆕 [CLIENT POST-SAVE] New client: ${doc.name}, processing ${activitiesToProcess.length} activities`);
     } else if (doc._checkForNewActivities && doc.activities && doc.activities.length > 0) {
       // Existing client - process new activities AND new subactivities within existing activities
-      const originalClient = await doc.constructor.findById(doc._id).select('activities');
-      const originalActivities = originalClient ? originalClient.activities : [];
+      const originalActivities = doc._originalActivities || [];
+      
+      console.log(`🔍 [CLIENT POST-SAVE] Comparing ${doc.activities.length} current activities with ${originalActivities.length} original activities`);
       
       // Create a map of original activities and their subactivities
       const originalActivityMap = new Map();
@@ -326,6 +335,8 @@ clientSchema.post('save', async function(doc) {
           originalActivityMap.get(activityId).add(subactivityId);
         }
       });
+      
+      console.log(`🔍 [CLIENT POST-SAVE] Original activity map has ${originalActivityMap.size} activities`);
       
       activitiesToProcess = doc.activities.filter(activity => {
         const activityId = activity.activity.toString();
@@ -344,6 +355,8 @@ clientSchema.post('save', async function(doc) {
           console.log(`➕ [CLIENT POST-SAVE] Found new activity: ${activityId} for client: ${doc.name}`);
         } else if (isNewSubactivity) {
           console.log(`➕ [CLIENT POST-SAVE] Found new subactivity: ${subactivityId} for existing activity: ${activityId} for client: ${doc.name}`);
+        } else {
+          console.log(`⏭️ [CLIENT POST-SAVE] Existing combination: activity ${activityId}, subactivity ${subactivityId || 'none'}`);
         }
         
         return isNewActivity || isNewSubactivity;
