@@ -5,6 +5,46 @@ import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 import { createTimelinesForClient } from './timelineCreation.service.js';
 
 /**
+ * Helper function to get month name from month index
+ * @param {number} monthIndex - Month index (0-11)
+ * @returns {string} - Month name
+ */
+const getMonthName = (monthIndex) => {
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  return months[monthIndex];
+};
+
+/**
+ * Helper function to get quarter from month
+ * @param {number} monthIndex - Month index (0-11)
+ * @returns {string} - Quarter (Q1, Q2, Q3, Q4)
+ */
+const getQuarterFromMonth = (monthIndex) => {
+  if (monthIndex >= 3 && monthIndex <= 5) return 'Q1';      // April, May, June
+  if (monthIndex >= 6 && monthIndex <= 8) return 'Q2';      // July, August, September
+  if (monthIndex >= 9 && monthIndex <= 11) return 'Q3';     // October, November, December
+  return 'Q4';                                               // January, February, March
+};
+
+/**
+ * Helper function to get quarter start month index
+ * @param {string} quarter - Quarter (Q1, Q2, Q3, Q4)
+ * @returns {number} - Month index (0-11)
+ */
+const getQuarterStartMonth = (quarter) => {
+  switch (quarter) {
+    case 'Q1': return 3;  // April
+    case 'Q2': return 6;  // July
+    case 'Q3': return 9;  // October
+    case 'Q4': return 0;  // January
+    default: return 3;    // April
+  }
+};
+
+/**
  * Create a client
  * @param {Object} clientBody
  * @param {Object} user - User object with role information (optional)
@@ -517,6 +557,37 @@ const createClientTimelines = async (client, activities) => {
                 const endDate = new Date();
                 endDate.setFullYear(endDate.getFullYear() + 1);
                 
+                // Generate period based on frequency
+                let period = null;
+                let dueDate = null;
+                const currentDate = new Date();
+                const currentYear = currentDate.getFullYear();
+                const financialYearStart = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1;
+                const financialYearEnd = financialYearStart + 1;
+                const financialYear = `${financialYearStart}-${financialYearEnd}`;
+                
+                switch (subactivity.frequency) {
+                  case 'Monthly':
+                    const monthIndex = currentDate.getMonth();
+                    const monthName = getMonthName(monthIndex);
+                    const periodYear = monthIndex >= 3 ? financialYearStart : financialYearEnd;
+                    period = `${monthName}-${periodYear}`;
+                    dueDate = new Date(periodYear, monthIndex, 1);
+                    break;
+                  case 'Quarterly':
+                    const quarter = getQuarterFromMonth(currentDate.getMonth());
+                    period = `${quarter}-${financialYear}`;
+                    dueDate = new Date(financialYearStart, getQuarterStartMonth(quarter), 1);
+                    break;
+                  case 'Yearly':
+                    period = financialYear;
+                    dueDate = new Date(financialYearStart, 3, 1); // April 1st
+                    break;
+                  default:
+                    period = financialYear;
+                    dueDate = new Date(financialYearStart, 3, 1);
+                }
+                
                 const timeline = new Timeline({
                   activity: activity._id,
                   subactivity: {
@@ -530,6 +601,8 @@ const createClientTimelines = async (client, activities) => {
                   status: 'pending',
                   startDate: startDate,
                   endDate: endDate,
+                  period: period,
+                  dueDate: dueDate,
                   frequency: subactivity.frequency,
                   frequencyConfig: subactivity.frequencyConfig,
                   branch: client.branch,
@@ -543,6 +616,12 @@ const createClientTimelines = async (client, activities) => {
                 const endDate = new Date();
                 endDate.setDate(endDate.getDate() + 30); // Due in 30 days
                 
+                // Generate period for one-time timeline
+                const currentDate = new Date();
+                const currentYear = currentDate.getFullYear();
+                const monthName = getMonthName(currentDate.getMonth());
+                const period = `${monthName}-${currentYear}`;
+                
                 const timeline = new Timeline({
                   activity: activity._id,
                   subactivity: {
@@ -556,6 +635,8 @@ const createClientTimelines = async (client, activities) => {
                   status: 'pending',
                   startDate: startDate,
                   endDate: endDate,
+                  period: period,
+                  dueDate: startDate,
                   frequency: 'OneTime',
                   frequencyConfig: null,
                   branch: client.branch,
@@ -572,6 +653,12 @@ const createClientTimelines = async (client, activities) => {
           const endDate = new Date();
           endDate.setDate(endDate.getDate() + 30); // Due in 30 days
           
+          // Generate period for legacy activity timeline
+          const currentDate = new Date();
+          const currentYear = currentDate.getFullYear();
+          const monthName = getMonthName(currentDate.getMonth());
+          const period = `${monthName}-${currentYear}`;
+          
           const timeline = new Timeline({
             activity: activity._id,
             subactivity: null,
@@ -579,6 +666,8 @@ const createClientTimelines = async (client, activities) => {
             status: 'pending',
             startDate: startDate,
             endDate: endDate,
+            period: period,
+            dueDate: startDate,
             frequency: 'OneTime',
             frequencyConfig: null,
             branch: client.branch,
