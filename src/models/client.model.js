@@ -233,6 +233,20 @@ clientSchema.pre(['updateOne', 'findOneAndUpdate'], function(next) {
   next();
 });
 
+// Pre-save middleware to track new activities
+clientSchema.pre('save', function(next) {
+  // Track original activities for comparison in post-save
+  if (this.isNew) {
+    // For new clients, all activities are new
+    this._newActivities = this.activities || [];
+  } else if (this.isModified('activities')) {
+    // For existing clients, find newly added activities
+    const originalDoc = this.constructor.findById(this._id).select('activities');
+    this._checkForNewActivities = true;
+  }
+  next();
+});
+
 // Post-save middleware to create client subfolder and timelines
 clientSchema.post('save', async function(doc) {
   try {
@@ -284,21 +298,69 @@ clientSchema.post('save', async function(doc) {
       });
     }
 
-    // Create timelines for activities using the timeline service
-    if (doc.activities && doc.activities.length > 0) {
-      console.log(`🔄 [CLIENT POST-SAVE] Starting timeline creation for client: ${doc.name}`);
-      console.log(`📊 [CLIENT POST-SAVE] Client has ${doc.activities.length} activities`);
+    // Create timelines only for new activities or new clients
+    let activitiesToProcess = [];
+
+    if (doc.isNew) {
+      // New client - create timelines for all activities
+      activitiesToProcess = doc.activities || [];
+      console.log(`🆕 [CLIENT POST-SAVE] New client: ${doc.name}, processing ${activitiesToProcess.length} activities`);
+    } else if (doc._checkForNewActivities && doc.activities && doc.activities.length > 0) {
+      // Existing client - only process newly added activities
+      const originalClient = await doc.constructor.findById(doc._id).select('activities');
+      const originalActivityIds = originalClient ? originalClient.activities.map(a => a.activity.toString()) : [];
       
+      activitiesToProcess = doc.activities.filter(activity => {
+        const activityId = activity.activity.toString();
+        const isNewActivity = !originalActivityIds.includes(activityId);
+        
+        if (isNewActivity) {
+          console.log(`➕ [CLIENT POST-SAVE] Found new activity: ${activityId} for client: ${doc.name}`);
+        }
+        
+        return isNewActivity;
+      });
+      
+      console.log(`🔄 [CLIENT POST-SAVE] Client update: ${doc.name}, found ${activitiesToProcess.length} new activities out of ${doc.activities.length} total`);
+    }
+
+    if (activitiesToProcess.length > 0) {
       try {
-        console.log(`🚀 [CLIENT POST-SAVE] Calling createClientTimelines service...`);
-        const createdTimelines = await createClientTimelines(doc, doc.activities);
-        console.log(`✅ [CLIENT POST-SAVE] Successfully created ${createdTimelines.length} timelines`);
+        // Import Timeline model to check for existing timelines
+        const { Timeline } = await import('./index.js');
+        
+        // Filter out activities that already have timelines
+        const activitiesNeedingTimelines = [];
+        
+        for (const activity of activitiesToProcess) {
+          const existingTimeline = await Timeline.findOne({
+            client: doc._id,
+            activity: activity.activity,
+            // Check for subactivity match if it exists
+            ...(activity.subactivity ? { 'subactivity._id': activity.subactivity._id || activity.subactivity } : {})
+          });
+          
+          if (!existingTimeline) {
+            activitiesNeedingTimelines.push(activity);
+            console.log(`📋 [CLIENT POST-SAVE] Activity ${activity.activity} needs timeline creation`);
+          } else {
+            console.log(`⏭️ [CLIENT POST-SAVE] Activity ${activity.activity} already has timeline, skipping`);
+          }
+        }
+        
+        if (activitiesNeedingTimelines.length > 0) {
+          console.log(`🚀 [CLIENT POST-SAVE] Creating timelines for ${activitiesNeedingTimelines.length} activities`);
+          const createdTimelines = await createClientTimelines(doc, activitiesNeedingTimelines);
+          console.log(`✅ [CLIENT POST-SAVE] Successfully created ${createdTimelines.length} timelines`);
+        } else {
+          console.log(`⚠️ [CLIENT POST-SAVE] No new timelines needed for client: ${doc.name}`);
+        }
       } catch (error) {
         console.error('❌ [CLIENT POST-SAVE] Error creating timelines for client:', error);
         console.error('❌ [CLIENT POST-SAVE] Error stack:', error.stack);
       }
     } else {
-      console.log(`⚠️ [CLIENT POST-SAVE] No activities found for client: ${doc.name}`);
+      console.log(`⚠️ [CLIENT POST-SAVE] No new activities to process for client: ${doc.name}`);
     }
   } catch (error) {
     console.error('Error in client post-save middleware:', error);
