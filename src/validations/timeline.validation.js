@@ -104,6 +104,22 @@ const bulkImportTimelines = {
   }),
 };
 
+const bulkImportTimelineFields = {
+  body: Joi.object().keys({
+    timelineUpdates: Joi.array().items(
+      Joi.object().keys({
+        timelineId: Joi.string().custom(objectId).required(),
+        fields: Joi.array().items(
+          Joi.object().keys({
+            fileName: Joi.string().required(),
+            fieldValue: Joi.any().required(),
+          })
+        ).min(1).required(),
+      })
+    ).min(1).required(),
+  }),
+};
+
 export {
   createTimeline,
   getTimelines,
@@ -111,4 +127,5 @@ export {
   updateTimeline,
   deleteTimeline,
   bulkImportTimelines,
+  bulkImportTimelineFields,
 };

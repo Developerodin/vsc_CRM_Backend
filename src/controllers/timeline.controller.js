@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import { timelineService } from '../services/index.js';
+import { bulkImportTimelineFields } from '../services/timelineBulkImport.service.js';
 import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
 
@@ -72,6 +73,21 @@ const getFrequencyPeriods = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+const bulkImportTimelineFields = catchAsync(async (req, res) => {
+  const { timelineUpdates } = req.body;
+  
+  if (!timelineUpdates || !Array.isArray(timelineUpdates)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'timelineUpdates array is required');
+  }
+  
+  if (timelineUpdates.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'timelineUpdates array cannot be empty');
+  }
+  
+  const result = await bulkImportTimelineFields(timelineUpdates, req.user);
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createTimeline,
   getTimelines,
@@ -80,4 +96,5 @@ export {
   deleteTimeline,
   bulkImportTimelines,
   getFrequencyPeriods,
+  bulkImportTimelineFields,
 }; 
