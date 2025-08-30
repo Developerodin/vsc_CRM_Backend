@@ -41,6 +41,23 @@ const bulkImportTimelines = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+const getFrequencyPeriods = catchAsync(async (req, res) => {
+  const { frequency, financialYear } = req.query;
+  
+  if (!frequency) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Frequency parameter is required');
+  }
+  
+  // Validate frequency
+  const validFrequencies = ['Monthly', 'Quarterly', 'Yearly'];
+  if (!validFrequencies.includes(frequency)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid frequency. Must be one of: ${validFrequencies.join(', ')}`);
+  }
+  
+  const result = await timelineService.getFrequencyPeriods(frequency, financialYear);
+  res.send(result);
+});
+
 export {
   createTimeline,
   getTimelines,
@@ -48,4 +65,5 @@ export {
   updateTimeline,
   deleteTimeline,
   bulkImportTimelines,
+  getFrequencyPeriods,
 }; 

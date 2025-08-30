@@ -596,6 +596,129 @@ export const updateTimelineStatus = async (timelineId, status) => {
   return populatedTimeline;
 };
 
+/**
+ * Get frequency periods for a specific frequency type
+ * @param {String} frequency - Frequency type ('Monthly', 'Quarterly', 'Yearly')
+ * @param {String} [financialYear] - Financial year (e.g., '2025-2026'). If not provided, uses current financial year
+ * @returns {Promise<Object>} Object containing frequency periods and their details
+ */
+export const getFrequencyPeriods = async (frequency, financialYear = null) => {
+  // Get current financial year if not provided
+  if (!financialYear) {
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const financialYearStart = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1;
+    const financialYearEnd = financialYearStart + 1;
+    financialYear = `${financialYearStart}-${financialYearEnd}`;
+  }
+
+  const periods = [];
+  const [startYear, endYear] = financialYear.split('-').map(Number);
+
+  switch (frequency) {
+    case 'Monthly':
+      // Generate monthly periods for the financial year (April to March)
+      for (let month = 3; month <= 14; month++) {
+        const monthIndex = month % 12;
+        const monthName = getMonthName(monthIndex);
+        const periodYear = monthIndex >= 3 ? startYear : endYear;
+        const period = `${monthName}-${periodYear}`;
+        
+        periods.push({
+          period,
+          month: monthName,
+          year: periodYear,
+          monthIndex,
+          startDate: new Date(periodYear, monthIndex, 1),
+          endDate: new Date(periodYear, monthIndex + 1, 0), // Last day of the month
+          displayName: `${monthName} ${periodYear}`
+        });
+      }
+      break;
+
+    case 'Quarterly':
+      // Generate quarterly periods for the financial year
+      const quarters = [
+        { name: 'Q1', months: [3, 4, 5], startMonth: 3, endMonth: 5 },      // April, May, June
+        { name: 'Q2', months: [6, 7, 8], startMonth: 6, endMonth: 8 },      // July, August, September
+        { name: 'Q3', months: [9, 10, 11], startMonth: 9, endMonth: 11 },   // October, November, December
+        { name: 'Q4', months: [0, 1, 2], startMonth: 0, endMonth: 2 }       // January, February, March
+      ];
+
+      for (const quarter of quarters) {
+        const period = `${quarter.name}-${financialYear}`;
+        const startDate = new Date(startYear, quarter.startMonth, 1);
+        const endDate = new Date(endYear, quarter.endMonth + 1, 0); // Last day of the last month
+        
+        periods.push({
+          period,
+          quarter: quarter.name,
+          months: quarter.months.map(m => getMonthName(m)),
+          startDate,
+          endDate,
+          displayName: `${quarter.name} ${financialYear}`,
+          financialYear
+        });
+      }
+      break;
+
+    case 'Yearly':
+      // Generate yearly periods (can be multiple years if needed)
+      periods.push({
+        period: financialYear,
+        year: startYear,
+        startDate: new Date(startYear, 3, 1), // April 1st
+        endDate: new Date(endYear, 2, 31),    // March 31st
+        displayName: `Financial Year ${financialYear}`,
+        financialYear
+      });
+      break;
+
+    default:
+      throw new Error(`Unsupported frequency: ${frequency}`);
+  }
+
+  return {
+    frequency,
+    financialYear,
+    periods,
+    totalPeriods: periods.length,
+    description: getFrequencyDescription(frequency, financialYear)
+  };
+};
+
+/**
+ * Helper function to get month name from month index
+ * @param {number} monthIndex - Month index (0-11)
+ * @returns {string} - Month name
+ */
+const getMonthName = (monthIndex) => {
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  return months[monthIndex];
+};
+
+/**
+ * Helper function to get frequency description
+ * @param {string} frequency - Frequency type
+ * @param {string} financialYear - Financial year
+ * @returns {string} - Description of the frequency
+ */
+const getFrequencyDescription = (frequency, financialYear) => {
+  switch (frequency) {
+    case 'Monthly':
+      return `Monthly periods for financial year ${financialYear} (April ${financialYear.split('-')[0]} to March ${financialYear.split('-')[1]})`;
+    case 'Quarterly':
+      return `Quarterly periods for financial year ${financialYear}`;
+    case 'Yearly':
+      return `Financial year ${financialYear}`;
+    default:
+      return `Frequency periods for ${frequency}`;
+  }
+};
+
 export {
   createTimeline,
   queryTimelines,
@@ -603,4 +726,5 @@ export {
   updateTimelineById,
   deleteTimelineById,
   bulkImportTimelines,
+  getFrequencyPeriods,
 };

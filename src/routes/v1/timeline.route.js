@@ -16,6 +16,10 @@ router
   .post(auth('manageTimelines'), validate(timelineValidation.bulkImportTimelines), timelineController.bulkImportTimelines);
 
 router
+  .route('/frequency-periods')
+  .get(auth('getTimelines'), timelineController.getFrequencyPeriods);
+
+router
   .route('/:timelineId')
   .get(auth('getTimelines'), validate(timelineValidation.getTimeline), timelineController.getTimeline)
   .patch(auth('manageTimelines'), validate(timelineValidation.updateTimeline), timelineController.updateTimeline)
