@@ -3,7 +3,7 @@ import validator from 'validator';
 import toJSON from './plugins/toJSON.plugin.js';
 import paginate from './plugins/paginate.plugin.js';
 import FileManager from './fileManager.model.js';
-import Timeline from './timeline.model.js';
+import { createClientTimelines } from '../services/timeline.service.js';
 
 const clientSchema = mongoose.Schema(
   {
@@ -285,99 +285,12 @@ clientSchema.post('save', async function(doc) {
       });
     }
 
-    // Create timelines for activities with frequency configured
+    // Create timelines for activities using the timeline service
     if (doc.activities && doc.activities.length > 0) {
-      const timelinePromises = [];
-      
-      for (const activityItem of doc.activities) {
-        try {
-          // Get the full activity document to check subactivities
-          const Activity = mongoose.model('Activity');
-          const activity = await Activity.findById(activityItem.activity);
-          
-          // Only create timelines if activity has subactivities with frequency
-          if (activity && activity.subactivities && activity.subactivities.length > 0) {
-            for (const subactivity of activity.subactivities) {
-              // Check if specific subactivity is assigned to this client
-              const isAssignedSubactivity = activityItem.subactivity && 
-                activityItem.subactivity.toString() === subactivity._id.toString();
-              
-              // If no specific subactivity is assigned, or this is the assigned one
-              if (!activityItem.subactivity || isAssignedSubactivity) {
-                if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
-                  // Create recurring timeline for subactivities with frequency
-                  const startDate = new Date();
-                  const endDate = new Date();
-                  endDate.setFullYear(endDate.getFullYear() + 1);
-                  
-                  const timeline = new Timeline({
-                    activity: activity._id,
-                    subactivity: subactivity._id,
-                    client: doc._id,
-                    status: 'pending',
-                    startDate: startDate,
-                    endDate: endDate,
-                    frequency: subactivity.frequency,
-                    frequencyConfig: subactivity.frequencyConfig,
-                    branch: doc.branch,
-                    timelineType: 'recurring'
-                  });
-                  
-                  timelinePromises.push(timeline.save());
-                } else {
-                  // Create one-time timeline for subactivities without frequency
-                  const startDate = new Date();
-                  const endDate = new Date();
-                  endDate.setDate(endDate.getDate() + 30); // Due in 30 days
-                  
-                  const timeline = new Timeline({
-                    activity: activity._id,
-                    subactivity: subactivity._id,
-                    client: doc._id,
-                    status: 'pending',
-                    startDate: startDate,
-                    endDate: endDate,
-                    frequency: 'OneTime',
-                    frequencyConfig: null,
-                    branch: doc.branch,
-                    timelineType: 'oneTime'
-                  });
-                  
-                  timelinePromises.push(timeline.save());
-                }
-              }
-            }
-          } else if (activity && (!activity.subactivities || activity.subactivities.length === 0)) {
-            // Handle legacy activities without subactivities - create one-time timeline
-            const startDate = new Date();
-            const endDate = new Date();
-            endDate.setDate(endDate.getDate() + 30); // Due in 30 days
-            
-            const timeline = new Timeline({
-              activity: activity._id,
-              subactivity: null,
-              client: doc._id,
-              status: 'pending',
-              startDate: startDate,
-              endDate: endDate,
-              frequency: 'OneTime',
-              frequencyConfig: null,
-              branch: doc.branch,
-              timelineType: 'oneTime'
-            });
-            
-            timelinePromises.push(timeline.save());
-          }
-        } catch (error) {
-          console.error(`Error creating timeline for activity ${activityItem.activity}:`, error);
-          // Continue with other activities even if one fails
-        }
-      }
-      
-      // Wait for all timelines to be created
-      if (timelinePromises.length > 0) {
-        await Promise.all(timelinePromises);
-        console.log(`Created ${timelinePromises.length} timelines for client ${doc.name}`);
+      try {
+        await createClientTimelines(doc, doc.activities);
+      } catch (error) {
+        console.error('Error creating timelines for client:', error);
       }
     }
   } catch (error) {

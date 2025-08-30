@@ -35,6 +35,36 @@ const timelineSchema = mongoose.Schema(
       type: Date,
       required: false,
     },
+    startDate: {
+      type: Date,
+      required: false,
+    },
+    endDate: {
+      type: Date,
+      required: false,
+    },
+    frequency: {
+      type: String,
+      enum: ['None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'],
+      required: false,
+      default: 'OneTime',
+    },
+    frequencyConfig: {
+      type: mongoose.Schema.Types.Mixed,
+      required: false,
+    },
+    timelineType: {
+      type: String,
+      enum: ['oneTime', 'recurring'],
+      required: false,
+      default: 'oneTime',
+    },
+    financialYear: {
+      type: String,
+      required: false,
+      trim: true,
+      // Format: "2024-2025", "2025-2026"
+    },
     fields: [{
       fileName: {
         type: String,

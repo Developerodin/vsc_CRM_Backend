@@ -5,6 +5,7 @@ import Timeline from '../models/timeline.model.js';
 import Activity from '../models/activity.model.js';
 import Client from '../models/client.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
+import { getCurrentFinancialYear, generateTimelineDates } from '../utils/financialYear.js';
 
 /**
  * Validate if activity ID exists
@@ -245,6 +246,179 @@ const bulkImportTimelines = async (timelinesData) => {
   }
 
   return results;
+};
+
+/**
+ * Create timelines for a client based on their activities and subactivities
+ * @param {Object} client - Client document
+ * @param {Array} activities - Array of client activities
+ * @returns {Promise<Array>} Array of created timeline documents
+ */
+export const createClientTimelines = async (client, activities) => {
+  if (!activities || activities.length === 0) {
+    return [];
+  }
+
+  const timelinePromises = [];
+  const { yearString: financialYear } = getCurrentFinancialYear();
+
+  for (const activityItem of activities) {
+    try {
+      // Get the full activity document to check subactivities
+      const Activity = mongoose.model('Activity');
+      const activity = await Activity.findById(activityItem.activity);
+      
+      if (!activity) {
+        console.warn(`Activity ${activityItem.activity} not found for client ${client.name}`);
+        continue;
+      }
+
+      // Handle activities with subactivities
+      if (activity.subactivities && activity.subactivities.length > 0) {
+        for (const subactivity of activity.subactivities) {
+          // Check if specific subactivity is assigned to this client
+          const isAssignedSubactivity = activityItem.subactivity && 
+            activityItem.subactivity.toString() === subactivity._id.toString();
+          
+          // If no specific subactivity is assigned, or this is the assigned one
+          if (!activityItem.subactivity || isAssignedSubactivity) {
+            if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
+              // Create recurring timelines for subactivities with frequency
+              const timelineDates = generateTimelineDates(subactivity.frequencyConfig, subactivity.frequency);
+              
+              for (const dueDate of timelineDates) {
+                const timeline = new Timeline({
+                  activity: activity._id,
+                  subactivity: subactivity._id,
+                  client: client._id,
+                  status: 'pending',
+                  dueDate: dueDate,
+                  startDate: dueDate,
+                  endDate: dueDate,
+                  frequency: subactivity.frequency,
+                  frequencyConfig: subactivity.frequencyConfig,
+                  branch: client.branch,
+                  timelineType: 'recurring',
+                  financialYear: financialYear,
+                  period: getPeriodFromDate(dueDate)
+                });
+                
+                timelinePromises.push(timeline.save());
+              }
+            } else {
+              // Create one-time timeline for subactivities without frequency
+              const dueDate = new Date();
+              dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
+              
+              const timeline = new Timeline({
+                activity: activity._id,
+                subactivity: subactivity._id,
+                client: client._id,
+                status: 'pending',
+                dueDate: dueDate,
+                startDate: dueDate,
+                endDate: dueDate,
+                frequency: 'OneTime',
+                frequencyConfig: null,
+                branch: client.branch,
+                timelineType: 'oneTime',
+                financialYear: financialYear,
+                period: getPeriodFromDate(dueDate)
+              });
+              
+              timelinePromises.push(timeline.save());
+            }
+          }
+        }
+      } else {
+        // Handle legacy activities without subactivities - create one-time timeline
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
+        
+        const timeline = new Timeline({
+          activity: activity._id,
+          subactivity: null,
+          client: client._id,
+          status: 'pending',
+          dueDate: dueDate,
+          startDate: dueDate,
+          endDate: dueDate,
+          frequency: 'OneTime',
+          frequencyConfig: null,
+          branch: client.branch,
+          timelineType: 'oneTime',
+          financialYear: financialYear,
+          period: getPeriodFromDate(dueDate)
+        });
+        
+        timelinePromises.push(timeline.save());
+      }
+    } catch (error) {
+      console.error(`Error creating timeline for activity ${activityItem.activity}:`, error);
+      // Continue with other activities even if one fails
+    }
+  }
+  
+  // Wait for all timelines to be created
+  if (timelinePromises.length > 0) {
+    const createdTimelines = await Promise.all(timelinePromises);
+    console.log(`Created ${createdTimelines.length} timelines for client ${client.name}`);
+    return createdTimelines;
+  }
+  
+  return [];
+};
+
+/**
+ * Get period string from date (e.g., "April-2024", "Q1-2024")
+ * @param {Date} date - Date to get period for
+ * @returns {String} Period string
+ */
+const getPeriodFromDate = (date) => {
+  const month = date.getMonth();
+  const year = date.getFullYear();
+  
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  
+  // Determine quarter
+  let quarter;
+  if (month <= 2) quarter = 'Q1';
+  else if (month <= 5) quarter = 'Q2';
+  else if (month <= 8) quarter = 'Q3';
+  else quarter = 'Q4';
+  
+  return `${monthNames[month]}-${year}`;
+};
+
+/**
+ * Get timelines for a specific client
+ * @param {String} clientId - Client ID
+ * @param {String} branchId - Branch ID
+ * @returns {Promise<Array>} Array of timeline documents
+ */
+export const getClientTimelines = async (clientId, branchId) => {
+  return Timeline.find({
+    client: clientId,
+    branch: branchId,
+    isDeleted: { $ne: true }
+  }).populate('activity subactivity client');
+};
+
+/**
+ * Update timeline status
+ * @param {String} timelineId - Timeline ID
+ * @param {String} status - New status
+ * @returns {Promise<Object>} Updated timeline document
+ */
+export const updateTimelineStatus = async (timelineId, status) => {
+  return Timeline.findByIdAndUpdate(
+    timelineId,
+    { status },
+    { new: true, runValidators: true }
+  );
 };
 
 export {
