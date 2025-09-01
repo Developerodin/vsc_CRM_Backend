@@ -18,7 +18,9 @@ const createClient = {
     gstNumbers: Joi.array().items(
       Joi.object({
         state: Joi.string().required(),
-        gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required()
+        gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required(),
+        dateOfRegistration: Joi.date().max('now').required(),
+        gstUserId: Joi.string().required()
       })
     ),
     tanNumber: Joi.string().pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/),
@@ -29,6 +31,15 @@ const createClient = {
     metadata: Joi.object(),
     branch: Joi.string().custom(objectId).required(),
     sortOrder: Joi.number(),
+    // Add activities with subactivity support
+    activities: Joi.array().items(
+      Joi.object({
+        activity: Joi.string().custom(objectId).required(),
+        subactivity: Joi.string().custom(objectId).optional(), // Add subactivity support
+        notes: Joi.string().optional(),
+        status: Joi.string().valid('active', 'inactive').default('active')
+      })
+    ),
   }),
 };
 
@@ -46,7 +57,9 @@ const getClients = {
     gstNumbers: Joi.array().items(
       Joi.object({
         state: Joi.string(),
-        gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
+        gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/),
+        dateOfRegistration: Joi.date().max('now'),
+        gstUserId: Joi.string()
       })
     ).allow('', null),
     tanNumber: Joi.string().allow('', null),
@@ -89,7 +102,9 @@ const updateClient = {
       gstNumbers: Joi.array().items(
         Joi.object({
           state: Joi.string().required(),
-          gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required()
+          gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required(),
+          dateOfRegistration: Joi.date().max('now').required(),
+          gstUserId: Joi.string().required()
         })
       ),
       tanNumber: Joi.string().pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/),
@@ -100,6 +115,15 @@ const updateClient = {
       metadata: Joi.object(),
       branch: Joi.string().custom(objectId),
       sortOrder: Joi.number(),
+      // Add activities with subactivity support
+      activities: Joi.array().items(
+        Joi.object({
+          activity: Joi.string().custom(objectId).required(),
+          subactivity: Joi.string().custom(objectId).optional(), // Add subactivity support
+          notes: Joi.string().optional(),
+          status: Joi.string().valid('active', 'inactive').default('active')
+        })
+      ),
     })
     .min(1),
 };
@@ -140,7 +164,9 @@ const bulkImportClients = {
           gstNumbers: Joi.array().items(
             Joi.object({
               state: Joi.string().required(),
-              gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required()
+              gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required(),
+              dateOfRegistration: Joi.date().max('now').required(),
+              gstUserId: Joi.string().required()
             })
           ),
           tanNumber: Joi.string().pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/),
@@ -151,6 +177,15 @@ const bulkImportClients = {
           metadata: Joi.object(),
           branch: Joi.string().custom(objectId).required(),
           sortOrder: Joi.number(),
+          // Add activities with subactivity support
+          activities: Joi.array().items(
+            Joi.object({
+              activity: Joi.string().custom(objectId).required(),
+              subactivity: Joi.string().custom(objectId).optional(), // Add subactivity support
+              notes: Joi.string().optional(),
+              status: Joi.string().valid('active', 'inactive').default('active')
+            })
+          ),
         })
       )
       .min(1)
@@ -220,6 +255,8 @@ const addGstNumber = {
   body: Joi.object().keys({
     state: Joi.string().required(),
     gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/).required(),
+    dateOfRegistration: Joi.date().max('now').required(),
+    gstUserId: Joi.string().required()
   }),
 };
 
@@ -238,6 +275,8 @@ const updateGstNumber = {
   body: Joi.object().keys({
     state: Joi.string(),
     gstNumber: Joi.string().pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/),
+    dateOfRegistration: Joi.date().max('now'),
+    gstUserId: Joi.string()
   }).min(1),
 };
 

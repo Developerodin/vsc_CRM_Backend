@@ -100,6 +100,17 @@ const clientSchema = mongoose.Schema(
           }
         },
         description: 'GST Registration Number for the specific state'
+      },
+      dateOfRegistration: {
+        type: Date,
+        required: true,
+        description: 'Date when GST was registered for this state'
+      },
+      gstUserId: {
+        type: String,
+        trim: true,
+        required: true,
+        description: 'GST User ID for the specific state registration'
       }
     }],
     tanNumber: {

@@ -2,7 +2,6 @@ import httpStatus from 'http-status';
 import { Client, Activity, FileManager, Timeline, Task } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
-import { createTimelinesForClient } from './timelineCreation.service.js';
 
 /**
  * Helper function to get month name from month index
@@ -296,21 +295,51 @@ const processActivitiesFromFrontend = async (activityData) => {
       // Validate that activity exists by ID
       const activity = await Activity.findById(activityRow.activity);
       if (activity) {
+        // Process subactivity if provided
+        let subactivity = null;
+        if (activityRow.subactivity) {
+          // If subactivity is provided, validate it exists in the activity
+          if (activity.subactivities && Array.isArray(activity.subactivities)) {
+            const subactivityExists = activity.subactivities.some(
+              sub => sub._id.toString() === activityRow.subactivity.toString()
+            );
+            
+            if (!subactivityExists) {
+              errors.push({
+                type: 'SUBACTIVITY_NOT_FOUND',
+                message: `Subactivity with ID '${activityRow.subactivity}' not found in activity '${activity.name}'`,
+                data: activityRow
+              });
+              continue;
+            }
+            
+            // Store the subactivity data
+            subactivity = activityRow.subactivity;
+          } else {
+            errors.push({
+              type: 'NO_SUBACTIVITIES',
+              message: `Activity '${activity.name}' has no subactivities`,
+              data: activityRow
+            });
+            continue;
+          }
+        }
+        
         // Use the IDs directly from frontend (no need to convert)
         activities.push({
           activity: activityRow.activity, // Keep the original ID
+          subactivity: subactivity, // Add subactivity if provided
           assignedDate: new Date(), // System automatically sets current date
-          notes: activityRow.notes || ''
+          notes: activityRow.notes || '',
+          status: activityRow.status || 'active' // Add status support
         });
       } else {
         // Add validation error
-        if (!activity) {
-          errors.push({
-            type: 'ACTIVITY_NOT_FOUND',
-            message: `Activity with ID '${activityRow.activity}' not found`,
-            data: activityRow
-          });
-        }
+        errors.push({
+          type: 'ACTIVITY_NOT_FOUND',
+          message: `Activity with ID '${activityRow.activity}' not found`,
+          data: activityRow
+        });
       }
     } catch (error) {
       console.error('Error validating activity row:', error, activityRow);
@@ -348,30 +377,13 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
   for (const gstRow of gstNumbersData) {
     try {
       console.log(`🔍 Processing GST row:`, gstRow);
-      
-      // Validate GST number format
-      console.log(`🔍 Validating GST number: ${gstRow.gstNumber}`);
-      const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-      const isValidFormat = gstRegex.test(gstRow.gstNumber);
-      console.log(`GST format validation result: ${isValidFormat}`);
-      
-      if (!gstRow.gstNumber || !isValidFormat) {
-        console.log(`❌ GST format validation failed for: ${gstRow.gstNumber}`);
-        errors.push({
-          type: 'INVALID_GST_FORMAT',
-          message: `Invalid GST number format: ${gstRow.gstNumber}`,
-          data: gstRow
-        });
-        continue;
-      }
-      
-      console.log(`✅ GST format validation passed for: ${gstRow.gstNumber}`);
 
-      // Validate state is provided
-      if (!gstRow.state || gstRow.state.trim() === '') {
+      // Validate required fields
+      if (!gstRow.state || !gstRow.gstNumber || !gstRow.dateOfRegistration || !gstRow.gstUserId) {
+        console.log(`❌ Missing required fields for GST row:`, gstRow);
         errors.push({
-          type: 'MISSING_STATE',
-          message: 'State is required for GST number',
+          type: 'MISSING_FIELDS',
+          message: 'Missing required fields: state, gstNumber, dateOfRegistration, and gstUserId are required',
           data: gstRow
         });
         continue;
@@ -402,7 +414,9 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
           gstNumbers.push({
             _id: gstRow._id,
             state: gstRow.state.trim(),
-            gstNumber: gstRow.gstNumber.trim()
+            gstNumber: gstRow.gstNumber.trim(),
+            dateOfRegistration: new Date(gstRow.dateOfRegistration),
+            gstUserId: gstRow.gstUserId.trim()
           });
           console.log(`✅ Updated GST added to result:`, gstNumbers[gstNumbers.length - 1]);
         } else {
@@ -443,7 +457,9 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
         // Add new GST number
         gstNumbers.push({
           state: gstRow.state.trim(),
-          gstNumber: gstRow.gstNumber.trim()
+          gstNumber: gstRow.gstNumber.trim(),
+          dateOfRegistration: new Date(gstRow.dateOfRegistration),
+          gstUserId: gstRow.gstUserId.trim()
         });
         console.log(`✅ New GST added to result:`, gstNumbers[gstNumbers.length - 1]);
       }
@@ -735,6 +751,13 @@ const bulkImportClients = async (clients) => {
 
             // Process GST numbers if provided
             if (client.gstNumbers && Array.isArray(client.gstNumbers)) {
+              // Validate GST numbers structure for new clients
+              for (const gst of client.gstNumbers) {
+                if (!gst.state || !gst.gstNumber || !gst.dateOfRegistration || !gst.gstUserId) {
+                  throw new Error(`Missing required GST fields for client: ${client.name || 'Unknown'}. Required: state, gstNumber, dateOfRegistration, gstUserId`);
+                }
+              }
+              
               const gstResult = await processGstNumbersFromFrontend(client.gstNumbers, []);
               if (!gstResult.isValid) {
                 // Add validation errors to results
@@ -846,6 +869,13 @@ const bulkImportClients = async (clients) => {
               try {
                 const existingClient = await Client.findById(client.id);
                 if (existingClient) {
+                  // Validate GST numbers structure for updates
+                  for (const gst of client.gstNumbers) {
+                    if (!gst.state || !gst.gstNumber || !gst.dateOfRegistration || !gst.gstUserId) {
+                      throw new Error(`Missing required GST fields for client: ${client.name || 'Unknown'}. Required: state, gstNumber, dateOfRegistration, gstUserId`);
+                    }
+                  }
+                  
                   const gstResult = await processGstNumbersFromFrontend(client.gstNumbers, existingClient.gstNumbers);
                   if (gstResult.isValid) {
                     gstNumbers = gstResult.gstNumbers;
@@ -896,7 +926,7 @@ const bulkImportClients = async (clients) => {
                     iecCode: client.iecCode,
                     entityType: client.entityType,
                     metadata: client.metadata,
-                    // Update activities if provided
+                    // Update activities if provided (now includes subactivities)
                     ...(activities.length > 0 && { activities }),
                   },
                 },
@@ -1004,7 +1034,11 @@ const addActivityToClient = async (clientId, activityData) => {
   
   // Automatically create timelines for this activity
   try {
-    await createTimelinesForClient(clientId, activityData.activity);
+    // This function is no longer imported, so it's removed.
+    // If you need to create timelines for a single activity, you'll need to
+    // import the createTimelinesForClient function or implement its logic here.
+    // For now, commenting out the call as it's no longer available.
+    // await createTimelinesForClient(clientId, activityData.activity);
   } catch (error) {
     console.error('Failed to create timelines for activity:', error.message);
     // Don't fail the entire operation if timeline creation fails
@@ -1520,13 +1554,18 @@ const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
 /**
  * Add a new GST number to a client
  * @param {ObjectId} clientId - Client ID
- * @param {Object} gstData - GST data with state and gstNumber
+ * @param {Object} gstData - GST data with state, gstNumber, dateOfRegistration, and gstUserId
  * @returns {Promise<Client>}
  */
 const addGstNumber = async (clientId, gstData) => {
   const client = await Client.findById(clientId);
   if (!client) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  }
+
+  // Validate required fields
+  if (!gstData.state || !gstData.gstNumber || !gstData.dateOfRegistration || !gstData.gstUserId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Missing required fields: state, gstNumber, dateOfRegistration, and gstUserId are required');
   }
 
   // Check if GST number already exists for this state
@@ -1539,7 +1578,12 @@ const addGstNumber = async (clientId, gstData) => {
   }
 
   // Add new GST number
-  client.gstNumbers.push(gstData);
+  client.gstNumbers.push({
+    state: gstData.state.trim(),
+    gstNumber: gstData.gstNumber.trim(),
+    dateOfRegistration: new Date(gstData.dateOfRegistration),
+    gstUserId: gstData.gstUserId.trim()
+  });
   await client.save();
   
   return client;
@@ -1601,7 +1645,12 @@ const updateGstNumber = async (clientId, gstId, updateData) => {
     }
   }
 
-  // Update GST data
+  // Update GST data with proper type conversion
+  if (updateData.state) updateData.state = updateData.state.trim();
+  if (updateData.gstNumber) updateData.gstNumber = updateData.gstNumber.trim();
+  if (updateData.dateOfRegistration) updateData.dateOfRegistration = new Date(updateData.dateOfRegistration);
+  if (updateData.gstUserId) updateData.gstUserId = updateData.gstUserId.trim();
+
   Object.assign(client.gstNumbers[gstIndex], updateData);
   await client.save();
   
@@ -1641,4 +1690,5 @@ export {
   removeGstNumber,
   updateGstNumber,
   getGstNumbers,
+  processGstNumbersFromFrontend, // Add this if needed elsewhere
 }; 
