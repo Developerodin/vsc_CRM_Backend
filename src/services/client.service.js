@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { Client, Activity, FileManager, Timeline, Task } from '../models/index.js';
+import { Client, Activity, FileManager, Timeline, Task, Branch } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
@@ -14,6 +14,36 @@ const getMonthName = (monthIndex) => {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   return months[monthIndex];
+};
+
+/**
+ * Helper function to parse date from various formats
+ * @param {string} dateString - Date string in DD.MM.YYYY or other formats
+ * @returns {Date} - Parsed date object
+ * @throws {Error} - If date cannot be parsed
+ */
+const parseGstDate = (dateString) => {
+  if (!dateString) {
+    throw new Error('Date string is required');
+  }
+  
+  let parsedDate;
+  
+  if (dateString.includes('.')) {
+    // Handle DD.MM.YYYY format
+    const [day, month, year] = dateString.split('.');
+    parsedDate = new Date(year, month - 1, day); // month is 0-indexed
+  } else {
+    // Handle other formats (ISO, etc.)
+    parsedDate = new Date(dateString);
+  }
+  
+  // Validate the parsed date
+  if (isNaN(parsedDate.getTime())) {
+    throw new Error(`Invalid date format: ${dateString}. Expected DD.MM.YYYY format.`);
+  }
+  
+  return parsedDate;
 };
 
 /**
@@ -415,7 +445,7 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
             _id: gstRow._id,
             state: gstRow.state.trim(),
             gstNumber: gstRow.gstNumber.trim(),
-            dateOfRegistration: new Date(gstRow.dateOfRegistration),
+            dateOfRegistration: parseGstDate(gstRow.dateOfRegistration),
             gstUserId: gstRow.gstUserId.trim()
           });
           console.log(`✅ Updated GST added to result:`, gstNumbers[gstNumbers.length - 1]);
@@ -454,11 +484,25 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
           continue;
         }
 
+        // Parse date using helper function
+        let parsedDate;
+        try {
+          parsedDate = parseGstDate(gstRow.dateOfRegistration);
+        } catch (error) {
+          console.error(`❌ Date parsing error for ${gstRow.dateOfRegistration}:`, error.message);
+          errors.push({
+            type: 'DATE_PARSE_ERROR',
+            message: error.message,
+            data: gstRow
+          });
+          continue;
+        }
+
         // Add new GST number
         gstNumbers.push({
           state: gstRow.state.trim(),
           gstNumber: gstRow.gstNumber.trim(),
-          dateOfRegistration: new Date(gstRow.dateOfRegistration),
+          dateOfRegistration: parsedDate,
           gstUserId: gstRow.gstUserId.trim()
         });
         console.log(`✅ New GST added to result:`, gstNumbers[gstNumbers.length - 1]);
@@ -550,14 +594,25 @@ const createClientSubfolder = async (clientName, branchId) => {
 // Helper function to create timelines for client activities
 const createClientTimelines = async (client, activities) => {
   try {
-    if (!activities || activities.length === 0) return;
+    console.log(`📋 [TIMELINE CREATION] Starting timeline creation for client: ${client.name}, activities: ${activities.length}`);
+    if (!activities || activities.length === 0) {
+      console.log(`⚠️ [TIMELINE CREATION] No activities provided for client: ${client.name}`);
+      return [];
+    }
 
     const timelinePromises = [];
+    const createdTimelines = [];
     
     for (const activityItem of activities) {
       try {
+        console.log(`🔍 [TIMELINE CREATION] Processing activity: ${activityItem.activity} for client: ${client.name}`);
         // Get the full activity document to check subactivities
         const activity = await Activity.findById(activityItem.activity);
+        
+        if (!activity) {
+          console.log(`❌ [TIMELINE CREATION] Activity not found: ${activityItem.activity}`);
+          continue;
+        }
         
         if (activity && activity.subactivities && activity.subactivities.length > 0) {
           for (const subactivity of activity.subactivities) {
@@ -625,7 +680,15 @@ const createClientTimelines = async (client, activities) => {
                   timelineType: 'recurring'
                 });
                 
-                timelinePromises.push(timeline.save());
+                const savePromise = timeline.save().then(savedTimeline => {
+                  console.log(`✅ [TIMELINE CREATION] Created recurring timeline for subactivity: ${subactivity.name}`);
+                  createdTimelines.push(savedTimeline);
+                  return savedTimeline;
+                }).catch(error => {
+                  console.error(`❌ [TIMELINE CREATION] Failed to save recurring timeline for subactivity ${subactivity.name}:`, error.message);
+                  throw error;
+                });
+                timelinePromises.push(savePromise);
               } else {
                 // Create one-time timeline for subactivities without frequency
                 const startDate = new Date();
@@ -659,7 +722,15 @@ const createClientTimelines = async (client, activities) => {
                   timelineType: 'oneTime'
                 });
                 
-                timelinePromises.push(timeline.save());
+                const savePromise = timeline.save().then(savedTimeline => {
+                  console.log(`✅ [TIMELINE CREATION] Created recurring timeline for subactivity: ${subactivity.name}`);
+                  createdTimelines.push(savedTimeline);
+                  return savedTimeline;
+                }).catch(error => {
+                  console.error(`❌ [TIMELINE CREATION] Failed to save recurring timeline for subactivity ${subactivity.name}:`, error.message);
+                  throw error;
+                });
+                timelinePromises.push(savePromise);
               }
             }
           }
@@ -699,14 +770,23 @@ const createClientTimelines = async (client, activities) => {
     
     // Wait for all timelines to be created
     if (timelinePromises.length > 0) {
+      console.log(`⏳ [TIMELINE CREATION] Waiting for ${timelinePromises.length} timelines to be created...`);
       await Promise.all(timelinePromises);
+      console.log(`✅ [TIMELINE CREATION] Successfully created ${createdTimelines.length} timelines for client: ${client.name}`);
+    } else {
+      console.log(`⚠️ [TIMELINE CREATION] No timelines to create for client: ${client.name}`);
     }
+    
+    return createdTimelines;
   } catch (error) {
+    console.error(`❌ [TIMELINE CREATION] Error creating timelines for client ${client.name}:`, error.message);
     throw error;
   }
 };
 
 const bulkImportClients = async (clients) => {
+  console.log(`🚀 [BULK IMPORT] Starting bulk import for ${clients.length} clients...`);
+  
   const results = {
     created: 0,
     updated: 0,
@@ -722,35 +802,58 @@ const bulkImportClients = async (clients) => {
   const toCreate = clients.filter((client) => !client.id);
   const toUpdate = clients.filter((client) => client.id);
 
+  console.log(`📊 [BULK IMPORT] Separated clients: ${toCreate.length} to create, ${toUpdate.length} to update`);
+
   // Process creation in batches - allow duplicates
   if (toCreate.length > 0) {
+    console.log(`🔨 [BULK IMPORT] Processing ${toCreate.length} clients for creation...`);
     for (let i = 0; i < toCreate.length; i += BATCH_SIZE) {
       const batch = toCreate.slice(i, i + BATCH_SIZE);
+      console.log(`📦 [BULK IMPORT] Processing batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(toCreate.length/BATCH_SIZE)} (${batch.length} clients)`);
 
       try {
         // Process activities and GST numbers for each client before creation
         const processedBatch = await Promise.all(
-          batch.map(async (client) => {
+          batch.map(async (client, batchIndex) => {
+            console.log(`🔍 [BULK IMPORT] Processing client ${batchIndex + 1}/${batch.length}: ${client.name || 'Unknown'}`);
+            
+            // Basic validation for required fields
+            if (!client.name || !client.branch) {
+              const error = `Missing required fields - name: ${!!client.name}, branch: ${!!client.branch}`;
+              console.log(`❌ [BULK IMPORT] Validation failed for client: ${error}`);
+              results.errors.push({
+                index: i + batchIndex,
+                error: error,
+                data: client
+              });
+              return null; // Skip this client
+            }
+            
             let processedClient = { ...client };
             
             // Process activities if provided
             if (client.activities && Array.isArray(client.activities)) {
+              console.log(`📋 [BULK IMPORT] Processing ${client.activities.length} activities for client: ${client.name}`);
               const result = await processActivitiesFromFrontend(client.activities);
               if (!result.isValid) {
+                console.log(`❌ [BULK IMPORT] Activity validation failed for client: ${client.name}`);
                 // Add validation errors to results
                 result.errors.forEach(error => {
                   results.errors.push({
-                    index: i,
+                    index: i + batchIndex,
                     error: error.message,
                     data: { ...client, activityError: error }
                   });
                 });
+              } else {
+                console.log(`✅ [BULK IMPORT] Activities processed successfully for client: ${client.name}`);
               }
               processedClient.activities = result.activities;
             }
 
             // Process GST numbers if provided
             if (client.gstNumbers && Array.isArray(client.gstNumbers)) {
+              console.log(`🏢 [BULK IMPORT] Processing ${client.gstNumbers.length} GST numbers for client: ${client.name}`);
               // Validate GST numbers structure for new clients
               for (const gst of client.gstNumbers) {
                 if (!gst.state || !gst.gstNumber || !gst.dateOfRegistration || !gst.gstUserId) {
@@ -760,14 +863,17 @@ const bulkImportClients = async (clients) => {
               
               const gstResult = await processGstNumbersFromFrontend(client.gstNumbers, []);
               if (!gstResult.isValid) {
+                console.log(`❌ [BULK IMPORT] GST validation failed for client: ${client.name}`);
                 // Add validation errors to results
                 gstResult.errors.forEach(error => {
                   results.errors.push({
-                    index: i,
+                    index: i + batchIndex,
                     error: error.message,
                     data: { ...client, gstError: error }
                   });
                 });
+              } else {
+                console.log(`✅ [BULK IMPORT] GST numbers processed successfully for client: ${client.name}`);
               }
               processedClient.gstNumbers = gstResult.gstNumbers;
             }
@@ -776,33 +882,87 @@ const bulkImportClients = async (clients) => {
           })
         );
 
+        // Filter out clients with validation errors before insertion
+        const validClients = processedBatch.filter((client, batchIndex) => {
+          if (!client) {
+            console.log(`⚠️ [BULK IMPORT] Skipping null client at index ${batchIndex}`);
+            return false;
+          }
+          const hasErrors = results.errors.some(error => error.index === i + batchIndex);
+          if (hasErrors) {
+            console.log(`⚠️ [BULK IMPORT] Skipping client with validation errors: ${client.name}`);
+            return false;
+          }
+          return true;
+        });
+
+        console.log(`💾 [BULK IMPORT] Attempting to insert ${validClients.length} valid clients out of ${processedBatch.length} processed`);
+
+        if (validClients.length === 0) {
+          console.log(`⚠️ [BULK IMPORT] No valid clients to insert in this batch`);
+          results.totalProcessed += batch.length;
+          continue;
+        }
+
         // Use bulk insert to create all clients, allowing duplicates
-        const insertResult = await Client.insertMany(processedBatch, {
+        console.log(`🔍 [BULK IMPORT] About to call Client.insertMany with ${validClients.length} clients`);
+        console.log(`🔍 [BULK IMPORT] Sample client data:`, JSON.stringify(validClients[0], null, 2));
+        
+        // Convert branch names to ObjectIds before insertion
+        const clientsWithObjectIds = await Promise.all(validClients.map(async (client) => {
+          if (typeof client.branch === 'string') {
+            // Find branch by name and convert to ObjectId
+            const branch = await Branch.findOne({ name: client.branch });
+            if (!branch) {
+              throw new Error(`Branch not found: ${client.branch}`);
+            }
+            client.branch = branch._id;
+            console.log(`🔄 [BULK IMPORT] Converted branch "${branch.name}" to ObjectId: ${branch._id}`);
+          }
+          return client;
+        }));
+        
+        console.log(`🔍 [BULK IMPORT] Sample client data after branch conversion:`, JSON.stringify(clientsWithObjectIds[0], null, 2));
+        
+        const insertResult = await Client.insertMany(clientsWithObjectIds, {
           ordered: false, // Continue processing even if some fail
         });
+        
+        console.log(`✅ [BULK IMPORT] Successfully inserted ${insertResult.length} clients`);
+        console.log(`🔍 [BULK IMPORT] Insert result type:`, typeof insertResult, Array.isArray(insertResult));
+        
         results.created += insertResult.length;
         results.totalProcessed += batch.length;
 
         // Create subfolders and timelines for newly created clients
         // Process in smaller batches to avoid overwhelming the system
+        console.log(`🔄 [BULK IMPORT] Starting post-processing for ${insertResult.length} created clients...`);
         const POST_PROCESS_BATCH_SIZE = 20;
         for (let j = 0; j < insertResult.length; j += POST_PROCESS_BATCH_SIZE) {
           const postProcessBatch = insertResult.slice(j, j + POST_PROCESS_BATCH_SIZE);
+          console.log(`🔧 [BULK IMPORT] Post-processing batch ${Math.floor(j/POST_PROCESS_BATCH_SIZE) + 1}/${Math.ceil(insertResult.length/POST_PROCESS_BATCH_SIZE)} (${postProcessBatch.length} clients)`);
           
           await Promise.all(
-            postProcessBatch.map(async (createdClient) => {
+            postProcessBatch.map(async (createdClient, postIndex) => {
               try {
+                console.log(`📁 [BULK IMPORT] Creating subfolder for client: ${createdClient.name}`);
                 // Create subfolder
                 await createClientSubfolder(createdClient.name, createdClient.branch);
+                console.log(`✅ [BULK IMPORT] Subfolder created for client: ${createdClient.name}`);
                 
                 // Create timelines if activities exist
                 if (createdClient.activities && createdClient.activities.length > 0) {
-                  await createClientTimelines(createdClient, createdClient.activities);
+                  console.log(`📋 [BULK IMPORT] Creating timelines for ${createdClient.activities.length} activities for client: ${createdClient.name}`);
+                  const timelinesCreated = await createClientTimelines(createdClient, createdClient.activities);
+                  console.log(`✅ [BULK IMPORT] Created ${timelinesCreated.length} timelines for client: ${createdClient.name}`);
+                } else {
+                  console.log(`⚠️ [BULK IMPORT] No activities found for client: ${createdClient.name}, skipping timeline creation`);
                 }
               } catch (error) {
+                console.error(`❌ [BULK IMPORT] Post-processing failed for client ${createdClient.name}:`, error.message);
                 // Add to errors but don't fail the entire batch
                 results.errors.push({
-                  index: i + j,
+                  index: i + j + postIndex,
                   error: `Post-processing failed: ${error.message}`,
                   data: createdClient,
                 });
@@ -811,10 +971,36 @@ const bulkImportClients = async (clients) => {
           );
         }
       } catch (error) {
+        console.error(`❌ [BULK IMPORT] Batch creation failed:`, error.message);
+        console.error(`❌ [BULK IMPORT] Error details:`, {
+          name: error.name,
+          code: error.code,
+          writeErrors: error.writeErrors?.length || 0,
+          insertedCount: error.insertedCount || 0,
+          validationErrors: error.errors ? Object.keys(error.errors) : []
+        });
+        
+        // Log the full error for debugging
+        if (error.writeErrors && error.writeErrors.length > 0) {
+          console.error(`❌ [BULK IMPORT] First write error details:`, error.writeErrors[0]);
+        } else if (error.errors) {
+          console.error(`❌ [BULK IMPORT] Validation errors:`, error.errors);
+        } else {
+          console.error(`❌ [BULK IMPORT] Full error object:`, error);
+        }
+        
         if (error.writeErrors) {
           // Handle partial failures in batch
+          console.log(`⚠️ [BULK IMPORT] Partial batch failure: ${error.insertedCount || 0} inserted, ${error.writeErrors.length} failed`);
           results.created += error.insertedCount || 0;
-          error.writeErrors.forEach((writeError) => {
+          error.writeErrors.forEach((writeError, errorIndex) => {
+            console.error(`❌ [BULK IMPORT] Write error ${errorIndex + 1}/${error.writeErrors.length}:`, {
+              index: writeError.index,
+              code: writeError.err.code,
+              message: writeError.err.errmsg,
+              keyPattern: writeError.err.keyPattern,
+              keyValue: writeError.err.keyValue
+            });
             results.errors.push({
               index: i + writeError.index,
               error: writeError.err.errmsg || 'Creation failed',
@@ -823,6 +1009,8 @@ const bulkImportClients = async (clients) => {
           });
         } else {
           // If batch completely fails, add all items as errors
+          console.error(`❌ [BULK IMPORT] Complete batch failure, marking ${batch.length} clients as failed`);
+          console.error(`❌ [BULK IMPORT] Full error object:`, error);
           batch.forEach((client, batchIndex) => {
             results.errors.push({
               index: i + batchIndex,
@@ -999,6 +1187,26 @@ const bulkImportClients = async (clients) => {
         results.totalProcessed += batch.length;
       }
     }
+  }
+  
+  const endTime = Date.now();
+  const duration = (endTime - startTime) / 1000;
+  
+  console.log(`📊 [BULK IMPORT] Final Results:`);
+  console.log(`   ⏱️  Duration: ${duration}s`);
+  console.log(`   📝 Total Processed: ${results.totalProcessed}`);
+  console.log(`   ✅ Created: ${results.created}`);
+  console.log(`   🔄 Updated: ${results.updated}`);
+  console.log(`   ❌ Errors: ${results.errors.length}`);
+  
+  if (results.errors.length > 0) {
+    console.log(`🔍 [BULK IMPORT] Error Details:`);
+    results.errors.forEach((error, index) => {
+      console.log(`   ${index + 1}. Index ${error.index}: ${error.error}`);
+      if (error.data && error.data.name) {
+        console.log(`      Client: ${error.data.name}`);
+      }
+    });
   }
   
   return results;
@@ -1581,7 +1789,7 @@ const addGstNumber = async (clientId, gstData) => {
   client.gstNumbers.push({
     state: gstData.state.trim(),
     gstNumber: gstData.gstNumber.trim(),
-    dateOfRegistration: new Date(gstData.dateOfRegistration),
+    dateOfRegistration: parseGstDate(gstData.dateOfRegistration),
     gstUserId: gstData.gstUserId.trim()
   });
   await client.save();
@@ -1648,7 +1856,7 @@ const updateGstNumber = async (clientId, gstId, updateData) => {
   // Update GST data with proper type conversion
   if (updateData.state) updateData.state = updateData.state.trim();
   if (updateData.gstNumber) updateData.gstNumber = updateData.gstNumber.trim();
-  if (updateData.dateOfRegistration) updateData.dateOfRegistration = new Date(updateData.dateOfRegistration);
+  if (updateData.dateOfRegistration) updateData.dateOfRegistration = parseGstDate(updateData.dateOfRegistration);
   if (updateData.gstUserId) updateData.gstUserId = updateData.gstUserId.trim();
 
   Object.assign(client.gstNumbers[gstIndex], updateData);
