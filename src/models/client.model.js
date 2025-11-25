@@ -116,31 +116,19 @@ const clientSchema = mongoose.Schema(
     tanNumber: {
       type: String,
       trim: true,
-      validate(value) {
-        if (value && !/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/.test(value)) {
-          throw new Error('Invalid TAN number format');
-        }
-      },
+      // Removed strict validation - accept any format for TAN
       description: 'Tax Deduction and Collection Account Number'
     },
     cinNumber: {
       type: String,
       trim: true,
-      validate(value) {
-        if (value && !/^[A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/.test(value)) {
-          throw new Error('Invalid CIN number format');
-        }
-      },
+      // Removed strict validation - accept any format for CIN (including LLP formats)
       description: 'Corporate Identity Number'
     },
     udyamNumber: {
       type: String,
       trim: true,
-      validate(value) {
-        if (value && !/^UDYAM-[A-Z]{2}[0-9]{2}[0-9]{7}$/.test(value)) {
-          throw new Error('Invalid Udyam Registration Number format');
-        }
-      },
+      // Removed strict validation - accept any format for Udyam
       description: 'Udyam Registration Number (MSME)'
     },
     iecCode: {

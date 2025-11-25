@@ -69,6 +69,11 @@ const bulkImportClients = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+const bulkDeleteClients = catchAsync(async (req, res) => {
+  const result = await clientService.bulkDeleteClients(req.body.clientIds);
+  res.status(httpStatus.OK).send(result);
+});
+
 // Activity management methods
 const addActivityToClient = catchAsync(async (req, res) => {
   const result = await clientService.addActivityToClient(req.params.clientId, req.body);
@@ -135,6 +140,7 @@ export {
   updateClientStatus,
   deleteClient,
   bulkImportClients,
+  bulkDeleteClients,
   addActivityToClient,
   removeActivityFromClient,
   updateActivityAssignment,

@@ -311,6 +311,126 @@ const deleteClientById = async (clientId) => {
   return client;
 };
 
+/**
+ * Bulk delete clients by IDs
+ * @param {Array<string>} clientIds - Array of client IDs to delete
+ * @returns {Promise<Object>} - Result with deleted count and errors
+ */
+const bulkDeleteClients = async (clientIds) => {
+  console.log(`🗑️  [BULK DELETE] Starting bulk delete for ${clientIds.length} clients...`);
+  
+  const results = {
+    deleted: 0,
+    notFound: 0,
+    errors: [],
+    totalProcessed: clientIds.length,
+  };
+
+  const BATCH_SIZE = 100; // Process in batches to avoid memory issues
+  const startTime = Date.now();
+
+  try {
+    for (let i = 0; i < clientIds.length; i += BATCH_SIZE) {
+      const batch = clientIds.slice(i, i + BATCH_SIZE);
+      console.log(`📦 [BULK DELETE] Processing batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(clientIds.length/BATCH_SIZE)} (${batch.length} clients)`);
+
+      try {
+        // Validate all IDs are valid ObjectIds using regex (same as validation)
+        const validIds = [];
+        const invalidIds = [];
+        const objectIdRegex = /^[0-9a-fA-F]{24}$/;
+        
+        batch.forEach((id, batchIndex) => {
+          if (objectIdRegex.test(id)) {
+            validIds.push(id);
+          } else {
+            invalidIds.push({ index: i + batchIndex, id });
+          }
+        });
+
+        // Add invalid IDs to errors
+        invalidIds.forEach(({ index, id }) => {
+          results.errors.push({
+            index,
+            error: 'Invalid ObjectId format',
+            data: { id }
+          });
+        });
+
+        if (validIds.length > 0) {
+          // Delete clients in batch
+          const deleteResult = await Client.deleteMany({
+            _id: { $in: validIds }
+          });
+
+          const deletedCount = deleteResult.deletedCount || 0;
+          results.deleted += deletedCount;
+          
+          // Check which clients were not found (if any)
+          if (deletedCount < validIds.length) {
+            const notFoundCount = validIds.length - deletedCount;
+            results.notFound += notFoundCount;
+            
+            // Find which specific IDs were not found
+            const foundIds = await Client.find({
+              _id: { $in: validIds }
+            }).select('_id').lean();
+
+            const foundIdSet = new Set(foundIds.map(c => c._id.toString()));
+            const notFoundIds = validIds.filter(id => !foundIdSet.has(id.toString()));
+
+            notFoundIds.forEach((id) => {
+              const batchIndex = batch.indexOf(id);
+              results.errors.push({
+                index: i + batchIndex,
+                error: `Client with ID ${id} not found`,
+                data: { id }
+              });
+            });
+          }
+
+          console.log(`✅ [BULK DELETE] Batch: ${deletedCount} deleted, ${invalidIds.length} invalid, ${validIds.length - deletedCount} not found`);
+        }
+      } catch (error) {
+        console.error(`❌ [BULK DELETE] Batch failed:`, error.message);
+        // Add all clients in batch as errors
+        batch.forEach((id, batchIndex) => {
+          results.errors.push({
+            index: i + batchIndex,
+            error: `Delete failed: ${error.message}`,
+            data: { id }
+          });
+        });
+      }
+    }
+  } catch (error) {
+    console.error(`❌ [BULK DELETE] Fatal error:`, error.message);
+    throw error;
+  }
+
+  const endTime = Date.now();
+  const duration = (endTime - startTime) / 1000;
+
+  console.log(`📊 [BULK DELETE] Final Results:`);
+  console.log(`   ⏱️  Duration: ${duration}s`);
+  console.log(`   📝 Total Processed: ${results.totalProcessed}`);
+  console.log(`   ✅ Deleted: ${results.deleted}`);
+  console.log(`   ❌ Not Found: ${results.notFound}`);
+  console.log(`   ⚠️  Errors: ${results.errors.length}`);
+
+  if (results.errors.length > 0) {
+    console.log(`🔍 [BULK DELETE] Error Details:`);
+    results.errors.slice(0, 10).forEach((error, index) => {
+      console.log(`   ${index + 1}. Index ${error.index}: ${error.error}`);
+    });
+    if (results.errors.length > 10) {
+      console.log(`   ... and ${results.errors.length - 10} more errors`);
+    }
+  }
+
+  return results;
+};
+
 // Helper function to validate and process activities from frontend data
 const processActivitiesFromFrontend = async (activityData) => {
   if (!activityData || !Array.isArray(activityData)) {
@@ -1887,7 +2007,8 @@ export {
   getClientByEmail,
   updateClientById, 
   updateClientStatus,
-  deleteClientById, 
+  deleteClientById,
+  bulkDeleteClients, 
   bulkImportClients,
   addActivityToClient,
   removeActivityFromClient,

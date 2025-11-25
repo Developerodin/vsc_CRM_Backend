@@ -16,6 +16,10 @@ router
   .route('/bulk-import')
   .post(auth('manageClients'), validate(clientValidation.bulkImportClients), clientController.bulkImportClients);
 
+router
+  .route('/bulk-delete')
+  .post(auth('manageClients'), validate(clientValidation.bulkDeleteClients), clientController.bulkDeleteClients);
+
 // Task statistics route - MUST be before /:clientId routes to avoid routing conflicts
 router
   .route('/task-statistics')

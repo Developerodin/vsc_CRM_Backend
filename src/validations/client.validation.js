@@ -189,7 +189,17 @@ const bulkImportClients = {
         })
       )
       .min(1)
-      .max(500)
+      .max(5000)
+      .required(),
+  }),
+};
+
+const bulkDeleteClients = {
+  body: Joi.object().keys({
+    clientIds: Joi.array()
+      .items(Joi.string().custom(objectId).required())
+      .min(1)
+      .max(5000)
       .required(),
   }),
 };
@@ -294,6 +304,7 @@ export default {
   updateClientStatus,
   deleteClient,
   bulkImportClients,
+  bulkDeleteClients,
   addActivityToClient,
   removeActivityFromClient,
   updateActivityAssignment,
