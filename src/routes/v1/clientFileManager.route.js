@@ -24,7 +24,7 @@ router.get('/clients/:clientId/contents', catchAsync(async (req, res) => {
   // Use the existing file manager service to get actual client files
   const options = {
     sortBy: req.query.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
-    limit: parseInt(req.query.limit) || 10,
+    limit: req.query.limit ? parseInt(req.query.limit) : undefined,
     page: parseInt(req.query.page) || 1
   };
 

@@ -155,21 +155,24 @@ const getFolderContents = async (folderId, options = {}) => {
   // Try a direct query instead of paginate to debug the issue
   console.log('🔍 getFolderContents - Using direct query instead of paginate...');
   
-  const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+  const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+  const limit = hasLimit ? parseInt(options.limit, 10) : null;
   const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-  const skip = (page - 1) * limit;
+  const skip = hasLimit ? (page - 1) * limit : 0;
   
   const countPromise = FileManager.countDocuments(filter);
-  const docsPromise = FileManager.find(filter)
+  let docsPromise = FileManager.find(filter)
     .populate('folder.createdBy', 'name email')
     .populate('file.uploadedBy', 'name email')
-    .sort(options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc')
-    .skip(skip)
-    .limit(limit)
-    .lean(); // Use lean() to get plain objects
+    .sort(options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc');
   
-  const [totalResults, results] = await Promise.all([countPromise, docsPromise]);
-  const totalPages = Math.ceil(totalResults / limit);
+  if (hasLimit) {
+    docsPromise = docsPromise.skip(skip).limit(limit);
+  }
+  
+  const docsResult = await docsPromise.lean(); // Use lean() to get plain objects
+  const [totalResults, results] = await Promise.all([countPromise, Promise.resolve(docsResult)]);
+  const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
   
   const result = {
     results,
@@ -592,9 +595,10 @@ const searchItemsRecursive = async (filter, options = {}) => {
     const allResults = [...matchingFolders, ...matchingFiles];
 
     // Apply pagination manually since we're combining results
-    const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+    const limit = hasLimit ? parseInt(options.limit, 10) : null;
     const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-    const skip = (page - 1) * limit;
+    const skip = hasLimit ? (page - 1) * limit : 0;
 
     // Sort results
     let sortedResults = allResults.sort((a, b) => {
@@ -610,8 +614,8 @@ const searchItemsRecursive = async (filter, options = {}) => {
 
     // Apply pagination
     const totalResults = sortedResults.length;
-    const totalPages = Math.ceil(totalResults / limit);
-    const paginatedResults = sortedResults.slice(skip, skip + limit);
+    const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
+    const paginatedResults = hasLimit ? sortedResults.slice(skip, skip + limit) : sortedResults;
 
     // Add id field to each result since we're using lean()
     const resultsWithId = paginatedResults.map(item => ({
@@ -664,21 +668,24 @@ const searchSubfoldersByName = async (subfolderName, options = {}) => {
     }
 
     // Use direct query for better control
-    const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+    const limit = hasLimit ? parseInt(options.limit, 10) : null;
     const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-    const skip = (page - 1) * limit;
+    const skip = hasLimit ? (page - 1) * limit : 0;
 
     const countPromise = FileManager.countDocuments(searchFilter);
-    const docsPromise = FileManager.find(searchFilter)
+    let docsPromise = FileManager.find(searchFilter)
       .populate('folder.createdBy', 'name email')
       .populate('folder.parentFolder', 'folder.name')
-      .sort(options.sortBy || 'folder.name:asc')
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const [totalResults, results] = await Promise.all([countPromise, docsPromise]);
-    const totalPages = Math.ceil(totalResults / limit);
+      .sort(options.sortBy || 'folder.name:asc');
+    
+    if (hasLimit) {
+      docsPromise = docsPromise.skip(skip).limit(limit);
+    }
+    
+    const docsResult = await docsPromise.lean();
+    const [totalResults, results] = await Promise.all([countPromise, Promise.resolve(docsResult)]);
+    const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
 
     // Add id field to each result since we're using lean()
     const resultsWithId = results.map(item => ({
@@ -742,21 +749,24 @@ const searchClientSubfolders = async (query, options = {}) => {
     }
 
     // Use direct query for better control
-    const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+    const limit = hasLimit ? parseInt(options.limit, 10) : null;
     const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-    const skip = (page - 1) * limit;
+    const skip = hasLimit ? (page - 1) * limit : 0;
 
     const countPromise = FileManager.countDocuments(searchFilter);
-    const docsPromise = FileManager.find(searchFilter)
+    let docsPromise = FileManager.find(searchFilter)
       .populate('folder.createdBy', 'name email')
       .populate('folder.parentFolder', 'folder.name')
-      .sort(options.sortBy || 'folder.name:asc')
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const [totalResults, results] = await Promise.all([countPromise, docsPromise]);
-    const totalPages = Math.ceil(totalResults / limit);
+      .sort(options.sortBy || 'folder.name:asc');
+    
+    if (hasLimit) {
+      docsPromise = docsPromise.skip(skip).limit(limit);
+    }
+    
+    const docsResult = await docsPromise.lean();
+    const [totalResults, results] = await Promise.all([countPromise, Promise.resolve(docsResult)]);
+    const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
 
     // Transform results to a cleaner format
     const transformedResults = results.map(item => ({
@@ -903,9 +913,10 @@ const getClientFolderContents = async (clientId, options = {}) => {
   }
 
   // Get all contents of the client folder using direct query instead of paginate
-  const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+  const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+  const limit = hasLimit ? parseInt(options.limit, 10) : null;
   const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-  const skip = (page - 1) * limit;
+  const skip = hasLimit ? (page - 1) * limit : 0;
 
   const filter = {
     $or: [
@@ -916,14 +927,16 @@ const getClientFolderContents = async (clientId, options = {}) => {
   };
 
   const countPromise = FileManager.countDocuments(filter);
-  const docsPromise = FileManager.find(filter)
-    .sort(options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc')
-    .skip(skip)
-    .limit(limit)
-    .lean(); // Use lean() to get plain objects
-
-  const [totalResults, results] = await Promise.all([countPromise, docsPromise]);
-  const totalPages = Math.ceil(totalResults / limit);
+  let docsPromise = FileManager.find(filter)
+    .sort(options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc');
+  
+  if (hasLimit) {
+    docsPromise = docsPromise.skip(skip).limit(limit);
+  }
+  
+  const docsResult = await docsPromise.lean(); // Use lean() to get plain objects
+  const [totalResults, results] = await Promise.all([countPromise, Promise.resolve(docsResult)]);
+  const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
 
   // Add id field to each result since we're using lean()
   const resultsWithId = results.map(item => ({

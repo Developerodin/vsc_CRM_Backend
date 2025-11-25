@@ -66,7 +66,7 @@ const getMyTasks = {
       .description('Filter tasks until this date'),
     page: Joi.number().integer().min(1).default(1)
       .description('Page number for pagination'),
-    limit: Joi.number().integer().min(1).max(100).default(10)
+    limit: Joi.number().integer().min(1).max(100).optional()
       .description('Number of tasks per page')
   })
 };

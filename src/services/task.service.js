@@ -109,7 +109,7 @@ const getTaskByIdMinimal = async (id) => {
  * @param {Object} filter - Mongoose filter object
  * @param {Object} options - Query options
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
+ * @param {number} [options.limit] - Maximum number of results per page (if not provided, returns all results)
  * @param {number} [options.page] - Current page (default = 1)
  * @returns {Promise<QueryResult>}
  */
@@ -146,7 +146,7 @@ const queryTasks = async (filter, options) => {
         return {
           results: [],
           page: options.page || 1,
-          limit: options.limit || 10,
+          limit: options.limit || 0,
           totalPages: 0,
           totalResults: 0
         };
@@ -157,7 +157,7 @@ const queryTasks = async (filter, options) => {
       return {
         results: [],
         page: options.page || 1,
-        limit: options.limit || 10,
+        limit: options.limit || 0,
         totalPages: 0,
         totalResults: 0
       };
@@ -249,7 +249,8 @@ const queryTasks = async (filter, options) => {
     
     // Update total results count
     tasks.totalResults = tasks.results.length;
-    tasks.totalPages = Math.ceil(tasks.totalResults / (options.limit || 10));
+    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+    tasks.totalPages = hasLimit ? Math.ceil(tasks.totalResults / parseInt(options.limit, 10)) : 1;
   }
   
   console.log(`🔍 Task search results: Found ${tasks.results.length} tasks`);

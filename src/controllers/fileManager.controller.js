@@ -178,7 +178,7 @@ const getDashboard = catchAsync(async (req, res) => {
   // Get recent files
   const recentFiles = await fileManagerService.searchItems(
     { userId: req.user.id, type: 'file' },
-    { ...options, limit: 10, sortBy: 'createdAt:desc' }
+    { ...options, sortBy: 'createdAt:desc' }
   );
   
   // Get folder tree for navigation
@@ -240,7 +240,7 @@ const searchClientSubfolders = catchAsync(async (req, res) => {
   const searchOptions = {
     ...options,
     onlyClientFolders: true, // This will restrict search to only client subfolders
-    limit: options.limit || 100,
+    limit: options.limit,
     page: options.page || 1
   };
   

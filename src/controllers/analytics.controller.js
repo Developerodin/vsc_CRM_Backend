@@ -53,7 +53,7 @@ const getTaskCompletionTrends = catchAsync(async (req, res) => {
  */
 const getTopTeamMembersByCompletion = catchAsync(async (req, res) => {
   try {
-    const { limit = 10, branch, startDate, endDate } = req.query;
+    const { limit, branch, startDate, endDate } = req.query;
     
     const filter = {};
     if (branch) filter.branch = branch;
@@ -65,7 +65,7 @@ const getTopTeamMembersByCompletion = catchAsync(async (req, res) => {
     }
     
     const topMembers = await teamMemberAnalytics.getTopTeamMembersByCompletion(
-      parseInt(limit),
+      limit ? parseInt(limit) : undefined,
       filter
     );
     

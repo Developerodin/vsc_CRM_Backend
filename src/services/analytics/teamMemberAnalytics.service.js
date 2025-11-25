@@ -252,11 +252,11 @@ const getTaskCompletionTrends = async (months = 6) => {
 
 /**
  * Get top team members by task completion
- * @param {number} limit - Number of top members to return (default: 10)
+ * @param {number} [limit] - Number of top members to return (if not provided, returns all)
  * @param {Object} filter - Additional filters (branch, date range, etc.)
  * @returns {Promise<Object>} Top team members data
  */
-const getTopTeamMembersByCompletion = async (limit = 10, filter = {}) => {
+const getTopTeamMembersByCompletion = async (limit, filter = {}) => {
   try {
     const { currentMonthStart, currentMonthEnd } = getMonthRanges();
     
@@ -310,7 +310,7 @@ const getTopTeamMembersByCompletion = async (limit = 10, filter = {}) => {
         }
       },
       { $sort: { completedTasks: -1 } },
-      { $limit: limit }
+      ...(limit ? [{ $limit: limit }] : [])
     ]);
     
     // Calculate completion rate percentage
@@ -633,10 +633,13 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
 
     // Apply pagination to recent tasks
     const page = parseInt(options.page) || 1;
-    const limit = parseInt(options.limit) || 10;
-    const skip = (page - 1) * limit;
+    const hasLimit = options.limit && parseInt(options.limit) > 0;
+    const limit = hasLimit ? parseInt(options.limit) : null;
+    const skip = hasLimit ? (page - 1) * limit : 0;
     
-    const paginatedRecentTasks = recentTasks.slice(skip, skip + limit);
+    const paginatedRecentTasks = hasLimit 
+      ? recentTasks.slice(skip, skip + limit)
+      : recentTasks;
 
     // Get task distribution by priority
     const tasksByPriority = allTasks.reduce((acc, task) => {

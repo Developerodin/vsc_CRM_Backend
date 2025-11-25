@@ -15,7 +15,7 @@ const paginate = (schema) => {
    * @param {Object} [options] - Query options
    * @param {string} [options.sortBy] - Sorting criteria using the format: sortField:(desc|asc). Multiple sorting criteria should be separated by commas (,)
    * @param {string} [options.populate] - Populate data fields. Hierarchy of fields should be separated by (.). Multiple populating criteria should be separated by commas (,)
-   * @param {number} [options.limit] - Maximum number of results per page (default = 10)
+   * @param {number} [options.limit] - Maximum number of results per page (if not provided, returns all results)
    * @param {number} [options.page] - Current page (default = 1)
    * @returns {Promise<QueryResult>}
    */
@@ -32,12 +32,19 @@ const paginate = (schema) => {
       sort = 'createdAt';
     }
 
-    const limit = options.limit && parseInt(options.limit, 10) > 0 ? parseInt(options.limit, 10) : 10;
+    // If no limit is provided, return all results (no pagination)
+    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+    const limit = hasLimit ? parseInt(options.limit, 10) : null;
     const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-    const skip = (page - 1) * limit;
+    const skip = hasLimit ? (page - 1) * limit : 0;
 
     const countPromise = this.countDocuments(filter).exec();
-    let docsPromise = this.find(filter).sort(sort).skip(skip).limit(limit);
+    let docsPromise = this.find(filter).sort(sort);
+    
+    // Only apply skip and limit if limit was explicitly provided
+    if (hasLimit) {
+      docsPromise = docsPromise.skip(skip).limit(limit);
+    }
 
     if (options.populate && typeof options.populate === 'string') {
       options.populate.split(',').forEach((populateOption) => {
@@ -67,11 +74,11 @@ const paginate = (schema) => {
 
     return Promise.all([countPromise, docsPromise]).then((values) => {
       const [totalResults, results] = values;
-      const totalPages = Math.ceil(totalResults / limit);
+      const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
       const result = {
         results,
         page,
-        limit,
+        limit: limit || totalResults, // If no limit, show totalResults as limit
         totalPages,
         totalResults,
       };

@@ -259,11 +259,13 @@ const getClientDetailsOverview = async (clientId, filters = {}, options = {}) =>
     
     // Get pagination options
     const page = parseInt(options.page) || 1;
-    const limit = parseInt(options.limit) || 10;
-    const skip = (page - 1) * limit;
+    const hasLimit = options.limit && parseInt(options.limit) > 0;
+    const limit = hasLimit ? parseInt(options.limit) : null;
+    const skip = hasLimit ? (page - 1) * limit : 0;
     
-    const recentActivities = sortedTasks
-      .slice(skip, skip + limit)
+    const recentActivities = hasLimit 
+      ? sortedTasks.slice(skip, skip + limit)
+      : sortedTasks
       .map(task => ({
         id: task._id,
         status: task.status,

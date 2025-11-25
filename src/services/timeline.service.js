@@ -72,7 +72,7 @@ const createTimeline = async (timelineBody, user = null) => {
  * @param {Object} filter - Mongo filter
  * @param {Object} options - Query options
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
+ * @param {number} [options.limit] - Maximum number of results per page (if not provided, returns all results)
  * @param {number} [options.page] - Current page (default = 1)
  * @param {Object} user - User object with role information
  * @returns {Promise<QueryResult>}
@@ -238,7 +238,8 @@ const queryTimelines = async (filter, options, user) => {
 
     // Update total count after filtering
     result.totalResults = result.results.length;
-    result.totalPages = Math.ceil(result.totalResults / (options.limit || 10));
+    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+    result.totalPages = hasLimit ? Math.ceil(result.totalResults / parseInt(options.limit, 10)) : 1;
   }
   
   return result;

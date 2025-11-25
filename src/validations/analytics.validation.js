@@ -10,8 +10,8 @@ const getTaskCompletionTrends = {
 
 const getTopTeamMembersByCompletion = {
   query: Joi.object().keys({
-    limit: Joi.number().integer().min(1).max(100).default(10)
-      .description('Number of top members to return (1-100)'),
+    limit: Joi.number().integer().min(1).max(100).optional()
+      .description('Number of top members to return (1-100). If not provided, returns all results.'),
     branch: Joi.string().custom(objectId)
       .description('Branch ID to filter by'),
     startDate: Joi.date().iso()
@@ -57,8 +57,8 @@ const getTeamMemberDetailsOverview = {
       .description('Filter tasks by status'),
     
     // Pagination options
-    limit: Joi.number().integer().min(1).max(100).default(10)
-      .description('Number of recent tasks to return (1-100)'),
+    limit: Joi.number().integer().min(1).max(100).optional()
+      .description('Number of recent tasks to return (1-100). If not provided, returns all results.'),
     page: Joi.number().integer().min(1).default(1)
       .description('Page number for pagination')
   })
@@ -91,8 +91,8 @@ const getClientDetailsOverview = {
       .description('Filter tasks by assigned team member ID'),
     
     // Pagination options
-    limit: Joi.number().integer().min(1).max(100).default(10)
-      .description('Number of recent activities to return (1-100)'),
+    limit: Joi.number().integer().min(1).max(100).optional()
+      .description('Number of recent activities to return (1-100). If not provided, returns all results.'),
     page: Joi.number().integer().min(1).default(1)
       .description('Page number for pagination')
   })
@@ -118,7 +118,7 @@ const getAllClientsTableData = {
     branch: Joi.string().custom(objectId),
     search: Joi.string().trim().allow(''),
     sortBy: Joi.string(),
-    limit: Joi.number().integer().min(1).max(10000).default(50),
+    limit: Joi.number().integer().min(1).max(10000).optional(),
     page: Joi.number().integer().min(1).default(1)
   })
 };
@@ -134,7 +134,7 @@ const getAllTeamMembersTableData = {
     branch: Joi.string().custom(objectId),
     search: Joi.string().trim().allow(''),
     sortBy: Joi.string(),
-    limit: Joi.number().integer().min(1).max(10000).default(50),
+    limit: Joi.number().integer().min(1).max(10000).optional(),
     page: Joi.number().integer().min(1).default(1)
   })
 };

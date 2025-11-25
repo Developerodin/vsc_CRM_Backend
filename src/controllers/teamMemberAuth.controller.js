@@ -224,7 +224,7 @@ const getMyTasks = catchAsync(async (req, res) => {
       startDate,
       endDate,
       page = 1,
-      limit = 10
+      limit
     } = req.query;
 
     // Build query filters

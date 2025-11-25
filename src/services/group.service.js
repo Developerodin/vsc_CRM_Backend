@@ -43,7 +43,7 @@ const createGroup = async (groupBody, user = null) => {
  * @param {Object} filter - Mongo filter
  * @param {Object} options - Query options
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
+ * @param {number} [options.limit] - Maximum number of results per page (if not provided, returns all results)
  * @param {number} [options.page] - Current page (default = 1)
  * @param {Object} user - User object with role information
  * @returns {Promise<QueryResult>}
@@ -103,7 +103,7 @@ const queryGroups = async (filter, options, user) => {
         return {
           results: [],
           page: options.page || 1,
-          limit: options.limit || 10,
+          limit: options.limit || 0,
           totalPages: 0,
           totalResults: 0
         };
@@ -117,7 +117,7 @@ const queryGroups = async (filter, options, user) => {
       return {
         results: [],
         page: options.page || 1,
-        limit: options.limit || 10,
+        limit: options.limit || 0,
         totalPages: 0,
         totalResults: 0
       };

@@ -110,7 +110,7 @@ const createClient = async (clientBody, user = null) => {
  * @param {Object} filter - Mongo filter
  * @param {Object} options - Query options
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
+ * @param {number} [options.limit] - Maximum number of results per page (if not provided, returns all results)
  * @param {number} [options.page] - Current page (default = 1)
  * @param {Object} user - User object with role information
  * @returns {Promise<QueryResult>}
@@ -1343,19 +1343,20 @@ const getClientActivities = async (clientId, query = {}) => {
   
   // Apply pagination
   const page = parseInt(query.page) || 1;
-  const limit = parseInt(query.limit) || 10;
-  const startIndex = (page - 1) * limit;
-  const endIndex = startIndex + limit;
+  const hasLimit = query.limit && parseInt(query.limit) > 0;
+  const limit = hasLimit ? parseInt(query.limit) : null;
+  const startIndex = hasLimit ? (page - 1) * limit : 0;
+  const endIndex = hasLimit ? startIndex + limit : activities.length;
   
-  const paginatedActivities = activities.slice(startIndex, endIndex);
+  const paginatedActivities = hasLimit ? activities.slice(startIndex, endIndex) : activities;
   
   return {
     activities: paginatedActivities,
     pagination: {
       page,
-      limit,
+      limit: limit || activities.length,
       total: activities.length,
-      pages: Math.ceil(activities.length / limit),
+      pages: hasLimit ? Math.ceil(activities.length / limit) : 1,
     },
   };
 };

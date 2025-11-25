@@ -79,7 +79,7 @@ const getActivities = {
   query: Joi.object().keys({
     name: Joi.string().allow(''),
     sortBy: Joi.string().pattern(/^[a-zA-Z]+:(asc|desc)$/),
-    limit: Joi.number().integer().min(1).default(10),
+    limit: Joi.number().integer().min(1).optional(),
     page: Joi.number().integer().min(1).default(1),
   }),
 };
