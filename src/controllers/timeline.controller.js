@@ -6,7 +6,13 @@ import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
 
 const createTimeline = catchAsync(async (req, res) => {
-  const timeline = await timelineService.createTimeline(req.body, req.user);
+  // Handle client as array - extract first element if it's an array
+  const body = { ...req.body };
+  if (Array.isArray(body.client) && body.client.length > 0) {
+    body.client = body.client[0];
+  }
+  
+  const timeline = await timelineService.createTimeline(body, req.user);
   res.status(httpStatus.CREATED).send(timeline);
 });
 
