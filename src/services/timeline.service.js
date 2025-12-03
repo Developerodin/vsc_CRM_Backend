@@ -197,17 +197,43 @@ const queryTimelines = async (filter, options, user) => {
     }
   }
 
-  const result = await Timeline.paginate(mongoFilter, options);
+  // Check if we need to apply post-query filters (text-based searches on activity/client name)
+  const needsPostQueryFilter = (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) ||
+                                (filter.client && !mongoose.Types.ObjectId.isValid(filter.client));
+
+  let result;
   
-  // Populate the results with activity and client data
-  if (result.results && result.results.length > 0) {
-    await Timeline.populate(result.results, [
+  if (needsPostQueryFilter) {
+    // If we need post-query filters, we must:
+    // 1. Get ALL documents matching the MongoDB filter (without pagination, but with sorting)
+    // 2. Populate and apply post-query filters
+    // 3. Count the filtered results
+    // 4. Apply pagination to the filtered results
+    
+    // Build sort query
+    let sort = '';
+    if (options.sortBy) {
+      const sortingCriteria = [];
+      options.sortBy.split(',').forEach((sortOption) => {
+        const [key, order] = sortOption.split(':');
+        sortingCriteria.push((order === 'desc' ? '-' : '') + key);
+      });
+      sort = sortingCriteria.join(' ');
+    } else {
+      sort = 'createdAt';
+    }
+    
+    // Get all documents matching the filter with sorting (no pagination)
+    let allResults = await Timeline.find(mongoFilter).sort(sort);
+    
+    // Populate the results with activity and client data
+    await Timeline.populate(allResults, [
       { path: 'activity', select: 'name sortOrder subactivities' },
       { path: 'client', select: 'name email phone' }
     ]);
     
     // Process subactivity data since it's stored as embedded document
-    result.results.forEach(timeline => {
+    allResults.forEach(timeline => {
       if (timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
         // Find the matching subactivity in the populated activity
         const subactivity = timeline.activity.subactivities.find(
@@ -222,7 +248,7 @@ const queryTimelines = async (filter, options, user) => {
     // Apply post-query filters for text-based searches
     if (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) {
       // Filter by activity name
-      result.results = result.results.filter(timeline => 
+      allResults = allResults.filter(timeline => 
         timeline.activity && timeline.activity.name && 
         timeline.activity.name.toLowerCase().includes(filter.activity.toLowerCase())
       );
@@ -230,16 +256,58 @@ const queryTimelines = async (filter, options, user) => {
 
     if (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
       // Filter by client name
-      result.results = result.results.filter(timeline => 
+      allResults = allResults.filter(timeline => 
         timeline.client && timeline.client.name && 
         timeline.client.name.toLowerCase().includes(filter.client.toLowerCase())
       );
     }
 
-    // Update total count after filtering
-    result.totalResults = result.results.length;
+    // Get total count of filtered results (this is the true total)
+    const totalResults = allResults.length;
+    
+    // Apply pagination to filtered results
     const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
-    result.totalPages = hasLimit ? Math.ceil(result.totalResults / parseInt(options.limit, 10)) : 1;
+    const limit = hasLimit ? parseInt(options.limit, 10) : null;
+    const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
+    const skip = hasLimit ? (page - 1) * limit : 0;
+    
+    const paginatedResults = hasLimit 
+      ? allResults.slice(skip, skip + limit)
+      : allResults;
+    
+    const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
+    
+    result = {
+      results: paginatedResults,
+      page,
+      limit: limit || totalResults,
+      totalPages,
+      totalResults, // This is now the total count of all matching documents after post-query filters
+    };
+  } else {
+    // No post-query filters needed, use standard pagination
+    result = await Timeline.paginate(mongoFilter, options);
+    
+    // Populate the results with activity and client data
+    if (result.results && result.results.length > 0) {
+      await Timeline.populate(result.results, [
+        { path: 'activity', select: 'name sortOrder subactivities' },
+        { path: 'client', select: 'name email phone' }
+      ]);
+      
+      // Process subactivity data since it's stored as embedded document
+      result.results.forEach(timeline => {
+        if (timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
+          // Find the matching subactivity in the populated activity
+          const subactivity = timeline.activity.subactivities.find(
+            sub => sub._id.toString() === timeline.subactivity._id.toString()
+          );
+          if (subactivity) {
+            timeline.subactivity = subactivity;
+          }
+        }
+      });
+    }
   }
   
   return result;

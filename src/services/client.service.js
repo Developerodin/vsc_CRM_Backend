@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import { Client, Activity, FileManager, Timeline, Task, Branch } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
+import { createClientTimelines as createTimelinesFromService } from './timeline.service.js';
 
 /**
  * Helper function to get month name from month index
@@ -933,6 +934,9 @@ const bulkImportClients = async (clients) => {
 
       try {
         // Process activities and GST numbers for each client before creation
+        // Map to store processed activities for each client (keyed by name+branch for matching)
+        const processedActivitiesMap = new Map();
+        
         const processedBatch = await Promise.all(
           batch.map(async (client, batchIndex) => {
             console.log(`🔍 [BULK IMPORT] Processing client ${batchIndex + 1}/${batch.length}: ${client.name || 'Unknown'}`);
@@ -967,6 +971,10 @@ const bulkImportClients = async (clients) => {
                 });
               } else {
                 console.log(`✅ [BULK IMPORT] Activities processed successfully for client: ${client.name}`);
+                // Store processed activities in map for later use in timeline creation
+                // Use client name as key (branch might be string or ObjectId, so use name only for matching)
+                const clientKey = client.name.toLowerCase().trim();
+                processedActivitiesMap.set(clientKey, result.activities);
               }
               processedClient.activities = result.activities;
             }
@@ -1070,16 +1078,28 @@ const bulkImportClients = async (clients) => {
                 await createClientSubfolder(createdClient.name, createdClient.branch);
                 console.log(`✅ [BULK IMPORT] Subfolder created for client: ${createdClient.name}`);
                 
+                // Get processed activities from map (use the processed activities, not the inserted document's activities)
+                // Match by client name (normalized to lowercase for consistency)
+                const clientKey = createdClient.name.toLowerCase().trim();
+                const processedActivities = processedActivitiesMap.get(clientKey);
+                
                 // Create timelines if activities exist
-                if (createdClient.activities && createdClient.activities.length > 0) {
-                  console.log(`📋 [BULK IMPORT] Creating timelines for ${createdClient.activities.length} activities for client: ${createdClient.name}`);
-                  const timelinesCreated = await createClientTimelines(createdClient, createdClient.activities);
+                if (processedActivities && processedActivities.length > 0) {
+                  console.log(`📋 [BULK IMPORT] Creating timelines for ${processedActivities.length} activities for client: ${createdClient.name}`);
+                  // Use the timeline service function which has proper financial year handling and date generation
+                  const timelinesCreated = await createTimelinesFromService(createdClient, processedActivities);
+                  console.log(`✅ [BULK IMPORT] Created ${timelinesCreated.length} timelines for client: ${createdClient.name}`);
+                } else if (createdClient.activities && createdClient.activities.length > 0) {
+                  // Fallback to inserted document activities if processed activities not found
+                  console.log(`📋 [BULK IMPORT] Using inserted document activities for client: ${createdClient.name}`);
+                  const timelinesCreated = await createTimelinesFromService(createdClient, createdClient.activities);
                   console.log(`✅ [BULK IMPORT] Created ${timelinesCreated.length} timelines for client: ${createdClient.name}`);
                 } else {
                   console.log(`⚠️ [BULK IMPORT] No activities found for client: ${createdClient.name}, skipping timeline creation`);
                 }
               } catch (error) {
                 console.error(`❌ [BULK IMPORT] Post-processing failed for client ${createdClient.name}:`, error.message);
+                console.error(`❌ [BULK IMPORT] Post-processing error stack:`, error.stack);
                 // Add to errors but don't fail the entire batch
                 results.errors.push({
                   index: i + j + postIndex,
@@ -1095,7 +1115,7 @@ const bulkImportClients = async (clients) => {
         console.error(`❌ [BULK IMPORT] Error details:`, {
           name: error.name,
           code: error.code,
-          writeErrors: error.writeErrors?.length || 0,
+          writeErrors: (error.writeErrors && error.writeErrors.length) || 0,
           insertedCount: error.insertedCount || 0,
           validationErrors: error.errors ? Object.keys(error.errors) : []
         });
@@ -1269,7 +1289,10 @@ const bulkImportClients = async (clients) => {
                   
                   // Create timelines if activities exist and were updated
                   if (updatedClient.activities && updatedClient.activities.length > 0) {
-                    await createClientTimelines(updatedClient, updatedClient.activities);
+                    console.log(`📋 [BULK IMPORT] Creating timelines for ${updatedClient.activities.length} activities for updated client: ${updatedClient.name}`);
+                    // Use the timeline service function which has proper financial year handling and date generation
+                    const timelinesCreated = await createTimelinesFromService(updatedClient, updatedClient.activities);
+                    console.log(`✅ [BULK IMPORT] Created ${timelinesCreated.length} timelines for updated client: ${updatedClient.name}`);
                   }
                 } catch (error) {
                   // Add to errors but don't fail the entire batch
