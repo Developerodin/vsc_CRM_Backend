@@ -5,7 +5,7 @@ import Timeline from '../models/timeline.model.js';
 import Activity from '../models/activity.model.js';
 import Client from '../models/client.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
-import { getCurrentFinancialYear, generateTimelineDates } from '../utils/financialYear.js';
+import { getCurrentFinancialYear, generateTimelineDates, calculateNextOccurrence } from '../utils/financialYear.js';
 
 /**
  * Validate if activity ID exists
@@ -255,10 +255,11 @@ const queryTimelines = async (filter, options, user) => {
     }
 
     if (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
-      // Filter by client name
+      // Filter by client name (case-insensitive partial match)
+      const clientSearchTerm = filter.client.toLowerCase().replace(/\+/g, ' '); // Handle URL encoding
       allResults = allResults.filter(timeline => 
         timeline.client && timeline.client.name && 
-        timeline.client.name.toLowerCase().includes(filter.client.toLowerCase())
+        timeline.client.name.toLowerCase().includes(clientSearchTerm)
       );
     }
 
@@ -521,46 +522,47 @@ export const createClientTimelines = async (client, activities) => {
           // If no specific subactivity is assigned, or this is the assigned one
           if (!activityItem.subactivity || isAssignedSubactivity) {
             if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
-              console.log(`🔄 [TIMELINE SERVICE] Creating recurring timelines for subactivity: ${subactivity.name}`);
+              console.log(`🔄 [TIMELINE SERVICE] Creating current period timeline for subactivity: ${subactivity.name}`);
               console.log(`📅 [TIMELINE SERVICE] Frequency: ${subactivity.frequency}`);
               console.log(`⚙️ [TIMELINE SERVICE] Frequency config:`, subactivity.frequencyConfig);
               
-              // Create recurring timelines for subactivities with frequency
-              const timelineDates = generateTimelineDates(subactivity.frequencyConfig, subactivity.frequency);
-              console.log(`📅 [TIMELINE SERVICE] Generated ${timelineDates.length} timeline dates`);
+              // Create only ONE timeline for the current period
+              const currentDueDate = calculateCurrentPeriodDueDate(subactivity.frequency, subactivity.frequencyConfig);
+              const currentPeriod = getPeriodFromDate(currentDueDate, subactivity.frequency);
               
-              for (const dueDate of timelineDates) {
-                const timeline = new Timeline({
-                  activity: activity._id,
-                  subactivity: {
-                    _id: subactivity._id,
-                    name: subactivity.name,
-                    frequency: subactivity.frequency,
-                    frequencyConfig: subactivity.frequencyConfig,
-                    fields: subactivity.fields
-                  },
-                  client: client._id,
-                  status: 'pending',
-                  dueDate: dueDate,
-                  startDate: dueDate,
-                  endDate: dueDate,
+              console.log(`📅 [TIMELINE SERVICE] Current period: ${currentPeriod}, Due date: ${currentDueDate}`);
+              
+              const timeline = new Timeline({
+                activity: activity._id,
+                subactivity: {
+                  _id: subactivity._id,
+                  name: subactivity.name,
                   frequency: subactivity.frequency,
                   frequencyConfig: subactivity.frequencyConfig,
-                  branch: client.branch,
-                  timelineType: 'recurring',
-                  financialYear: financialYear,
-                  period: getPeriodFromDate(dueDate),
-                  fields: subactivity.fields ? subactivity.fields.map(field => ({
-                    fileName: field.name,
-                    fieldType: field.type,
-                    fieldValue: null // Empty value as requested
-                  })) : []
-                });
-                
-                console.log(`📝 [TIMELINE SERVICE] Created timeline object for date: ${dueDate.toDateString()}`);
-                console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields?.length || 0} fields from subactivity`);
-                timelinePromises.push(timeline.save());
-              }
+                  fields: subactivity.fields
+                },
+                client: client._id,
+                status: 'pending',
+                dueDate: currentDueDate,
+                startDate: currentDueDate,
+                endDate: currentDueDate,
+                frequency: subactivity.frequency,
+                frequencyConfig: subactivity.frequencyConfig,
+                branch: client.branch,
+                timelineType: 'recurring',
+                financialYear: financialYear,
+                period: currentPeriod,
+                fields: subactivity.fields ? subactivity.fields.map(field => ({
+                  fileName: field.name,
+                  fieldType: field.type,
+                  fieldValue: null // Empty value as requested
+                })) : []
+              });
+              
+              console.log(`📝 [TIMELINE SERVICE] Created single timeline for current period: ${currentDueDate.toDateString()}`);
+              console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields?.length || 0} fields from subactivity`);
+              console.log(`🔮 [TIMELINE SERVICE] Future timelines will be created by cron job`);
+              timelinePromises.push(timeline.save());
             } else {
               console.log(`🔄 [TIMELINE SERVICE] Creating one-time timeline for subactivity: ${subactivity.name}`);
               // Create one-time timeline for subactivities without frequency
@@ -643,11 +645,94 @@ export const createClientTimelines = async (client, activities) => {
 };
 
 /**
+ * Calculate due date for current period based on frequency
+ * @param {string} frequency - The frequency type
+ * @param {Object} frequencyConfig - The frequency configuration
+ * @returns {Date} Due date for current period
+ */
+const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
+  const now = new Date();
+  
+  try {
+    // Use calculateNextOccurrence to get the next due date from now
+    const nextOccurrence = calculateNextOccurrence(now, frequency, frequencyConfig);
+    
+    // If the next occurrence is in the future, use it
+    // If it's in the past, it means we're already in the current period
+    if (nextOccurrence > now) {
+      return nextOccurrence;
+    } else {
+      // If next occurrence is in the past, calculate from the beginning of current period
+      switch (frequency) {
+        case 'Monthly':
+          if (frequencyConfig.monthlyDay) {
+            const currentMonth = new Date(now.getFullYear(), now.getMonth(), frequencyConfig.monthlyDay);
+            if (currentMonth > now) {
+              return currentMonth;
+            } else {
+              // Next month
+              return new Date(now.getFullYear(), now.getMonth() + 1, frequencyConfig.monthlyDay);
+            }
+          }
+          break;
+          
+        case 'Quarterly':
+          if (frequencyConfig.quarterlyDay) {
+            const currentQuarter = Math.floor(now.getMonth() / 3);
+            const quarterStartMonth = currentQuarter * 3;
+            const quarterDue = new Date(now.getFullYear(), quarterStartMonth, frequencyConfig.quarterlyDay);
+            
+            if (quarterDue > now) {
+              return quarterDue;
+            } else {
+              // Next quarter
+              return new Date(now.getFullYear(), quarterStartMonth + 3, frequencyConfig.quarterlyDay);
+            }
+          }
+          break;
+          
+        case 'Yearly':
+          if (frequencyConfig.yearlyMonth && frequencyConfig.yearlyDate) {
+            const monthIndex = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December'
+            ].indexOf(frequencyConfig.yearlyMonth);
+            
+            if (monthIndex !== -1) {
+              // For financial year, determine correct year
+              const year = monthIndex >= 3 ? now.getFullYear() : now.getFullYear() + 1;
+              const yearlyDue = new Date(year, monthIndex, frequencyConfig.yearlyDate);
+              
+              if (yearlyDue > now) {
+                return yearlyDue;
+              } else {
+                // Next year
+                return new Date(year + 1, monthIndex, frequencyConfig.yearlyDate);
+              }
+            }
+          }
+          break;
+      }
+      
+      // Fallback: return next occurrence
+      return nextOccurrence;
+    }
+  } catch (error) {
+    console.error('Error calculating current period due date:', error);
+    // Fallback: return a date 30 days from now
+    const fallbackDate = new Date();
+    fallbackDate.setDate(fallbackDate.getDate() + 30);
+    return fallbackDate;
+  }
+};
+
+/**
  * Get period string from date (e.g., "April-2024", "Q1-2024")
  * @param {Date} date - Date to get period for
+ * @param {string} frequency - The frequency type (optional, for better period calculation)
  * @returns {String} Period string
  */
-const getPeriodFromDate = (date) => {
+const getPeriodFromDate = (date, frequency = null) => {
   const month = date.getMonth();
   const year = date.getFullYear();
   
@@ -656,14 +741,25 @@ const getPeriodFromDate = (date) => {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   
-  // Determine quarter
-  let quarter;
-  if (month <= 2) quarter = 'Q1';
-  else if (month <= 5) quarter = 'Q2';
-  else if (month <= 8) quarter = 'Q3';
-  else quarter = 'Q4';
-  
-  return `${monthNames[month]}-${year}`;
+  // Return period based on frequency
+  if (frequency === 'Quarterly') {
+    // Determine quarter
+    let quarter;
+    if (month <= 2) quarter = 'Q1';
+    else if (month <= 5) quarter = 'Q2';
+    else if (month <= 8) quarter = 'Q3';
+    else quarter = 'Q4';
+    
+    return `${quarter}-${year}`;
+  } else if (frequency === 'Yearly') {
+    // Financial year format
+    const financialYearStart = month >= 3 ? year : year - 1;
+    const financialYearEnd = financialYearStart + 1;
+    return `${financialYearStart}-${financialYearEnd}`;
+  } else {
+    // Default to monthly format
+    return `${monthNames[month]}-${year}`;
+  }
 };
 
 /**

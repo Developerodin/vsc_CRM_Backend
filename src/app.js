@@ -14,6 +14,7 @@ import routes from './routes/v1/index.js';
 import { errorConverter, errorHandler } from './middlewares/error.js';
 import ApiError from './utils/ApiError.js';
 import { setupBranchAccess } from './scripts/setup-branch-access.js';
+import cronManager from './jobs/cronManager.js';
 
 const app = express();
 
@@ -61,6 +62,14 @@ app.use((req, res, next) => {
 });
 
 // setupBranchAccess(); 
+
+// Start cron jobs in production and development
+if (config.env !== 'test') {
+  cronManager.start().catch(error => {
+    console.error('Failed to start cron jobs:', error);
+  });
+}
+
 // convert error to ApiError, if needed
 app.use(errorConverter);
 

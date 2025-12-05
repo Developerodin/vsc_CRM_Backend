@@ -65,7 +65,10 @@ const getTimelines = {
   query: Joi.object().keys({
     activity: Joi.string().custom(objectId),
     activityName: Joi.string(),
-    client: Joi.string().custom(objectId),
+    client: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().trim()
+    ),
     status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
     search: Joi.string(),
     branch: Joi.string().custom(objectId),
@@ -74,7 +77,10 @@ const getTimelines = {
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
     // New filter parameters
-    subactivity: Joi.string().custom(objectId),
+    subactivity: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().trim()
+    ),
     frequency: Joi.string(),
     period: Joi.string().trim(),
     startDate: Joi.date().iso(),
