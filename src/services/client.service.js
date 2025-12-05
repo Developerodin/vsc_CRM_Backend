@@ -659,7 +659,7 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
  * @returns {Promise<Object>} - Result with created and updated counts
  */
 // Helper function to create client subfolder
-const createClientSubfolder = async (clientName, branchId) => {
+const createClientSubfolder = async (clientName, branchId, clientId = null) => {
   try {
     // Ensure Clients parent folder exists
     let clientsParentFolder = await FileManager.findOne({
@@ -692,6 +692,7 @@ const createClientSubfolder = async (clientName, branchId) => {
     });
 
     if (!existingClientFolder) {
+      // Create new folder with clientId in metadata
       await FileManager.create({
         type: 'folder',
         folder: {
@@ -702,10 +703,19 @@ const createClientSubfolder = async (clientName, branchId) => {
           isRoot: false,
           path: `/Clients/${clientName}`,
           metadata: {
-            clientName: clientName
+            clientName: clientName,
+            ...(clientId && { clientId: clientId })
           }
         }
       });
+    } else if (clientId && (!existingClientFolder.folder.metadata || !existingClientFolder.folder.metadata.clientId)) {
+      // Update existing folder to include clientId if it's missing
+      existingClientFolder.folder.metadata = {
+        ...(existingClientFolder.folder.metadata || {}),
+        clientId: clientId,
+        clientName: clientName
+      };
+      await existingClientFolder.save();
     }
   } catch (error) {
     throw error;
@@ -1075,7 +1085,7 @@ const bulkImportClients = async (clients) => {
               try {
                 console.log(`📁 [BULK IMPORT] Creating subfolder for client: ${createdClient.name}`);
                 // Create subfolder
-                await createClientSubfolder(createdClient.name, createdClient.branch);
+                await createClientSubfolder(createdClient.name, createdClient.branch, createdClient._id);
                 console.log(`✅ [BULK IMPORT] Subfolder created for client: ${createdClient.name}`);
                 
                 // Get processed activities from map (use the processed activities, not the inserted document's activities)
@@ -1285,7 +1295,7 @@ const bulkImportClients = async (clients) => {
               postProcessBatch.map(async (updatedClient) => {
                 try {
                   // Ensure subfolder exists (update if needed)
-                  await createClientSubfolder(updatedClient.name, updatedClient.branch);
+                  await createClientSubfolder(updatedClient.name, updatedClient.branch, updatedClient._id);
                   
                   // Create timelines if activities exist and were updated
                   if (updatedClient.activities && updatedClient.activities.length > 0) {
@@ -1870,7 +1880,7 @@ const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
         clients.map(async (client) => {
           try {
             // Create subfolder if it doesn't exist
-            await createClientSubfolder(client.name, client.branch);
+            await createClientSubfolder(client.name, client.branch, client._id);
             results.subfoldersCreated++;
             
             // Create timelines if activities exist
