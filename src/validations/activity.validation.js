@@ -56,7 +56,7 @@ const subactivitySchema = Joi.object({
   _id: Joi.string().custom(objectId).optional(), // Optional for existing subactivities
   name: Joi.string().trim().optional(),
   dueDate: Joi.date().optional(),
-  frequency: Joi.string().valid('None', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().default('None'),
+  frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().default('None'),
   frequencyConfig: frequencyConfigSchema.optional(),
   fields: Joi.array().items(fieldSchema).optional(),
   createdAt: Joi.date().optional(),

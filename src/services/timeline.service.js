@@ -484,7 +484,7 @@ const bulkImportTimelines = async (timelinesData) => {
  */
 export const createClientTimelines = async (client, activities) => {
   console.log(`🔍 [TIMELINE SERVICE] createClientTimelines called for client: ${client.name}`);
-  console.log(`📊 [TIMELINE SERVICE] Activities count: ${activities?.length || 0}`);
+  console.log(`📊 [TIMELINE SERVICE] Activities count: ${activities && activities.length ? activities.length : 0}`);
   
   if (!activities || activities.length === 0) {
     console.log(`⚠️ [TIMELINE SERVICE] No activities provided, returning empty array`);
@@ -509,7 +509,7 @@ export const createClientTimelines = async (client, activities) => {
       }
       
       console.log(`✅ [TIMELINE SERVICE] Found activity: ${activity.name}`);
-      console.log(`📊 [TIMELINE SERVICE] Activity has ${activity.subactivities?.length || 0} subactivities`);
+      console.log(`📊 [TIMELINE SERVICE] Activity has ${activity.subactivities && activity.subactivities.length ? activity.subactivities.length : 0} subactivities`);
 
       // Handle activities with subactivities
       if (activity.subactivities && activity.subactivities.length > 0) {
@@ -543,6 +543,15 @@ export const createClientTimelines = async (client, activities) => {
               
               // Create only ONE timeline for the current period
               const currentDueDate = calculateCurrentPeriodDueDate(subactivity.frequency, subactivity.frequencyConfig);
+              
+              // Validate the date is valid
+              if (!currentDueDate || !(currentDueDate instanceof Date) || isNaN(currentDueDate.getTime())) {
+                console.error(`❌ [TIMELINE SERVICE] Invalid date calculated for subactivity ${subactivity.name}:`, currentDueDate);
+                console.error(`   Frequency: ${subactivity.frequency}`);
+                console.error(`   FrequencyConfig:`, JSON.stringify(subactivity.frequencyConfig, null, 2));
+                continue; // Skip this subactivity and move to the next one
+              }
+              
               const currentPeriod = getPeriodFromDate(currentDueDate, subactivity.frequency);
               
               console.log(`📅 [TIMELINE SERVICE] Current period: ${currentPeriod}, Due date: ${currentDueDate}`);
@@ -575,7 +584,7 @@ export const createClientTimelines = async (client, activities) => {
               });
               
               console.log(`📝 [TIMELINE SERVICE] Created single timeline for current period: ${currentDueDate.toDateString()}`);
-              console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields?.length || 0} fields from subactivity`);
+              console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields && subactivity.fields.length ? subactivity.fields.length : 0} fields from subactivity`);
               console.log(`🔮 [TIMELINE SERVICE] Future timelines will be created by cron job`);
               timelinePromises.push(timeline.save());
             } else {
@@ -611,7 +620,7 @@ export const createClientTimelines = async (client, activities) => {
                 })) : []
               });
               
-              console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields?.length || 0} fields from subactivity`);
+              console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields && subactivity.fields.length ? subactivity.fields.length : 0} fields from subactivity`);
               timelinePromises.push(timeline.save());
             }
           }
@@ -669,8 +678,23 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
   const now = new Date();
   
   try {
+    // Validate that frequencyConfig exists
+    if (!frequencyConfig) {
+      console.warn('⚠️ [TIMELINE SERVICE] frequencyConfig is missing, using fallback date');
+      const fallbackDate = new Date();
+      fallbackDate.setDate(fallbackDate.getDate() + 30);
+      return fallbackDate;
+    }
+
     // Use calculateNextOccurrence to get the next due date from now
-    const nextOccurrence = calculateNextOccurrence(now, frequency, frequencyConfig);
+    // Correct parameter order: (frequencyConfig, frequency, startDate)
+    const nextOccurrence = calculateNextOccurrence(frequencyConfig, frequency, now);
+    
+    // Validate the date is valid
+    if (!nextOccurrence || isNaN(nextOccurrence.getTime())) {
+      console.error('❌ [TIMELINE SERVICE] calculateNextOccurrence returned invalid date');
+      throw new Error('Invalid date returned from calculateNextOccurrence');
+    }
     
     // If the next occurrence is in the future, use it
     // If it's in the past, it means we're already in the current period
@@ -682,11 +706,18 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
         case 'Monthly':
           if (frequencyConfig.monthlyDay) {
             const currentMonth = new Date(now.getFullYear(), now.getMonth(), frequencyConfig.monthlyDay);
+            if (isNaN(currentMonth.getTime())) {
+              throw new Error(`Invalid date for Monthly: day ${frequencyConfig.monthlyDay}`);
+            }
             if (currentMonth > now) {
               return currentMonth;
             } else {
               // Next month
-              return new Date(now.getFullYear(), now.getMonth() + 1, frequencyConfig.monthlyDay);
+              const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, frequencyConfig.monthlyDay);
+              if (isNaN(nextMonth.getTime())) {
+                throw new Error(`Invalid date for Monthly: day ${frequencyConfig.monthlyDay}`);
+              }
+              return nextMonth;
             }
           }
           break;
@@ -697,11 +728,19 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
             const quarterStartMonth = currentQuarter * 3;
             const quarterDue = new Date(now.getFullYear(), quarterStartMonth, frequencyConfig.quarterlyDay);
             
+            if (isNaN(quarterDue.getTime())) {
+              throw new Error(`Invalid date for Quarterly: day ${frequencyConfig.quarterlyDay}`);
+            }
+            
             if (quarterDue > now) {
               return quarterDue;
             } else {
               // Next quarter
-              return new Date(now.getFullYear(), quarterStartMonth + 3, frequencyConfig.quarterlyDay);
+              const nextQuarter = new Date(now.getFullYear(), quarterStartMonth + 3, frequencyConfig.quarterlyDay);
+              if (isNaN(nextQuarter.getTime())) {
+                throw new Error(`Invalid date for Quarterly: day ${frequencyConfig.quarterlyDay}`);
+              }
+              return nextQuarter;
             }
           }
           break;
@@ -718,22 +757,37 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
               const year = monthIndex >= 3 ? now.getFullYear() : now.getFullYear() + 1;
               const yearlyDue = new Date(year, monthIndex, frequencyConfig.yearlyDate);
               
+              if (isNaN(yearlyDue.getTime())) {
+                throw new Error(`Invalid date for Yearly: month ${frequencyConfig.yearlyMonth}, day ${frequencyConfig.yearlyDate}`);
+              }
+              
               if (yearlyDue > now) {
                 return yearlyDue;
               } else {
                 // Next year
-                return new Date(year + 1, monthIndex, frequencyConfig.yearlyDate);
+                const nextYear = new Date(year + 1, monthIndex, frequencyConfig.yearlyDate);
+                if (isNaN(nextYear.getTime())) {
+                  throw new Error(`Invalid date for Yearly: month ${frequencyConfig.yearlyMonth}, day ${frequencyConfig.yearlyDate}`);
+                }
+                return nextYear;
               }
             }
           }
           break;
       }
       
+      // Validate nextOccurrence before returning as fallback
+      if (!nextOccurrence || isNaN(nextOccurrence.getTime())) {
+        throw new Error('nextOccurrence is invalid and no valid date could be calculated from switch cases');
+      }
+      
       // Fallback: return next occurrence
       return nextOccurrence;
     }
   } catch (error) {
-    console.error('Error calculating current period due date:', error);
+    console.error('❌ [TIMELINE SERVICE] Error calculating current period due date:', error);
+    console.error('   Frequency:', frequency);
+    console.error('   FrequencyConfig:', JSON.stringify(frequencyConfig, null, 2));
     // Fallback: return a date 30 days from now
     const fallbackDate = new Date();
     fallbackDate.setDate(fallbackDate.getDate() + 30);
