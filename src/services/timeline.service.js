@@ -85,7 +85,13 @@ const queryTimelines = async (filter, options, user) => {
     delete mongoFilter.status;
   }
 
-  if (mongoFilter.activityName === '') {
+  if (mongoFilter.activityName === '' || !mongoFilter.activityName) {
+    delete mongoFilter.activityName;
+  } else if (mongoFilter.activityName) {
+    // Clean up whitespace and URL-decoded characters
+    mongoFilter.activityName = mongoFilter.activityName.trim();
+    // Remove activityName from mongoFilter since it's not a field in Timeline model
+    // We'll filter by this after population
     delete mongoFilter.activityName;
   }
 
@@ -199,7 +205,8 @@ const queryTimelines = async (filter, options, user) => {
 
   // Check if we need to apply post-query filters (text-based searches on activity/client name)
   const needsPostQueryFilter = (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) ||
-                                (filter.client && !mongoose.Types.ObjectId.isValid(filter.client));
+                                (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) ||
+                                filter.activityName;
 
   let result;
   
@@ -251,6 +258,14 @@ const queryTimelines = async (filter, options, user) => {
       allResults = allResults.filter(timeline => 
         timeline.activity && timeline.activity.name && 
         timeline.activity.name.toLowerCase().includes(filter.activity.toLowerCase())
+      );
+    }
+
+    if (filter.activityName) {
+      // Filter by activity name
+      allResults = allResults.filter(timeline => 
+        timeline.activity && timeline.activity.name && 
+        timeline.activity.name.toLowerCase().includes(filter.activityName.toLowerCase())
       );
     }
 
