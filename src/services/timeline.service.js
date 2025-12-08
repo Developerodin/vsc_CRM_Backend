@@ -4,6 +4,7 @@ import ApiError from '../utils/ApiError.js';
 import Timeline from '../models/timeline.model.js';
 import Activity from '../models/activity.model.js';
 import Client from '../models/client.model.js';
+import Group from '../models/group.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 import { getCurrentFinancialYear, generateTimelineDates, calculateNextOccurrence } from '../utils/financialYear.js';
 
@@ -101,12 +102,9 @@ const queryTimelines = async (filter, options, user) => {
     if (mongoose.Types.ObjectId.isValid(mongoFilter.activity)) {
       // Keep the activity filter as is
     } else {
-      // If it's a string (activity name), we'll need to handle this differently
-      // For now, we'll search by activity name in the populated data
+      // If it's a string (activity name), we'll filter after population
+      // Remove from mongoFilter - will be handled in post-query filtering
       delete mongoFilter.activity;
-      mongoFilter['$or'] = [
-        { 'activity': { $exists: true } } // We'll filter this after population
-      ];
     }
   }
 
@@ -167,16 +165,83 @@ const queryTimelines = async (filter, options, user) => {
     mongoFilter.financialYear = { $regex: mongoFilter.financialYear, $options: 'i' };
   }
 
+  // Handle group filter first (filters timelines by clients in the group)
+  let groupClientIds = null;
+  if (mongoFilter.group) {
+    try {
+      let group;
+      if (mongoose.Types.ObjectId.isValid(mongoFilter.group)) {
+        // If it's an ObjectId, find by ID
+        group = await Group.findById(mongoFilter.group);
+      } else {
+        // If it's a string (group name), find by name
+        group = await Group.findOne({ name: { $regex: mongoFilter.group, $options: 'i' } });
+      }
+      
+      if (group && group.clients && group.clients.length > 0) {
+        // Get all client IDs from the group
+        groupClientIds = group.clients.map(clientId => clientId.toString());
+      } else {
+        // Group not found or has no clients, return empty results
+        groupClientIds = [];
+      }
+    } catch (error) {
+      console.error('Error filtering by group:', error);
+      // On error, return empty results
+      groupClientIds = [];
+    }
+    // Remove group from mongoFilter as it's now handled
+    delete mongoFilter.group;
+  }
+
   // Handle client filter
   if (mongoFilter.client) {
     if (mongoose.Types.ObjectId.isValid(mongoFilter.client)) {
-      // Keep as is if it's an ObjectId
+      // If it's an ObjectId
+      if (groupClientIds !== null) {
+        // If group filter is also active, check if this client is in the group
+        if (!groupClientIds.includes(mongoFilter.client.toString())) {
+          // Client is not in the group, return empty results
+          mongoFilter.client = { $in: [] };
+        } else {
+          // Client is in the group, keep the filter
+          mongoFilter.client = mongoFilter.client;
+        }
+      }
+      // Otherwise keep as is
     } else {
       // If it's a string (client name), we'll filter after population
-      delete mongoFilter.client;
-      mongoFilter['$or'] = mongoFilter['$or'] || [];
-      mongoFilter['$or'].push({ 'client': { $exists: true } });
+      // Remove from mongoFilter - will be handled in post-query filtering
+      // But if group filter is active, we still need to filter by group clients in MongoDB
+      if (groupClientIds !== null && groupClientIds.length > 0) {
+        mongoFilter.client = { $in: groupClientIds.map(id => new mongoose.Types.ObjectId(id)) };
+      } else if (groupClientIds !== null && groupClientIds.length === 0) {
+        // Group has no clients, return empty results
+        mongoFilter.client = { $in: [] };
+      } else {
+        // No group filter, just remove client for post-query
+        delete mongoFilter.client;
+      }
     }
+  } else if (groupClientIds !== null) {
+    // No client filter but group filter is active, filter by group clients
+    if (groupClientIds.length > 0) {
+      mongoFilter.client = { $in: groupClientIds.map(id => new mongoose.Types.ObjectId(id)) };
+    } else {
+      // Group has no clients, return empty results
+      mongoFilter.client = { $in: [] };
+    }
+  }
+
+  // Handle search parameter (searches in activity name and client name)
+  const searchTerm = mongoFilter.search;
+  if (searchTerm) {
+    delete mongoFilter.search; // Remove from mongoFilter, will handle in post-query
+  }
+
+  // Clean up any empty $or conditions that might have been left behind
+  if (mongoFilter.$or && Array.isArray(mongoFilter.$or) && mongoFilter.$or.length === 0) {
+    delete mongoFilter.$or;
   }
 
   // Apply branch filtering based on user's access
@@ -203,10 +268,11 @@ const queryTimelines = async (filter, options, user) => {
     }
   }
 
-  // Check if we need to apply post-query filters (text-based searches on activity/client name)
+  // Check if we need to apply post-query filters (text-based searches on activity/client name or search parameter)
   const needsPostQueryFilter = (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) ||
                                 (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) ||
-                                filter.activityName;
+                                filter.activityName ||
+                                !!searchTerm;
 
   let result;
   
@@ -223,7 +289,17 @@ const queryTimelines = async (filter, options, user) => {
       const sortingCriteria = [];
       options.sortBy.split(',').forEach((sortOption) => {
         const [key, order] = sortOption.split(':');
-        sortingCriteria.push((order === 'desc' ? '-' : '') + key);
+        // Map common field names to actual Timeline model fields
+        const fieldMap = {
+          'title': 'createdAt', // Timeline doesn't have title, use createdAt
+          'name': 'createdAt',
+          'date': 'dueDate',
+          'dueDate': 'dueDate',
+          'createdAt': 'createdAt',
+          'updatedAt': 'updatedAt'
+        };
+        const actualField = fieldMap[key] || key;
+        sortingCriteria.push((order === 'desc' ? '-' : '') + actualField);
       });
       sort = sortingCriteria.join(' ');
     } else {
@@ -234,9 +310,10 @@ const queryTimelines = async (filter, options, user) => {
     let allResults = await Timeline.find(mongoFilter).sort(sort);
     
     // Populate the results with activity and client data
+    // Use strictPopulate: false to handle null references gracefully
     await Timeline.populate(allResults, [
-      { path: 'activity', select: 'name sortOrder subactivities' },
-      { path: 'client', select: 'name email phone' }
+      { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
+      { path: 'client', select: 'name email phone', strictPopulate: false }
     ]);
     
     // Process subactivity data since it's stored as embedded document
@@ -254,28 +331,77 @@ const queryTimelines = async (filter, options, user) => {
 
     // Apply post-query filters for text-based searches
     if (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) {
-      // Filter by activity name
-      allResults = allResults.filter(timeline => 
-        timeline.activity && timeline.activity.name && 
-        timeline.activity.name.toLowerCase().includes(filter.activity.toLowerCase())
-      );
+      // Filter by activity name (case-insensitive partial match)
+      const activitySearchTerm = filter.activity.toLowerCase().trim();
+      if (activitySearchTerm) { // Only filter if search term is not empty
+        allResults = allResults.filter(timeline => 
+          timeline.activity && 
+          timeline.activity.name && 
+          timeline.activity.name.toLowerCase().includes(activitySearchTerm)
+        );
+      }
     }
 
     if (filter.activityName) {
-      // Filter by activity name
-      allResults = allResults.filter(timeline => 
-        timeline.activity && timeline.activity.name && 
-        timeline.activity.name.toLowerCase().includes(filter.activityName.toLowerCase())
-      );
+      // Filter by activity name (case-insensitive partial match)
+      const activityNameSearchTerm = filter.activityName.toLowerCase().trim();
+      if (activityNameSearchTerm) { // Only filter if search term is not empty
+        allResults = allResults.filter(timeline => 
+          timeline.activity && 
+          timeline.activity.name && 
+          timeline.activity.name.toLowerCase().includes(activityNameSearchTerm)
+        );
+      }
     }
 
     if (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
       // Filter by client name (case-insensitive partial match)
-      const clientSearchTerm = filter.client.toLowerCase().replace(/\+/g, ' '); // Handle URL encoding
-      allResults = allResults.filter(timeline => 
-        timeline.client && timeline.client.name && 
-        timeline.client.name.toLowerCase().includes(clientSearchTerm)
-      );
+      const clientSearchTerm = filter.client.toLowerCase().trim().replace(/\+/g, ' '); // Handle URL encoding
+      if (clientSearchTerm) { // Only filter if search term is not empty
+        allResults = allResults.filter(timeline => 
+          timeline.client && 
+          timeline.client.name && 
+          timeline.client.name.toLowerCase().includes(clientSearchTerm)
+        );
+      }
+    }
+
+    // Handle search parameter (searches in both activity and client names)
+    if (searchTerm) {
+      const searchTermLower = searchTerm.toLowerCase().trim().replace(/\+/g, ' ');
+      if (searchTermLower) { // Only filter if search term is not empty
+        allResults = allResults.filter(timeline => {
+          // Search in activity name
+          const matchesActivity = timeline.activity && 
+                                  timeline.activity.name && 
+                                  timeline.activity.name.toLowerCase().includes(searchTermLower);
+          
+          // Search in client name
+          const matchesClient = timeline.client && 
+                               timeline.client.name && 
+                               timeline.client.name.toLowerCase().includes(searchTermLower);
+          
+          return matchesActivity || matchesClient;
+        });
+      }
+    }
+
+    // Handle group filter in post-query (if group was provided and client was also a string)
+    // Note: If groupClientIds was set and client was ObjectId, it's already filtered in MongoDB
+    // But if client was a string, we need to filter by both group clients AND client name
+    if (groupClientIds !== null && filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
+      // Both group and client (string) filters are active
+      // Filter by group clients first
+      if (groupClientIds.length > 0) {
+        allResults = allResults.filter(timeline => 
+          timeline.client && 
+          timeline.client._id && 
+          groupClientIds.includes(timeline.client._id.toString())
+        );
+      } else {
+        // Group has no clients, return empty results
+        allResults = [];
+      }
     }
 
     // Get total count of filtered results (this is the true total)
@@ -302,13 +428,33 @@ const queryTimelines = async (filter, options, user) => {
     };
   } else {
     // No post-query filters needed, use standard pagination
-    result = await Timeline.paginate(mongoFilter, options);
+    // Map sortBy field names to actual Timeline model fields
+    let mappedOptions = { ...options };
+    if (mappedOptions.sortBy) {
+      const sortOptions = mappedOptions.sortBy.split(',');
+      const mappedSortOptions = sortOptions.map(sortOption => {
+        const [key, order] = sortOption.split(':');
+        const fieldMap = {
+          'title': 'createdAt', // Timeline doesn't have title, use createdAt
+          'name': 'createdAt',
+          'date': 'dueDate',
+          'dueDate': 'dueDate',
+          'createdAt': 'createdAt',
+          'updatedAt': 'updatedAt'
+        };
+        const actualField = fieldMap[key] || key;
+        return `${actualField}:${order}`;
+      });
+      mappedOptions.sortBy = mappedSortOptions.join(',');
+    }
+    
+    result = await Timeline.paginate(mongoFilter, mappedOptions);
     
     // Populate the results with activity and client data
     if (result.results && result.results.length > 0) {
       await Timeline.populate(result.results, [
-        { path: 'activity', select: 'name sortOrder subactivities' },
-        { path: 'client', select: 'name email phone' }
+        { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
+        { path: 'client', select: 'name email phone', strictPopulate: false }
       ]);
       
       // Process subactivity data since it's stored as embedded document

@@ -72,6 +72,10 @@ const getTimelines = {
     status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
     search: Joi.string(),
     branch: Joi.string().custom(objectId),
+    group: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().trim()
+    ),
     today: Joi.boolean(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
