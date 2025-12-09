@@ -2,7 +2,21 @@ import dotenv from 'dotenv';
 import path from 'path';
 import Joi from 'joi';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+// Try to load .env file, but don't fail if it doesn't exist (for production deployments)
+try {
+  dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+} catch (error) {
+  console.log('No .env file found, using environment variables from system');
+}
+
+// Debug: Log which AWS env vars are available (without showing values)
+if (process.env.NODE_ENV === 'production') {
+  console.log('🔍 AWS Environment Variables Check:');
+  console.log('AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? '✅ Set' : '❌ Missing');
+  console.log('AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? '✅ Set' : '❌ Missing');
+  console.log('AWS_REGION:', process.env.AWS_REGION ? '✅ Set' : '❌ Missing');
+  console.log('AWS_BUCKET_NAME:', process.env.AWS_BUCKET_NAME ? '✅ Set' : '❌ Missing');
+}
 
 const envVarsSchema = Joi.object()
   .keys({
@@ -68,11 +82,11 @@ const config = {
     from: envVars.EMAIL_FROM,
   },
   aws: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    region: process.env.AWS_REGION,
+    accessKeyId: envVars.AWS_ACCESS_KEY_ID,
+    secretAccessKey: envVars.AWS_SECRET_ACCESS_KEY,
+    region: envVars.AWS_REGION,
     s3: {
-      bucket: process.env.AWS_BUCKET_NAME,
+      bucket: envVars.AWS_BUCKET_NAME,
     }
   },
 };
