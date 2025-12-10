@@ -50,7 +50,6 @@ const queueTaskAssignmentEmail = (task, teamMember, assignedBy) => {
 const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
   try {
     if (!teamMember || !teamMember.email) {
-
       return;
     }
 
@@ -75,7 +74,6 @@ const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
     );
 
   } catch (error) {
-
     // Don't throw error - email failure shouldn't prevent task creation
   }
 };
@@ -87,15 +85,14 @@ const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
  */
 const createTask = async (taskBody) => {
   try {
-    // Create the task with population in one query
+    // Create the task
     const task = await Task.create(taskBody);
     
     // Populate the created task efficiently
-    const populatedTask = await task.populate([
-      { path: 'teamMember', select: 'name email phone' },
-      { path: 'assignedBy', select: 'name email' },
-      { path: 'branch', select: 'name location' }
-    ]);
+    const populatedTask = await Task.findById(task._id)
+      .populate('teamMember', 'name email phone')
+      .populate('assignedBy', 'name email')
+      .populate('branch', 'name location');
 
     // Queue email notification for background processing
     if (populatedTask.teamMember && populatedTask.teamMember.email) {
