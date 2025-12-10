@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
 import Activity from '../models/activity.model.js';
+import cache from '../utils/cache.js';
 
 /**
  * Create an activity
@@ -22,11 +23,34 @@ const createActivity = async (activityBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryActivities = async (filter, options) => {
+  // Check cache for large limit queries (like limit=1000)
+  const isLargeQuery = options.limit && parseInt(options.limit) >= 1000;
+  let cacheKey = null;
+  
+  if (isLargeQuery) {
+    cacheKey = cache.generateKey('activities-large', { 
+      filter: JSON.stringify(filter),
+      options: JSON.stringify(options)
+    });
+    
+    const cachedResult = cache.get(cacheKey);
+    if (cachedResult) {
+      return cachedResult;
+    }
+  }
+
   const mongoFilter = { ...filter };
   if (mongoFilter.name) {
     mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
   }
+  
   const activities = await Activity.paginate(mongoFilter, options);
+  
+  // Cache large queries for 5 minutes
+  if (isLargeQuery && cacheKey) {
+    cache.set(cacheKey, activities, 5 * 60 * 1000);
+  }
+  
   return activities;
 };
 

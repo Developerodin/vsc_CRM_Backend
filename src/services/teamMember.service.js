@@ -5,6 +5,7 @@ import TeamMember from '../models/teamMember.model.js';
 import Activity from '../models/activity.model.js';
 import Branch from '../models/branch.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
+import cache from '../utils/cache.js';
 
 /**
  * Validate if all skill IDs exist in the activities collection
@@ -81,6 +82,18 @@ const createTeamMember = async (teamMemberBody, user = null) => {
  * @returns {Promise<QueryResult>}
  */
 const queryTeamMembers = async (filter, options, user) => {
+  // Check cache first for simple queries
+  const cacheKey = cache.generateKey('team-members', { 
+    filter: JSON.stringify(filter),
+    options: JSON.stringify(options),
+    userId: user?._id?.toString() || 'anonymous'
+  });
+  
+  const cachedResult = cache.get(cacheKey);
+  if (cachedResult) {
+    return cachedResult;
+  }
+
   // Create a new filter object to avoid modifying the original
   const mongoFilter = { ...filter };
   
@@ -170,9 +183,15 @@ const queryTeamMembers = async (filter, options, user) => {
 
   const teamMembers = await TeamMember.paginate(mongoFilter, {
     ...options,
-    populate: 'skills,branch',
+    populate: [
+      { path: 'skills', select: 'name category' }, // Only select necessary fields
+      { path: 'branch', select: 'name city state' } // Only select necessary fields
+    ],
     sortBy: options.sortBy || 'sortOrder:asc',
   });
+
+  // Cache the result for 2 minutes
+  cache.set(cacheKey, teamMembers, 2 * 60 * 1000);
 
   return teamMembers;
 };

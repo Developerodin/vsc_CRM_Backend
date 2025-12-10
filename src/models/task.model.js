@@ -81,6 +81,10 @@ taskSchema.index({ assignedBy: 1 });
 taskSchema.index({ status: 1, createdAt: -1 }); // For status-based queries with recent first
 taskSchema.index({ createdAt: -1 }); // For general sorting by creation date
 taskSchema.index({ teamMember: 1, createdAt: -1 }); // For team member task history
+taskSchema.index({ assignedBy: 1 });
+taskSchema.index({ status: 1, createdAt: -1 }); // For status-based queries with recent first
+taskSchema.index({ createdAt: -1 }); // For general sorting by creation date
+taskSchema.index({ teamMember: 1, createdAt: -1 }); // For team member task history
 
 // Instance method to add attachment
 taskSchema.methods.addAttachment = function(fileName, fileUrl) {

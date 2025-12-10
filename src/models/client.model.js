@@ -200,6 +200,21 @@ const clientSchema = mongoose.Schema(
   }
 );
 
+// Indexes for better query performance
+clientSchema.index({ name: 1 });
+clientSchema.index({ email: 1 });
+clientSchema.index({ phone: 1 });
+clientSchema.index({ branch: 1 });
+clientSchema.index({ status: 1 });
+clientSchema.index({ businessType: 1 });
+clientSchema.index({ pan: 1 });
+clientSchema.index({ district: 1 });
+clientSchema.index({ 'gstNumbers.gstNumber': 1 });
+clientSchema.index({ 'gstNumbers.state': 1 });
+clientSchema.index({ branch: 1, status: 1 }); // Compound index for branch + status queries
+clientSchema.index({ name: 1, branch: 1 }); // For name searches within branch
+clientSchema.index({ createdAt: -1 }); // For sorting by creation date
+
 // add plugin that converts mongoose to json
 clientSchema.plugin(toJSON);
 clientSchema.plugin(paginate);

@@ -84,6 +84,18 @@ const teamMemberSchema = mongoose.Schema(
   }
 );
 
+// Indexes for better query performance
+teamMemberSchema.index({ name: 1 });
+teamMemberSchema.index({ email: 1 });
+teamMemberSchema.index({ phone: 1 });
+teamMemberSchema.index({ branch: 1 });
+teamMemberSchema.index({ city: 1 });
+teamMemberSchema.index({ state: 1 });
+teamMemberSchema.index({ country: 1 });
+teamMemberSchema.index({ sortOrder: 1 });
+teamMemberSchema.index({ branch: 1, sortOrder: 1 }); // Compound index for branch + sorting
+teamMemberSchema.index({ name: 1, branch: 1 }); // For name searches within branch
+
 // add plugin that converts mongoose to json
 teamMemberSchema.plugin(toJSON);
 teamMemberSchema.plugin(paginate);

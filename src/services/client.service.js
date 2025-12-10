@@ -3,6 +3,7 @@ import { Client, Activity, FileManager, Timeline, Task, Branch } from '../models
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 import { createClientTimelines as createTimelinesFromService } from './timeline.service.js';
+import cache from '../utils/cache.js';
 
 /**
  * Helper function to get month name from month index
@@ -117,6 +118,18 @@ const createClient = async (clientBody, user = null) => {
  * @returns {Promise<QueryResult>}
  */
 const queryClients = async (filter, options, user) => {
+  // Check cache for simple queries
+  const cacheKey = cache.generateKey('clients', { 
+    filter: JSON.stringify(filter),
+    options: JSON.stringify(options),
+    userId: user?._id?.toString() || 'anonymous'
+  });
+  
+  const cachedResult = cache.get(cacheKey);
+  if (cachedResult) {
+    return cachedResult;
+  }
+
   // Create a new filter object to avoid modifying the original
   const mongoFilter = { ...filter };
   
@@ -199,6 +212,10 @@ const queryClients = async (filter, options, user) => {
   }
 
   const clients = await Client.paginate(mongoFilter, options);
+  
+  // Cache the result for 2 minutes
+  cache.set(cacheKey, clients, 2 * 60 * 1000);
+  
   return clients;
 };
 
