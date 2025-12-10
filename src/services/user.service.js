@@ -3,7 +3,6 @@ import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
 import User from '../models/user.model.js';
 
-
 /**
  * Create a user
  * @param {Object} userBody

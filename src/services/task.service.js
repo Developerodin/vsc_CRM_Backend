@@ -14,7 +14,7 @@ import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
 const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
   try {
     if (!teamMember || !teamMember.email) {
-      console.warn('No team member email found, skipping email notification');
+
       return;
     }
 
@@ -38,9 +38,8 @@ const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
       html
     );
 
-    console.log(`✅ Task assignment email sent to ${teamMember.email}`);
   } catch (error) {
-    console.error('❌ Error sending task assignment email:', error);
+
     // Don't throw error - email failure shouldn't prevent task creation
   }
 };
@@ -68,7 +67,7 @@ const createTask = async (taskBody) => {
 
     return populatedTask;
   } catch (error) {
-    console.error('❌ Error creating task:', error);
+
     throw error;
   }
 };
@@ -139,10 +138,10 @@ const queryTasks = async (filter, options) => {
       if (teamMember) {
         // Replace the name with the actual ObjectId
         mongoFilter.teamMember = teamMember._id;
-        console.log(`🔍 Found team member: ${teamMember.name} (ID: ${teamMember._id})`);
+
       } else {
         // If no team member found, return empty results
-        console.log(`🔍 No team member found with name: ${mongoFilter.teamMember}`);
+
         return {
           results: [],
           page: options.page || 1,
@@ -152,7 +151,7 @@ const queryTasks = async (filter, options) => {
         };
       }
     } catch (error) {
-      console.error('🔍 Error searching for team member:', error);
+
       // If there's an error, return empty results
       return {
         results: [],
@@ -182,9 +181,7 @@ const queryTasks = async (filter, options) => {
   if (mongoFilter.startDate && mongoFilter.endDate) {
     // If both dates are set, they're already handled
   }
-  
-  console.log('🔍 Final task filter:', JSON.stringify(mongoFilter));
-  
+
   const tasks = await Task.paginate(mongoFilter, {
     ...options,
     populate: [
@@ -252,9 +249,7 @@ const queryTasks = async (filter, options) => {
     const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
     tasks.totalPages = hasLimit ? Math.ceil(tasks.totalResults / parseInt(options.limit, 10)) : 1;
   }
-  
-  console.log(`🔍 Task search results: Found ${tasks.results.length} tasks`);
-  
+
   return tasks;
 };
 
@@ -531,8 +526,7 @@ const bulkCreateTasks = async (tasks) => {
   };
 
   try {
-    console.log(`📧 Starting bulk creation of ${tasks.length} tasks with email notifications...`);
-    
+
     for (let i = 0; i < tasks.length; i++) {
       try {
         const task = tasks[i];
@@ -559,7 +553,7 @@ const bulkCreateTasks = async (tasks) => {
         results.totalProcessed++;
         
       } catch (error) {
-        console.error(`❌ Error creating task ${i + 1}:`, error);
+
         results.errors.push({
           index: i,
           error: error.message,
@@ -568,11 +562,9 @@ const bulkCreateTasks = async (tasks) => {
         results.totalProcessed++;
       }
     }
-    
-    console.log(`✅ Bulk task creation completed: ${results.created} created, ${results.errors.length} errors`);
-    
+
   } catch (error) {
-    console.error('❌ Error in bulk task creation:', error);
+
     throw error;
   }
 

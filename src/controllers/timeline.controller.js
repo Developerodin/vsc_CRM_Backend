@@ -95,6 +95,21 @@ const bulkImportTimelineFieldsController = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+const getFrequencyStatusStats = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, frequency, status } = req.query;
+  
+  // Use the timeline service to get frequency status statistics
+  const result = await timelineService.getFrequencyStatusStats({
+    branchId,
+    startDate,
+    endDate,
+    frequency,
+    status
+  }, req.user);
+  
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createTimeline,
   getTimelines,
@@ -104,4 +119,5 @@ export {
   bulkImportTimelines,
   getFrequencyPeriods,
   bulkImportTimelineFieldsController as bulkImportTimelineFields,
+  getFrequencyStatusStats,
 }; 

@@ -71,11 +71,7 @@ const queryGroups = async (filter, options, user) => {
     
     // Remove the search parameter as it's now handled by $or
     delete mongoFilter.search;
-    
-    console.log('🔍 Group search filter applied:', {
-      searchValue,
-      mongoFilter: JSON.stringify(mongoFilter)
-    });
+
   }
   
   // Handle client name search
@@ -94,12 +90,10 @@ const queryGroups = async (filter, options, user) => {
         
         // Search for groups that contain any of these clients
         mongoFilter.clients = { $in: clientIds };
-        
-        console.log(`🔍 Found ${matchingClients.length} clients matching "${clientName}":`, 
-          matchingClients.map(c => c.name));
+
       } else {
         // If no clients found, return empty results
-        console.log(`🔍 No clients found with name: ${clientName}`);
+
         return {
           results: [],
           page: options.page || 1,
@@ -112,7 +106,7 @@ const queryGroups = async (filter, options, user) => {
       // Remove the client parameter as it's now handled by clients filter
       delete mongoFilter.client;
     } catch (error) {
-      console.error('🔍 Error searching for clients:', error);
+
       // If there's an error, return empty results
       return {
         results: [],
@@ -156,15 +150,11 @@ const queryGroups = async (filter, options, user) => {
     }
   }
 
-  console.log('🔍 Final group filter:', JSON.stringify(mongoFilter));
-
   const groups = await Group.paginate(mongoFilter, {
     ...options,
     populate: 'clients',
   });
-  
-  console.log(`🔍 Group search results: Found ${groups.results.length} groups`);
-  
+
   return groups;
 };
 
@@ -266,9 +256,7 @@ const removeClientFromGroup = async (groupId, clientId) => {
     const clientIdStr = clientId.toString();
     
     // Log the current clients in the group for debugging
-    console.log('Current clients in group:', group.clients.map(c => c._id.toString()));
-    console.log('Attempting to remove client:', clientIdStr);
-    
+
     // Check if client exists in the group
     const clientExists = group.clients.some(id => id._id.toString() === clientIdStr);
     
@@ -440,8 +428,7 @@ const bulkImportGroups = async (groups) => {
  */
 const getGroupTaskStatistics = async (filter = {}, options = {}, user = null) => {
   try {
-    console.log('🔍 Getting group task statistics...');
-    
+
     // Create a new filter object to avoid modifying the original
     const mongoFilter = { ...filter };
     
@@ -486,8 +473,6 @@ const getGroupTaskStatistics = async (filter = {}, options = {}, user = null) =>
       .skip(skip)
       .limit(limit)
       .lean();
-
-    console.log(`📊 Found ${groups.length} groups to analyze`);
 
     // Get total count for pagination
     const totalGroups = await Group.countDocuments(mongoFilter);
@@ -604,8 +589,6 @@ const getGroupTaskStatistics = async (filter = {}, options = {}, user = null) =>
       }
     ]);
 
-    console.log(`📊 Generated statistics for ${clientStats.length} clients across all groups`);
-
     // Create a map of client statistics for quick lookup
     const clientStatsMap = new Map();
     clientStats.forEach(clientStat => {
@@ -715,7 +698,7 @@ const getGroupTaskStatistics = async (filter = {}, options = {}, user = null) =>
     };
 
   } catch (error) {
-    console.error('❌ Error getting group task statistics:', error);
+
     throw error;
   }
 };

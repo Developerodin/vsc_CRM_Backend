@@ -186,7 +186,7 @@ const queryTimelines = async (filter, options, user) => {
         groupClientIds = [];
       }
     } catch (error) {
-      console.error('Error filtering by group:', error);
+
       // On error, return empty results
       groupClientIds = [];
     }
@@ -629,40 +629,28 @@ const bulkImportTimelines = async (timelinesData) => {
  * @returns {Promise<Array>} Array of created timeline documents
  */
 export const createClientTimelines = async (client, activities) => {
-  console.log(`🔍 [TIMELINE SERVICE] createClientTimelines called for client: ${client.name}`);
-  console.log(`📊 [TIMELINE SERVICE] Activities count: ${activities && activities.length ? activities.length : 0}`);
-  
   if (!activities || activities.length === 0) {
-    console.log(`⚠️ [TIMELINE SERVICE] No activities provided, returning empty array`);
     return [];
   }
 
   const timelinePromises = [];
   const { yearString: financialYear } = getCurrentFinancialYear();
-  console.log(`📅 [TIMELINE SERVICE] Financial year: ${financialYear}`);
 
   for (const activityItem of activities) {
     try {
-      console.log(`🔍 [TIMELINE SERVICE] Processing activity: ${activityItem.activity}`);
-      
       // Get the full activity document to check subactivities
       const Activity = mongoose.model('Activity');
       const activity = await Activity.findById(activityItem.activity);
       
       if (!activity) {
-        console.warn(`⚠️ [TIMELINE SERVICE] Activity ${activityItem.activity} not found for client ${client.name}`);
+
         continue;
       }
-      
-      console.log(`✅ [TIMELINE SERVICE] Found activity: ${activity.name}`);
-      console.log(`📊 [TIMELINE SERVICE] Activity has ${activity.subactivities && activity.subactivities.length ? activity.subactivities.length : 0} subactivities`);
 
       // Handle activities with subactivities
       if (activity.subactivities && activity.subactivities.length > 0) {
-        console.log(`🔍 [TIMELINE SERVICE] Processing ${activity.subactivities.length} subactivities`);
         
         for (const subactivity of activity.subactivities) {
-          console.log(`🔍 [TIMELINE SERVICE] Processing subactivity: ${subactivity.name} (ID: ${subactivity._id})`);
           
           // Check if specific subactivity is assigned to this client
           let isAssignedSubactivity = false;
@@ -672,36 +660,22 @@ export const createClientTimelines = async (client, activities) => {
             const clientSubactivityId = activityItem.subactivity._id || activityItem.subactivity;
             isAssignedSubactivity = clientSubactivityId.toString() === subactivity._id.toString();
           }
-          
-          console.log(`🔍 [TIMELINE SERVICE] Subactivity assignment check:`, {
-            clientSubactivity: activityItem.subactivity,
-            subactivityId: subactivity._id.toString(),
-            isAssigned: isAssignedSubactivity,
-            shouldProcess: !activityItem.subactivity || isAssignedSubactivity
-          });
-          
+
           // If no specific subactivity is assigned, or this is the assigned one
           if (!activityItem.subactivity || isAssignedSubactivity) {
             if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
-              console.log(`🔄 [TIMELINE SERVICE] Creating current period timeline for subactivity: ${subactivity.name}`);
-              console.log(`📅 [TIMELINE SERVICE] Frequency: ${subactivity.frequency}`);
-              console.log(`⚙️ [TIMELINE SERVICE] Frequency config:`, subactivity.frequencyConfig);
               
               // Create only ONE timeline for the current period
               const currentDueDate = calculateCurrentPeriodDueDate(subactivity.frequency, subactivity.frequencyConfig);
               
               // Validate the date is valid
               if (!currentDueDate || !(currentDueDate instanceof Date) || isNaN(currentDueDate.getTime())) {
-                console.error(`❌ [TIMELINE SERVICE] Invalid date calculated for subactivity ${subactivity.name}:`, currentDueDate);
-                console.error(`   Frequency: ${subactivity.frequency}`);
-                console.error(`   FrequencyConfig:`, JSON.stringify(subactivity.frequencyConfig, null, 2));
+
                 continue; // Skip this subactivity and move to the next one
               }
               
               const currentPeriod = getPeriodFromDate(currentDueDate, subactivity.frequency);
-              
-              console.log(`📅 [TIMELINE SERVICE] Current period: ${currentPeriod}, Due date: ${currentDueDate}`);
-              
+
               const timeline = new Timeline({
                 activity: activity._id,
                 subactivity: {
@@ -729,12 +703,8 @@ export const createClientTimelines = async (client, activities) => {
                 })) : []
               });
               
-              console.log(`📝 [TIMELINE SERVICE] Created single timeline for current period: ${currentDueDate.toDateString()}`);
-              console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields && subactivity.fields.length ? subactivity.fields.length : 0} fields from subactivity`);
-              console.log(`🔮 [TIMELINE SERVICE] Future timelines will be created by cron job`);
               timelinePromises.push(timeline.save());
             } else {
-              console.log(`🔄 [TIMELINE SERVICE] Creating one-time timeline for subactivity: ${subactivity.name}`);
               // Create one-time timeline for subactivities without frequency
               const dueDate = new Date();
               dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
@@ -766,7 +736,6 @@ export const createClientTimelines = async (client, activities) => {
                 })) : []
               });
               
-              console.log(`📋 [TIMELINE SERVICE] Copied ${subactivity.fields && subactivity.fields.length ? subactivity.fields.length : 0} fields from subactivity`);
               timelinePromises.push(timeline.save());
             }
           }
@@ -793,24 +762,20 @@ export const createClientTimelines = async (client, activities) => {
           fields: [] // No fields for legacy activities
         });
         
-        console.log(`📋 [TIMELINE SERVICE] No fields to copy for legacy activity`);
         timelinePromises.push(timeline.save());
       }
     } catch (error) {
-      console.error(`Error creating timeline for activity ${activityItem.activity}:`, error);
+
       // Continue with other activities even if one fails
     }
   }
   
   // Wait for all timelines to be created
   if (timelinePromises.length > 0) {
-    console.log(`⏳ [TIMELINE SERVICE] Waiting for ${timelinePromises.length} timelines to be saved...`);
     const createdTimelines = await Promise.all(timelinePromises);
-    console.log(`✅ [TIMELINE SERVICE] Successfully created ${createdTimelines.length} timelines for client ${client.name}`);
     return createdTimelines;
   }
   
-  console.log(`⚠️ [TIMELINE SERVICE] No timelines to create for client ${client.name}`);
   return [];
 };
 
@@ -826,7 +791,7 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
   try {
     // Validate that frequencyConfig exists
     if (!frequencyConfig) {
-      console.warn('⚠️ [TIMELINE SERVICE] frequencyConfig is missing, using fallback date');
+
       const fallbackDate = new Date();
       fallbackDate.setDate(fallbackDate.getDate() + 30);
       return fallbackDate;
@@ -838,7 +803,7 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
     
     // Validate the date is valid
     if (!nextOccurrence || isNaN(nextOccurrence.getTime())) {
-      console.error('❌ [TIMELINE SERVICE] calculateNextOccurrence returned invalid date');
+
       throw new Error('Invalid date returned from calculateNextOccurrence');
     }
     
@@ -931,9 +896,7 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
       return nextOccurrence;
     }
   } catch (error) {
-    console.error('❌ [TIMELINE SERVICE] Error calculating current period due date:', error);
-    console.error('   Frequency:', frequency);
-    console.error('   FrequencyConfig:', JSON.stringify(frequencyConfig, null, 2));
+
     // Fallback: return a date 30 days from now
     const fallbackDate = new Date();
     fallbackDate.setDate(fallbackDate.getDate() + 30);
@@ -1052,8 +1015,6 @@ export const getAllTimelines = async (filter = {}, options = {}) => {
   
   return timelines;
 };
-
-
 
 /**
  * Update timeline status
@@ -1178,6 +1139,80 @@ const getFrequencyPeriods = async (frequency, financialYear = null) => {
     periods,
     totalPeriods: periods.length,
     description: getFrequencyDescription(frequency, financialYear)
+  };
+};
+
+/**
+ * Get frequency status statistics for timelines
+ * @param {Object} params - Parameters including branchId, startDate, endDate, frequency, status
+ * @param {Object} user - User object with role information
+ * @returns {Promise<Object>}
+ */
+export const getFrequencyStatusStats = async (params, user) => {
+  const { branchId, startDate, endDate, frequency, status } = params;
+  
+  // Build filter based on parameters
+  let filter = {};
+  
+  if (branchId) {
+    filter.branch = branchId;
+  }
+  
+  if (frequency) {
+    filter.frequency = frequency;
+  }
+  
+  // Apply user's branch access restrictions
+  if (user.role && !branchId) {
+    const allowedBranchIds = getUserBranchIds(user.role);
+    if (allowedBranchIds !== null && allowedBranchIds.length > 0) {
+      filter.branch = { $in: allowedBranchIds };
+    }
+  }
+  
+  // Get timelines matching the filter
+  const timelines = await Timeline.find(filter)
+    .populate('activity', 'name')
+    .populate('client', 'name')
+    .populate('branch', 'name');
+  
+  // Process and aggregate statistics
+  const stats = {
+    totalTimelines: timelines.length,
+    frequencyBreakdown: {},
+    statusBreakdown: {
+      pending: 0,
+      completed: 0,
+      delayed: 0,
+      ongoing: 0
+    }
+  };
+  
+  timelines.forEach(timeline => {
+    // Count by frequency
+    const freq = timeline.frequency || 'None';
+    if (!stats.frequencyBreakdown[freq]) {
+      stats.frequencyBreakdown[freq] = 0;
+    }
+    stats.frequencyBreakdown[freq]++;
+    
+    // Count by status (use timeline status or default to pending)
+    const timelineStatus = timeline.status || 'pending';
+    if (stats.statusBreakdown[timelineStatus] !== undefined) {
+      stats.statusBreakdown[timelineStatus]++;
+    }
+  });
+  
+  return {
+    success: true,
+    data: stats,
+    filters: {
+      branchId,
+      startDate,
+      endDate,
+      frequency,
+      status
+    }
   };
 };
 

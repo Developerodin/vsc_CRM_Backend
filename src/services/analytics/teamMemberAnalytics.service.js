@@ -193,7 +193,7 @@ const getDashboardCards = async () => {
       }
     };
   } catch (error) {
-    console.error('Error getting dashboard cards:', error);
+
     throw error;
   }
 };
@@ -245,7 +245,7 @@ const getTaskCompletionTrends = async (months = 6) => {
       }
     };
   } catch (error) {
-    console.error('Error getting task completion trends:', error);
+
     throw error;
   }
 };
@@ -327,7 +327,7 @@ const getTopTeamMembersByCompletion = async (limit, filter = {}) => {
       }
     };
   } catch (error) {
-    console.error('Error getting top team members by completion:', error);
+
     throw error;
   }
 };
@@ -463,7 +463,7 @@ const getTopTeamMembersByBranch = async (branchId = null, limit = 5) => {
       };
     }
   } catch (error) {
-    console.error('Error getting top team members by branch:', error);
+
     throw error;
   }
 };
@@ -885,7 +885,7 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
       generatedAt: new Date().toISOString()
     };
   } catch (error) {
-    console.error('Error getting team member details overview:', error);
+
     throw error;
   }
 };
@@ -911,7 +911,7 @@ const getAnalyticsSummary = async () => {
       generatedAt: new Date().toISOString()
     };
   } catch (error) {
-    console.error('Error getting analytics summary:', error);
+
     throw error;
   }
 };
@@ -1028,8 +1028,6 @@ const getAllTeamMembersTableData = async (filter = {}, options = {}, user = null
     // Get all team member IDs we're interested in
     const teamMemberIds = teamMembers.map(tm => tm._id);
 
-    console.log('🔍 DEBUG: Team member IDs to search for:', teamMemberIds);
-
     // Get ALL tasks first (like clients table does), then filter by team member
     const allTasks = await Task.find()
       .select('_id status priority startDate endDate timeline branch createdAt teamMember')
@@ -1043,18 +1041,8 @@ const getAllTeamMembersTableData = async (filter = {}, options = {}, user = null
       })
       .lean();
 
-    console.log('🔍 DEBUG: Found total tasks in database:', allTasks.length);
     if (allTasks.length > 0) {
-      console.log('🔍 DEBUG: Sample task:', {
-        id: allTasks[0]._id,
-        teamMember: allTasks[0].teamMember,
-        teamMemberType: typeof allTasks[0].teamMember,
-        hasTeamMember: !!allTasks[0].teamMember,
-        timeline: allTasks[0].timeline,
-        timelineType: typeof allTasks[0].timeline,
-        isArray: Array.isArray(allTasks[0].timeline),
-        hasPopulatedTimeline: allTasks[0].timeline && allTasks[0].timeline.length > 0 && allTasks[0].timeline[0].client
-      });
+
     }
 
     // Filter tasks for our team members
@@ -1063,12 +1051,9 @@ const getAllTeamMembersTableData = async (filter = {}, options = {}, user = null
       teamMemberIds.some(tmId => tmId.toString() === task.teamMember._id.toString())
     );
 
-    console.log('🔍 DEBUG: Filtered tasks for our team members:', tasks.length);
-
     // Process each team member to add the required information
     const processedTeamMembers = teamMembers.map(teamMember => {
-      console.log(`🔍 DEBUG: Processing team member: ${teamMember.name} (${teamMember._id})`);
-      
+
       // Get team member's tasks
       const memberTasks = tasks.filter(task => 
         task.teamMember && 
@@ -1076,16 +1061,8 @@ const getAllTeamMembersTableData = async (filter = {}, options = {}, user = null
         task.teamMember._id.toString() === teamMember._id.toString()
       );
 
-      console.log(`  - Found ${memberTasks.length} tasks for this member`);
       if (memberTasks.length > 0) {
-        console.log(`  - Sample task:`, {
-          id: memberTasks[0]._id,
-          teamMember: memberTasks[0].teamMember,
-          teamMemberType: typeof memberTasks[0].teamMember,
-          timeline: memberTasks[0].timeline,
-          timelineType: typeof memberTasks[0].timeline,
-          isArray: Array.isArray(memberTasks[0].timeline)
-        });
+
       }
 
       // Get team member's timeline IDs from tasks (timeline is an array in Task model)
@@ -1099,21 +1076,14 @@ const getAllTeamMembersTableData = async (filter = {}, options = {}, user = null
         ).filter(Boolean);
       }))];
 
-      console.log(`  - Extracted ${memberTimelineIds.length} timeline IDs:`, memberTimelineIds);
-
       // Get team member's timelines from populated task data
       const memberTimelines = memberTasks.flatMap(task => {
         if (!task.timeline || !Array.isArray(task.timeline)) return [];
         return task.timeline.filter(timeline => timeline && timeline._id);
       });
 
-      console.log(`  - Found ${memberTimelines.length} populated timelines for this member`);
       if (memberTimelines.length > 0) {
-        console.log(`  - Sample timeline:`, {
-          id: memberTimelines[0]._id,
-          client: memberTimelines[0].client,
-          activity: memberTimelines[0].activity
-        });
+
       }
 
       // Get unique client IDs from member's timelines

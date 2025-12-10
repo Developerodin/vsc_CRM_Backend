@@ -124,7 +124,7 @@ const processAttachments = async (attachments) => {
           contentType = 'application/octet-stream';
         }
       } else {
-        console.warn('Skipping attachment: missing url, s3Key, or content');
+
         continue;
       }
 
@@ -136,7 +136,7 @@ const processAttachments = async (attachments) => {
       });
 
     } catch (error) {
-      console.error(`Error processing attachment: ${error.message}`, attachment);
+
       // Continue with other attachments instead of failing completely
     }
   }

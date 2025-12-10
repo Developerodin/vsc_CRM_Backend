@@ -10,8 +10,7 @@ import { Timeline } from '../models/index.js';
  */
 const bulkImportTimelineFields = async (timelineUpdates, user = null) => {
   try {
-    console.log(`🚀 Starting bulk import for ${timelineUpdates.length} timelines...`);
-    
+
     const results = {
       total: timelineUpdates.length,
       successful: 0,
@@ -25,8 +24,7 @@ const bulkImportTimelineFields = async (timelineUpdates, user = null) => {
       const update = timelineUpdates[i];
       
       try {
-        console.log(`\n📝 Processing timeline ${i + 1}/${timelineUpdates.length}: ${update.timelineId}`);
-        
+
         // Validate required fields
         if (!update.timelineId) {
           throw new Error('Timeline ID is required');
@@ -66,7 +64,7 @@ const bulkImportTimelineFields = async (timelineUpdates, user = null) => {
         // Auto-update status to completed if all fields are filled
         if (allFieldsCompleted && timeline.status !== 'completed') {
           updateData.status = 'completed';
-          console.log(`   ✅ All fields completed - Status updated to 'completed'`);
+
         }
 
         // Update the timeline
@@ -85,11 +83,8 @@ const bulkImportTimelineFields = async (timelineUpdates, user = null) => {
           updatedAt: updatedTimeline.updatedAt
         });
 
-        console.log(`   ✅ Successfully updated timeline with ${updatedFields.length} fields`);
-
       } catch (error) {
-        console.error(`   ❌ Error processing timeline ${update.timelineId}:`, error.message);
-        
+
         results.failed++;
         results.errors.push({
           timelineId: update.timelineId,
@@ -99,22 +94,17 @@ const bulkImportTimelineFields = async (timelineUpdates, user = null) => {
       }
     }
 
-    console.log(`\n📊 Bulk Import Summary:`);
-    console.log(`   Total: ${results.total}`);
-    console.log(`   Successful: ${results.successful}`);
-    console.log(`   Failed: ${results.failed}`);
-
     if (results.errors.length > 0) {
-      console.log(`   Errors: ${results.errors.length}`);
+
       results.errors.forEach(error => {
-        console.log(`     - Timeline ${error.timelineId}: ${error.error}`);
+
       });
     }
 
     return results;
 
   } catch (error) {
-    console.error('❌ Bulk import failed:', error);
+
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Bulk import failed', error.message);
   }
 };
@@ -149,7 +139,6 @@ const updateTimelineFields = async (timeline, fieldUpdates) => {
       fieldValue: fieldUpdate.fieldValue
     };
 
-    console.log(`   📝 Updated field '${fieldUpdate.fileName}' with value: ${fieldUpdate.fieldValue}`);
   }
 
   return updatedFields;

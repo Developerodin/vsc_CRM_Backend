@@ -108,11 +108,7 @@ const queryTeamMembers = async (filter, options, user) => {
     
     // Remove the search parameter as it's now handled by $or
     delete mongoFilter.search;
-    
-    console.log('🔍 Search filter applied:', {
-      searchValue,
-      mongoFilter: JSON.stringify(mongoFilter)
-    });
+
   }
   
   // Handle individual field filters (only if no global search)
@@ -172,16 +168,12 @@ const queryTeamMembers = async (filter, options, user) => {
     }
   }
 
-  console.log('🔍 Final MongoDB filter:', JSON.stringify(mongoFilter));
-
   const teamMembers = await TeamMember.paginate(mongoFilter, {
     ...options,
     populate: 'skills,branch',
     sortBy: options.sortBy || 'sortOrder:asc',
   });
-  
-  console.log(`🔍 Search results: Found ${teamMembers.results.length} team members`);
-  
+
   return teamMembers;
 };
 

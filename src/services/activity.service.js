@@ -2,8 +2,6 @@ import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
 import Activity from '../models/activity.model.js';
 
-
-
 /**
  * Create an activity
  * @param {Object} activityBody

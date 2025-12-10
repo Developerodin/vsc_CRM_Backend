@@ -23,6 +23,11 @@ router
   .route('/frequency-periods')
   .get(auth('getTimelines'), timelineController.getFrequencyPeriods);
 
+// Add frequency-status-stats endpoint before the dynamic :timelineId route
+router
+  .route('/frequency-status-stats')
+  .get(auth('getTimelines'), timelineController.getFrequencyStatusStats);
+
 router
   .route('/:timelineId')
   .get(auth('getTimelines'), validate(timelineValidation.getTimeline), timelineController.getTimeline)

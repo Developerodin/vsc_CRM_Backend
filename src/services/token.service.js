@@ -8,7 +8,6 @@ import ApiError from '../utils/ApiError.js';
 import { tokenTypes } from '../config/tokens.js';
 import Token from '../models/token.model.js';
 
-
 /**
  * Generate token
  * @param {ObjectId} userId

@@ -608,16 +608,8 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
 
       // Debug: Check if tasks have team members
       if (clientTasks.length > 0 && client.name === 'A V & ASSOCIATES') {
-        console.log(`Debug ${client.name}:`);
-        console.log(`  - Client tasks:`, clientTasks.map(t => ({ 
-          id: t._id, 
-          hasTeamMember: !!t.teamMember, 
-          teamMemberId: t.teamMember && t.teamMember._id,
-          teamMemberName: t.teamMember && t.teamMember.name 
-        })));
+
       }
-
-
 
       // Get unique team members working on this client
       const clientTeamMemberIds = [...new Set(clientTasks.map(task => 

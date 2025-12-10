@@ -134,14 +134,13 @@ const getFolderContents = async (folderId, options = {}) => {
   const folder = await getFolderById(folderId);
   
   // First, let's test a direct query to see what's in the database
-  console.log('🔍 getFolderContents - Testing direct query...');
+
   const directQuery = await FileManager.findOne({ 
     type: 'file', 
     'file.parentFolder': folderId,
     isDeleted: false 
   });
-  console.log('🔍 getFolderContents - Direct query result:', JSON.stringify(directQuery, null, 2));
-  
+
   const filter = {
     $or: [
       { 'folder.parentFolder': folderId },
@@ -150,11 +149,8 @@ const getFolderContents = async (folderId, options = {}) => {
     isDeleted: false,
   };
 
-  console.log('🔍 getFolderContents - Filter:', JSON.stringify(filter, null, 2));
-
   // Try a direct query instead of paginate to debug the issue
-  console.log('🔍 getFolderContents - Using direct query instead of paginate...');
-  
+
   const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
   const limit = hasLimit ? parseInt(options.limit, 10) : null;
   const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
@@ -182,18 +178,11 @@ const getFolderContents = async (folderId, options = {}) => {
     totalResults,
   };
 
-  console.log('📊 getFolderContents - Raw result from paginate:', JSON.stringify(result, null, 2));
-  
   // Log each result item individually
   if (result.results && result.results.length > 0) {
-    console.log('📋 getFolderContents - Individual results:');
+
     result.results.forEach((item, index) => {
-      console.log(`  Item ${index + 1}:`);
-      console.log(`    Type: ${item.type}`);
-      console.log(`    ID: ${item.id}`);
-      console.log(`    File object:`, JSON.stringify(item.file, null, 4));
-      console.log(`    Folder object:`, JSON.stringify(item.folder, null, 4));
-      console.log(`    Raw item:`, JSON.stringify(item, null, 4));
+
     });
   }
 
@@ -201,8 +190,6 @@ const getFolderContents = async (folderId, options = {}) => {
     folder,
     contents: result,
   };
-
-  console.log('🚀 getFolderContents - Final response:', JSON.stringify(response, null, 2));
 
   return response;
 };
@@ -332,9 +319,9 @@ const deleteFile = async (fileId) => {
   if (fileKey) {
     try {
       await deleteFileFromS3(fileKey);
-      console.log(`S3 file deleted: ${fileKey}`);
+
     } catch (err) {
-      console.error(`Failed to delete S3 file: ${fileKey}`, err);
+
     }
   }
   return file;
@@ -395,16 +382,12 @@ const deleteMultipleItems = async (itemIds) => {
  * @returns {Promise<Object>}
  */
 const searchItems = async (filter, options = {}) => {
-  console.log('🔍 Search filter received:', JSON.stringify(filter, null, 2));
-  
+
   // Check if this is a search query or just a filter request
   if (filter.query) {
     // This is a text search - create search pattern
     const searchPattern = filter.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape regex special characters
-    
-    console.log('🔍 Search pattern:', searchPattern);
-    console.log('🔍 Original query:', filter.query);
-    
+
     const searchFilter = {
       isDeleted: false,
       $or: [
@@ -421,7 +404,7 @@ const searchItems = async (filter, options = {}) => {
 
     // Handle user permissions more flexibly
     if (filter.userId) {
-      console.log('🔍 User ID filter applied, but allowing broader access for testing');
+
       searchFilter.$and = [
         {
           $or: [
@@ -435,14 +418,12 @@ const searchItems = async (filter, options = {}) => {
       delete searchFilter.$and;
     }
 
-    console.log('🔍 Final search filter:', JSON.stringify(searchFilter, null, 2));
-
     // Test the search filter directly to see what it finds
-    console.log('🔍 Testing search filter directly...');
+
     const testQuery = await FileManager.find(searchFilter).limit(3);
-    console.log('🔍 Direct test query found:', testQuery.length, 'results');
+
     if (testQuery.length > 0) {
-      console.log('🔍 First test result:', JSON.stringify(testQuery[0], null, 2));
+
     }
 
     const result = await FileManager.paginate(searchFilter, {
@@ -451,64 +432,34 @@ const searchItems = async (filter, options = {}) => {
       sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
     });
 
-    console.log('🔍 Search results count:', result.totalResults);
     if (result.totalResults > 0) {
-      console.log('🔍 First few results:', result.results.slice(0, 3).map(item => ({
-        type: item.type,
-        name: item.type === 'folder' ? (item.folder && item.folder.name) : (item.file && item.file.fileName),
-        path: item.folder && item.folder.path,
-        rawItem: JSON.stringify(item, null, 2)
-      })));
-      
+
       if (result.results[0].type === 'folder') {
-        console.log('🔍 Debug - Folder object exists:', !!result.results[0].folder);
-        console.log('🔍 Debug - Folder keys:', result.results[0].folder ? Object.keys(result.results[0].folder) : 'NO_FOLDER');
+
       }
     } else {
-      console.log('🔍 No results found. Let\'s check what exists in database...');
-      
+
       const debugFolders = await FileManager.find({
         type: 'folder',
         isDeleted: false,
         'folder.name': { $regex: 'Abhishek', $options: 'i' }
       }).limit(5);
-      
-      console.log('🔍 Debug - Folders with "Abhishek" in name:', debugFolders.length);
+
       if (debugFolders.length > 0) {
-        console.log('🔍 Debug - First folder found:', JSON.stringify(debugFolders[0], null, 2));
+
       }
       
       const allFolders = await FileManager.find({
         type: 'folder',
         isDeleted: false
       }).limit(3);
-      
-      console.log('🔍 Debug - Sample folder structure:', allFolders.map(f => ({
-        id: f._id,
-        name: f.folder ? f.folder.name : 'NO_FOLDER_OBJECT',
-        path: f.folder ? f.folder.path : 'NO_PATH',
-        createdBy: f.folder ? f.folder.createdBy : 'NO_CREATEDBY'
-      })));
-    }
 
-    console.log('🔍 Final result structure:', {
-      totalResults: result.totalResults,
-      resultsLength: result.results.length,
-      hasResults: !!result.results,
-      resultsType: typeof result.results,
-      firstResult: result.results[0] ? {
-        type: result.results[0].type,
-        hasFolder: !!result.results[0].folder,
-        hasFile: !!result.results[0].file,
-        keys: Object.keys(result.results[0])
-      } : 'NO_RESULTS'
-    });
+    }
 
     return result;
   } else {
     // This is just a filter request (no text search) - use simple filtering
-    console.log('🔍 No query provided, using simple filter');
-    
+
     const searchFilter = {
       isDeleted: false,
     };
@@ -525,15 +476,12 @@ const searchItems = async (filter, options = {}) => {
       ];
     }
 
-    console.log('🔍 Simple filter:', JSON.stringify(searchFilter, null, 2));
-
     const result = await FileManager.paginate(searchFilter, {
       ...options,
       populate: 'folder.createdBy,file.uploadedBy',
       sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
     });
 
-    console.log('🔍 Filter results count:', result.totalResults);
     return result;
   }
 };
@@ -546,8 +494,7 @@ const searchItems = async (filter, options = {}) => {
  */
 const searchItemsRecursive = async (filter, options = {}) => {
   try {
-    console.log('🔍 Starting recursive search with filter:', JSON.stringify(filter, null, 2));
-    
+
     // First, find all folders that match the search query
     const folderSearchFilter = {
       type: 'folder',
@@ -568,8 +515,6 @@ const searchItemsRecursive = async (filter, options = {}) => {
       .populate('folder.createdBy', 'name email')
       .lean();
 
-    console.log(`🔍 Found ${matchingFolders.length} matching folders`);
-
     // Find all files that match the search query
     const fileSearchFilter = {
       type: 'file',
@@ -588,8 +533,6 @@ const searchItemsRecursive = async (filter, options = {}) => {
     const matchingFiles = await FileManager.find(fileSearchFilter)
       .populate('file.uploadedBy', 'name email')
       .lean();
-
-    console.log(`🔍 Found ${matchingFiles.length} matching files`);
 
     // Combine results
     const allResults = [...matchingFolders, ...matchingFiles];
@@ -631,11 +574,9 @@ const searchItemsRecursive = async (filter, options = {}) => {
       totalResults,
     };
 
-    console.log(`🔍 Recursive search completed. Found ${totalResults} total items, returning ${resultsWithId.length} items for page ${page}`);
-
     return result;
   } catch (error) {
-    console.error('❌ Error in recursive search:', error);
+
     throw error;
   }
 };
@@ -648,8 +589,7 @@ const searchItemsRecursive = async (filter, options = {}) => {
  */
 const searchSubfoldersByName = async (subfolderName, options = {}) => {
   try {
-    console.log(`🔍 Searching for subfolders with name: ${subfolderName}`);
-    
+
     const searchFilter = {
       type: 'folder',
       isDeleted: false,
@@ -701,11 +641,9 @@ const searchSubfoldersByName = async (subfolderName, options = {}) => {
       totalResults,
     };
 
-    console.log(`🔍 Subfolder search completed. Found ${totalResults} subfolders matching "${subfolderName}"`);
-
     return result;
   } catch (error) {
-    console.error('❌ Error in subfolder search:', error);
+
     throw error;
   }
 };
@@ -718,8 +656,7 @@ const searchSubfoldersByName = async (subfolderName, options = {}) => {
  */
 const searchClientSubfolders = async (query, options = {}) => {
   try {
-    console.log(`🔍 Searching for client subfolders with query: ${query}`);
-    
+
     // Create search pattern
     const searchPattern = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
@@ -790,11 +727,9 @@ const searchClientSubfolders = async (query, options = {}) => {
       totalResults,
     };
 
-    console.log(`🔍 Client subfolder search completed. Found ${totalResults} folders matching "${query}"`);
-
     return result;
   } catch (error) {
-    console.error('❌ Error in client subfolder search:', error);
+
     throw error;
   }
 };
