@@ -5,7 +5,7 @@ const createTask = {
   body: Joi.object().keys({
     teamMember: Joi.string().custom(objectId).required(),
     startDate: Joi.date().required(),
-    endDate: Joi.date().greater(Joi.ref('startDate')).required(),
+    endDate: Joi.date().min(Joi.ref('startDate')).required(),
     priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical').default('medium'),
     branch: Joi.string().custom(objectId).required(),
     assignedBy: Joi.alternatives().try(
@@ -94,7 +94,11 @@ const updateTask = {
     .keys({
       teamMember: Joi.string().custom(objectId),
       startDate: Joi.date(),
-      endDate: Joi.date(),
+      endDate: Joi.date().when('startDate', {
+        is: Joi.exist(),
+        then: Joi.date().min(Joi.ref('startDate')),
+        otherwise: Joi.date()
+      }),
       priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical'),
       branch: Joi.string().custom(objectId),
       assignedBy: Joi.alternatives().try(
@@ -191,7 +195,7 @@ const getTasksByPriority = {
 const getTasksByDateRange = {
   query: Joi.object().keys({
     startDate: Joi.date().required(),
-    endDate: Joi.date().greater(Joi.ref('startDate')).required(),
+    endDate: Joi.date().min(Joi.ref('startDate')).required(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -272,7 +276,7 @@ const bulkCreateTasks = {
       Joi.object().keys({
         teamMember: Joi.string().custom(objectId).required(),
         startDate: Joi.date().required(),
-        endDate: Joi.date().greater(Joi.ref('startDate')).required(),
+        endDate: Joi.date().min(Joi.ref('startDate')).required(),
         priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical').default('medium'),
         branch: Joi.string().custom(objectId).required(),
         assignedBy: Joi.alternatives().try(
