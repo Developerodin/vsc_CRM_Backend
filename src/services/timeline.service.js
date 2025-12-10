@@ -1248,7 +1248,7 @@ export const getFrequencyStatusStats = async (params, user) => {
     }
   });
   
-  const result = {
+  const finalResult = {
     success: true,
     data: stats,
     filters: {
@@ -1261,9 +1261,9 @@ export const getFrequencyStatusStats = async (params, user) => {
   };
   
   // Cache the result for 3 minutes
-  cache.set(cacheKey, result, 3 * 60 * 1000);
+  cache.set(cacheKey, finalResult, 3 * 60 * 1000);
   
-  return result;
+  return finalResult;
 };
 
 /**

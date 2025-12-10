@@ -339,21 +339,21 @@ const getAssignedTaskCounts = async (user, branchId) => {
   const assigned = new Array(12).fill(0);
   
   // Fill in the actual counts
-  results.forEach(result => {
-    if (result._id >= 0 && result._id < 12) {
-      assigned[result._id] = result.count;
+  results.forEach(item => {
+    if (item._id >= 0 && item._id < 12) {
+      assigned[item._id] = item.count;
     }
   });
   
-  const result = {
+  const finalResult = {
     assigned,
     months
   };
   
   // Cache the result for 2 minutes
-  cache.set(cacheKey, result, 2 * 60 * 1000);
+  cache.set(cacheKey, finalResult, 2 * 60 * 1000);
   
-  return result;
+  return finalResult;
 };
 
 /**
