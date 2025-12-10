@@ -8,6 +8,7 @@ import Timeline from '../models/timeline.model.js';
 import Task from '../models/task.model.js';
 import ApiError from '../utils/ApiError.js';
 import { getUserBranchIds, hasBranchAccess } from './role.service.js';
+import cache from '../utils/cache.js';
 
 /**
  * Get total count of activities
@@ -237,6 +238,17 @@ const getAssignedTaskCounts = async (user, branchId) => {
     throw new ApiError(httpStatus.FORBIDDEN, 'User has no role assigned');
   }
 
+  // Check cache first
+  const cacheKey = cache.generateKey('assigned-task-counts', { 
+    userId: user._id.toString(), 
+    branchId: branchId || 'all' 
+  });
+  
+  const cachedResult = cache.get(cacheKey);
+  if (cachedResult) {
+    return cachedResult;
+  }
+
   let filter = {};
   
   if (branchId) {
@@ -262,9 +274,9 @@ const getAssignedTaskCounts = async (user, branchId) => {
     }
   }
 
-  // Calculate the past 12 months
+  // Calculate the past 12 months date ranges
   const months = [];
-  const assigned = [];
+  const monthRanges = [];
   
   for (let i = 11; i >= 0; i--) {
     const currentDate = new Date();
@@ -278,28 +290,70 @@ const getAssignedTaskCounts = async (user, branchId) => {
     const monthName = targetDate.toLocaleString('default', { month: 'short' });
     const year = targetDate.getFullYear().toString().slice(-2);
     months.push(`${monthName} ${year}`);
-    
-    // Build filter for tasks with startDate in this month
-    const monthFilter = {
-      ...filter,
-      startDate: {
-        $exists: true,
-        $ne: null,
-        $ne: "",
-        $gte: monthStart,
-        $lte: monthEnd
-      }
-    };
-    
-    // Count tasks for this month
-    const monthCount = await Timeline.countDocuments(monthFilter);
-    assigned.push(monthCount);
+    monthRanges.push({ start: monthStart, end: monthEnd });
   }
   
-  return {
+  // Use aggregation pipeline to get all counts in one query
+  const pipeline = [
+    {
+      $match: {
+        ...filter,
+        startDate: { $exists: true, $ne: null, $ne: "" }
+      }
+    },
+    {
+      $addFields: {
+        monthIndex: {
+          $switch: {
+            branches: monthRanges.map((range, index) => ({
+              case: {
+                $and: [
+                  { $gte: ['$startDate', range.start] },
+                  { $lte: ['$startDate', range.end] }
+                ]
+              },
+              then: index
+            })),
+            default: -1
+          }
+        }
+      }
+    },
+    {
+      $match: { monthIndex: { $ne: -1 } }
+    },
+    {
+      $group: {
+        _id: '$monthIndex',
+        count: { $sum: 1 }
+      }
+    },
+    {
+      $sort: { _id: 1 }
+    }
+  ];
+  
+  const results = await Timeline.aggregate(pipeline);
+  
+  // Initialize assigned array with zeros
+  const assigned = new Array(12).fill(0);
+  
+  // Fill in the actual counts
+  results.forEach(result => {
+    if (result._id >= 0 && result._id < 12) {
+      assigned[result._id] = result.count;
+    }
+  });
+  
+  const result = {
     assigned,
     months
   };
+  
+  // Cache the result for 2 minutes
+  cache.set(cacheKey, result, 2 * 60 * 1000);
+  
+  return result;
 };
 
 /**

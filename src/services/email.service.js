@@ -2,7 +2,14 @@ import nodemailer from 'nodemailer';
 import config from '../config/config.js';
 import logger from '../config/logger.js';
 
-const transport = nodemailer.createTransport(config.email.smtp);
+const transport = nodemailer.createTransport({
+  ...config.email.smtp,
+  pool: true, // Use connection pooling
+  maxConnections: 5, // Limit concurrent connections
+  maxMessages: 100, // Limit messages per connection
+  rateDelta: 1000, // Rate limiting
+  rateLimit: 5 // Max 5 emails per second
+});
 /* istanbul ignore next */
 if (config.env !== 'test') {
   transport
@@ -24,7 +31,14 @@ const sendEmail = async (to, subject, text, html = null) => {
   if (html) {
     msg.html = html;
   }
-  await transport.sendMail(msg);
+  
+  // Add timeout to prevent hanging
+  return Promise.race([
+    transport.sendMail(msg),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Email timeout')), 10000) // 10 second timeout
+    )
+  ]);
 };
 
 /**

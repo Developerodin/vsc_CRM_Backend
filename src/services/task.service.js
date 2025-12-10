@@ -4,6 +4,42 @@ import { Task, TeamMember } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
 
+// Simple email queue for background processing
+const emailQueue = [];
+let isProcessingEmails = false;
+
+/**
+ * Process email queue in background
+ */
+const processEmailQueue = async () => {
+  if (isProcessingEmails || emailQueue.length === 0) {
+    return;
+  }
+
+  isProcessingEmails = true;
+  
+  while (emailQueue.length > 0) {
+    const emailJob = emailQueue.shift();
+    try {
+      await sendTaskAssignmentEmail(emailJob.task, emailJob.teamMember, emailJob.assignedBy);
+    } catch (error) {
+      // Log error but continue processing
+    }
+  }
+  
+  isProcessingEmails = false;
+};
+
+/**
+ * Add email to queue for background processing
+ */
+const queueTaskAssignmentEmail = (task, teamMember, assignedBy) => {
+  emailQueue.push({ task, teamMember, assignedBy });
+  
+  // Process queue asynchronously
+  setImmediate(() => processEmailQueue());
+};
+
 /**
  * Send task assignment email to team member
  * @param {Object} task - Created task object
@@ -51,23 +87,23 @@ const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
  */
 const createTask = async (taskBody) => {
   try {
-    // Create the task
+    // Create the task with population in one query
     const task = await Task.create(taskBody);
     
-    // Populate team member and assigned by details for email
-    const populatedTask = await Task.findById(task._id)
-      .populate('teamMember', 'name email phone')
-      .populate('assignedBy', 'name email')
-      .populate('branch', 'name location');
+    // Populate the created task efficiently
+    const populatedTask = await task.populate([
+      { path: 'teamMember', select: 'name email phone' },
+      { path: 'assignedBy', select: 'name email' },
+      { path: 'branch', select: 'name location' }
+    ]);
 
-    // Send email notification to team member
-    if (populatedTask.teamMember) {
-      await sendTaskAssignmentEmail(populatedTask, populatedTask.teamMember, populatedTask.assignedBy);
+    // Queue email notification for background processing
+    if (populatedTask.teamMember && populatedTask.teamMember.email) {
+      queueTaskAssignmentEmail(populatedTask, populatedTask.teamMember, populatedTask.assignedBy);
     }
 
     return populatedTask;
   } catch (error) {
-
     throw error;
   }
 };
@@ -526,46 +562,42 @@ const bulkCreateTasks = async (tasks) => {
   };
 
   try {
+    // Use insertMany for better performance
+    const createdTasks = await Task.insertMany(tasks, { ordered: false });
+    
+    // Populate all created tasks in one query
+    const populatedTasks = await Task.find({ 
+      _id: { $in: createdTasks.map(task => task._id) } 
+    })
+    .populate('teamMember', 'name email phone')
+    .populate('assignedBy', 'name email')
+    .populate('branch', 'name location');
 
-    for (let i = 0; i < tasks.length; i++) {
-      try {
-        const task = tasks[i];
-        
-        // Create the task
-        const createdTask = await Task.create(task);
-        
-        // Populate details for email
-        const populatedTask = await Task.findById(createdTask._id)
-          .populate('teamMember', 'name email phone')
-          .populate('assignedBy', 'name email')
-          .populate('branch', 'name location');
-
-        // Send email notification
-        if (populatedTask.teamMember) {
-          await sendTaskAssignmentEmail(
-            populatedTask, 
-            populatedTask.teamMember, 
-            populatedTask.assignedBy
-          );
-        }
-
-        results.created++;
-        results.totalProcessed++;
-        
-      } catch (error) {
-
-        results.errors.push({
-          index: i,
-          error: error.message,
-          data: tasks[i]
-        });
-        results.totalProcessed++;
+    // Queue emails for background processing
+    populatedTasks.forEach(task => {
+      if (task.teamMember && task.teamMember.email) {
+        queueTaskAssignmentEmail(task, task.teamMember, task.assignedBy);
       }
-    }
+    });
+
+    results.created = createdTasks.length;
+    results.totalProcessed = tasks.length;
 
   } catch (error) {
-
-    throw error;
+    // Handle bulk insert errors
+    if (error.writeErrors) {
+      results.created = error.insertedCount || 0;
+      error.writeErrors.forEach((writeError, index) => {
+        results.errors.push({
+          index: writeError.index,
+          error: writeError.errmsg,
+          data: tasks[writeError.index]
+        });
+      });
+      results.totalProcessed = tasks.length;
+    } else {
+      throw error;
+    }
   }
 
   return results;

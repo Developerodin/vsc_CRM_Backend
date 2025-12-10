@@ -7,6 +7,7 @@ import Client from '../models/client.model.js';
 import Group from '../models/group.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 import { getCurrentFinancialYear, generateTimelineDates, calculateNextOccurrence } from '../utils/financialYear.js';
+import cache from '../utils/cache.js';
 
 /**
  * Validate if activity ID exists
@@ -1151,6 +1152,21 @@ const getFrequencyPeriods = async (frequency, financialYear = null) => {
 export const getFrequencyStatusStats = async (params, user) => {
   const { branchId, startDate, endDate, frequency, status } = params;
   
+  // Check cache first
+  const cacheKey = cache.generateKey('frequency-status-stats', { 
+    userId: user._id.toString(), 
+    branchId: branchId || 'all',
+    startDate: startDate || '',
+    endDate: endDate || '',
+    frequency: frequency || 'all',
+    status: status || 'all'
+  });
+  
+  const cachedResult = cache.get(cacheKey);
+  if (cachedResult) {
+    return cachedResult;
+  }
+  
   // Build filter based on parameters
   let filter = {};
   
@@ -1170,15 +1186,45 @@ export const getFrequencyStatusStats = async (params, user) => {
     }
   }
   
-  // Get timelines matching the filter
-  const timelines = await Timeline.find(filter)
-    .populate('activity', 'name')
-    .populate('client', 'name')
-    .populate('branch', 'name');
+  // Use aggregation pipeline for better performance
+  const pipeline = [
+    { $match: filter },
+    {
+      $group: {
+        _id: null,
+        totalTimelines: { $sum: 1 },
+        frequencyBreakdown: {
+          $push: {
+            frequency: { $ifNull: ['$frequency', 'None'] },
+            status: { $ifNull: ['$status', 'pending'] }
+          }
+        }
+      }
+    }
+  ];
   
-  // Process and aggregate statistics
+  const result = await Timeline.aggregate(pipeline);
+  
+  if (!result || result.length === 0) {
+    return {
+      success: true,
+      data: {
+        totalTimelines: 0,
+        frequencyBreakdown: {},
+        statusBreakdown: {
+          pending: 0,
+          completed: 0,
+          delayed: 0,
+          ongoing: 0
+        }
+      },
+      filters: { branchId, startDate, endDate, frequency, status }
+    };
+  }
+  
+  const aggregatedData = result[0];
   const stats = {
-    totalTimelines: timelines.length,
+    totalTimelines: aggregatedData.totalTimelines,
     frequencyBreakdown: {},
     statusBreakdown: {
       pending: 0,
@@ -1188,22 +1234,21 @@ export const getFrequencyStatusStats = async (params, user) => {
     }
   };
   
-  timelines.forEach(timeline => {
+  // Process the aggregated data
+  aggregatedData.frequencyBreakdown.forEach(item => {
     // Count by frequency
-    const freq = timeline.frequency || 'None';
-    if (!stats.frequencyBreakdown[freq]) {
-      stats.frequencyBreakdown[freq] = 0;
+    if (!stats.frequencyBreakdown[item.frequency]) {
+      stats.frequencyBreakdown[item.frequency] = 0;
     }
-    stats.frequencyBreakdown[freq]++;
+    stats.frequencyBreakdown[item.frequency]++;
     
-    // Count by status (use timeline status or default to pending)
-    const timelineStatus = timeline.status || 'pending';
-    if (stats.statusBreakdown[timelineStatus] !== undefined) {
-      stats.statusBreakdown[timelineStatus]++;
+    // Count by status
+    if (stats.statusBreakdown[item.status] !== undefined) {
+      stats.statusBreakdown[item.status]++;
     }
   });
   
-  return {
+  const result = {
     success: true,
     data: stats,
     filters: {
@@ -1214,6 +1259,11 @@ export const getFrequencyStatusStats = async (params, user) => {
       status
     }
   };
+  
+  // Cache the result for 3 minutes
+  cache.set(cacheKey, result, 3 * 60 * 1000);
+  
+  return result;
 };
 
 /**

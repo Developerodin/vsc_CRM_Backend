@@ -108,6 +108,23 @@ timelineSchema.pre('save', function(next) {
   next();
 });
 
+// Indexes for better query performance
+timelineSchema.index({ client: 1, activity: 1 });
+timelineSchema.index({ branch: 1 });
+timelineSchema.index({ status: 1 });
+timelineSchema.index({ frequency: 1 });
+timelineSchema.index({ dueDate: 1 });
+timelineSchema.index({ createdAt: -1 });
+timelineSchema.index({ client: 1, status: 1 });
+timelineSchema.index({ branch: 1, status: 1 });
+timelineSchema.index({ activity: 1, status: 1 });
+timelineSchema.index({ frequency: 1, status: 1 });
+timelineSchema.index({ dueDate: 1, status: 1 });
+// Additional indexes for dashboard performance
+timelineSchema.index({ branch: 1, frequency: 1, status: 1 }); // For frequency stats
+timelineSchema.index({ startDate: 1, branch: 1 }); // For assigned task counts
+timelineSchema.index({ frequency: 1, branch: 1 }); // For frequency analytics
+
 // add plugin that converts mongoose to json
 timelineSchema.plugin(toJSON);
 timelineSchema.plugin(paginate);

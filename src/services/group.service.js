@@ -152,7 +152,10 @@ const queryGroups = async (filter, options, user) => {
 
   const groups = await Group.paginate(mongoFilter, {
     ...options,
-    populate: 'clients',
+    populate: {
+      path: 'clients',
+      select: '_id name email', // Only select necessary fields
+    },
   });
 
   return groups;
