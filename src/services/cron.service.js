@@ -5,7 +5,7 @@ import logger from '../config/logger.js';
 
 /**
  * Send daily reminder emails for pending tasks
- * Runs at 10:00 AM Indian Standard Time (IST) daily
+ * Runs at 12:50 PM Indian Standard Time (IST) daily
  */
 const sendDailyTaskReminders = async () => {
   try {
