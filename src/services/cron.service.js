@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { Task } from '../models/index.js';
-import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
+import { sendEmail, generateDailyReminderHTML } from './email.service.js';
 import logger from '../config/logger.js';
 
 /**
@@ -62,20 +62,23 @@ const sendDailyTaskReminders = async () => {
       try {
         const { teamMember, tasks, totalTasks } = memberData;
         
-        // Generate reminder email content
+        // Generate reminder email content using the new template
         const reminderData = {
-          taskTitle: `Daily Task Reminder - ${totalTasks} Pending Tasks`,
-          taskDescription: `You have ${totalTasks} pending task(s) that require your attention.`,
-          assignedBy: 'System Reminder',
-          dueDate: null,
-          priority: 'medium',
-          taskId: null // For daily reminders, we don't link to specific tasks
+          teamMemberName: teamMember.name,
+          tasks: tasks,
+          totalTasks: totalTasks,
+          currentDate: istTime.toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })
         };
 
-        // Generate HTML email
-        const html = generateTaskAssignmentHTML(reminderData);
+        // Generate HTML email using the new daily reminder template
+        const html = generateDailyReminderHTML(reminderData);
 
-        // Create detailed task list for email body
+        // Create simplified text version for email body
         const taskList = tasks.map((task, index) => {
           const dueDate = task.endDate ? new Date(task.endDate).toLocaleDateString() : 'Not specified';
           const priority = task.priority ? task.priority.toUpperCase() : 'MEDIUM';
@@ -84,17 +87,26 @@ const sendDailyTaskReminders = async () => {
           return `${index + 1}. ${remarks}
    Priority: ${priority}
    Due Date: ${dueDate}
-   Branch: ${task.branch?.name || 'Not specified'}
-   ${task.timeline && task.timeline.length > 0 ? `Timeline: ${task.timeline.length} timeline(s)` : ''}
-`;
-        }).join('\n');
+   Branch: ${task.branch?.name || 'Not specified'}`;
+        }).join('\n\n');
 
-        const emailBody = `Hello ${teamMember.name},\n\nYou have ${totalTasks} pending task(s) that require your attention:\n\n${taskList}\n\nPlease review and complete these tasks as soon as possible.\n\nBest regards,\nYour Task Management System`;
+        const emailBody = `Hello ${teamMember.name}! 👋
+
+You have ${totalTasks} pending task(s) that require your attention:
+
+${taskList}
+
+🚀 Login to your Team Portal: http://crm.vsc.co.in/team-member-login/
+
+Please review and complete these tasks as soon as possible.
+
+Best regards,
+Your Task Management System`;
 
         // Send reminder email
         await sendEmail(
           teamMember.email,
-          `📋 Daily Reminder: ${totalTasks} Pending Task(s) - ${istTime.toLocaleDateString()}`,
+          `📋 Daily Reminder: ${totalTasks} Pending Task${totalTasks > 1 ? 's' : ''} - ${istTime.toLocaleDateString()}`,
           emailBody,
           html
         );
