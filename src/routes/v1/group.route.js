@@ -15,7 +15,11 @@ router
   .route('/bulk-import')
   .post(auth('manageGroups'), validate(groupValidation.bulkImportGroups), groupController.bulkImportGroups);
 
-// Group task statistics route - MUST be before /:groupId routes to avoid routing conflicts
+// Group analytics routes - MUST be before /:groupId routes to avoid routing conflicts
+router
+  .route('/analytics')
+  .get(auth('getGroups'), validate(groupValidation.getAllGroupsAnalytics), groupController.getAllGroupsAnalytics);
+
 router
   .route('/task-statistics')
   .get(auth('getGroups'), validate(groupValidation.getGroupTaskStatistics), groupController.getGroupTaskStatistics);
@@ -25,6 +29,10 @@ router
   .get(auth('getGroups'), validate(groupValidation.getGroup), groupController.getGroup)
   .patch(auth('manageGroups'), validate(groupValidation.updateGroup), groupController.updateGroup)
   .delete(auth('manageGroups'), validate(groupValidation.deleteGroup), groupController.deleteGroup);
+
+router
+  .route('/:groupId/analytics')
+  .get(auth('getGroups'), validate(groupValidation.getGroupAnalytics), groupController.getGroupAnalytics);
 
 router
   .route('/:groupId/clients')

@@ -97,6 +97,20 @@ const getGroupTaskStatistics = {
   }),
 };
 
+const getAllGroupsAnalytics = {
+  query: Joi.object().keys({
+    name: Joi.string().trim().allow('', null),
+    branch: Joi.string().custom(objectId),
+    search: Joi.string().trim().allow('', null),
+  }),
+};
+
+const getGroupAnalytics = {
+  params: Joi.object().keys({
+    groupId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 export default {
   createGroup,
   getGroups,
@@ -107,4 +121,6 @@ export default {
   removeClientFromGroup,
   bulkImportGroups,
   getGroupTaskStatistics,
+  getAllGroupsAnalytics,
+  getGroupAnalytics,
 }; 

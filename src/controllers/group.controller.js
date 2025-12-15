@@ -64,6 +64,17 @@ const getGroupTaskStatistics = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+const getAllGroupsAnalytics = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['name', 'branch', 'search']);
+  const result = await groupService.getAllGroupsAnalytics(filter, req.user);
+  res.status(httpStatus.OK).send(result);
+});
+
+const getGroupAnalytics = catchAsync(async (req, res) => {
+  const result = await groupService.getGroupAnalytics(req.params.groupId, req.user);
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createGroup,
   getGroups,
@@ -75,4 +86,6 @@ export {
   getClientsByGroup,
   bulkImportGroups,
   getGroupTaskStatistics,
+  getAllGroupsAnalytics,
+  getGroupAnalytics,
 }; 

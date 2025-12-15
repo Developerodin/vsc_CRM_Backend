@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { Group, Client, Task } from '../models/index.js';
+import { Group, Client, Task, Timeline } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
@@ -706,6 +706,674 @@ const getGroupTaskStatistics = async (filter = {}, options = {}, user = null) =>
   }
 };
 
+/**
+ * Get analytics summary for all groups
+ * @param {Object} filter - Filter to select which groups to get analytics for
+ * @param {Object} user - User object with role information
+ * @returns {Promise<Object>} - Group analytics summary
+ */
+const getAllGroupsAnalytics = async (filter = {}, user = null) => {
+  try {
+    // Create a new filter object to avoid modifying the original
+    const mongoFilter = { ...filter };
+    
+    // Remove empty or null values from filter
+    Object.keys(mongoFilter).forEach(key => {
+      if (mongoFilter[key] === '' || mongoFilter[key] === null || mongoFilter[key] === undefined) {
+        delete mongoFilter[key];
+      }
+    });
+    
+    // Handle global search across multiple fields
+    if (mongoFilter.search && mongoFilter.search.trim() !== '') {
+      const searchValue = mongoFilter.search.trim();
+      const searchRegex = { $regex: searchValue, $options: 'i' };
+      
+      // Create an $or condition to search across multiple fields
+      mongoFilter.$or = [
+        { name: searchRegex },
+      ];
+      
+      // Remove the search parameter as it's now handled by $or
+      delete mongoFilter.search;
+    }
+    
+    // Handle individual field filters (only if no global search)
+    if (!mongoFilter.$or) {
+      // If name filter exists, convert it to case-insensitive regex
+      if (mongoFilter.name && mongoFilter.name.trim() !== '') {
+        mongoFilter.name = { $regex: mongoFilter.name.trim(), $options: 'i' };
+      }
+    }
+    
+    // Apply branch filtering based on user's access
+    if (user && user.role) {
+      if (mongoFilter.branch) {
+        if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+        }
+      } else {
+        const allowedBranchIds = getUserBranchIds(user.role);
+        if (allowedBranchIds === null) {
+          // User has access to all branches
+        } else if (allowedBranchIds.length > 0) {
+          // MongoDB will automatically AND the branch filter with $or if it exists
+          mongoFilter.branch = { $in: allowedBranchIds };
+        } else {
+          throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+        }
+      }
+    }
+
+    // Get all groups matching the filter
+    const groups = await Group.find(mongoFilter)
+      .select('_id name branch numberOfClients clients')
+      .populate('branch', '_id name')
+      .lean();
+
+    if (groups.length === 0) {
+      return {
+        totalGroups: 0,
+        totalClients: 0,
+        groups: [],
+        summary: {
+          taskStatus: {
+            total: 0,
+            pending: 0,
+            ongoing: 0,
+            completed: 0,
+            on_hold: 0,
+            cancelled: 0,
+            delayed: 0
+          },
+          timelineStatus: {
+            total: 0,
+            pending: 0,
+            ongoing: 0,
+            completed: 0,
+            delayed: 0
+          }
+        }
+      };
+    }
+
+    // Get all client IDs from all groups
+    const allClientIds = groups.reduce((ids, group) => {
+      if (group.clients && group.clients.length > 0) {
+        ids.push(...group.clients.map(c => c._id || c));
+      }
+      return ids;
+    }, []);
+
+    // Initialize summary statistics
+    const summary = {
+      taskStatus: {
+        total: 0,
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        on_hold: 0,
+        cancelled: 0,
+        delayed: 0
+      },
+      timelineStatus: {
+        total: 0,
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        delayed: 0
+      }
+    };
+
+    // Get task statistics for all clients
+    let taskStats = [];
+    if (allClientIds.length > 0) {
+      taskStats = await Task.aggregate([
+        {
+          $match: {
+            timeline: { $exists: true, $ne: [] }
+          }
+        },
+        { $unwind: '$timeline' },
+        {
+          $lookup: {
+            from: 'timelines',
+            localField: 'timeline',
+            foreignField: '_id',
+            as: 'timelineDetails'
+          }
+        },
+        { $unwind: '$timelineDetails' },
+        {
+          $match: {
+            'timelineDetails.client': { $in: allClientIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+    }
+
+    // Get timeline statistics for all clients
+    let timelineStats = [];
+    if (allClientIds.length > 0) {
+      timelineStats = await Timeline.aggregate([
+        {
+          $match: {
+            client: { $in: allClientIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+    }
+
+    // Process task statistics
+    taskStats.forEach(stat => {
+      if (stat._id in summary.taskStatus) {
+        summary.taskStatus[stat._id] = stat.count;
+        summary.taskStatus.total += stat.count;
+      }
+    });
+
+    // Process timeline statistics
+    timelineStats.forEach(stat => {
+      if (stat._id in summary.timelineStatus) {
+        summary.timelineStatus[stat._id] = stat.count;
+        summary.timelineStatus.total += stat.count;
+      }
+    });
+
+    // Create a map of group to client IDs for efficient lookup
+    const groupClientMap = new Map();
+    groups.forEach(group => {
+      const clientIds = (group.clients || []).map(c => c._id || c);
+      groupClientMap.set(group._id.toString(), clientIds);
+    });
+
+    // Get all task statistics grouped by client
+    const allTaskStatsByClient = allClientIds.length > 0 ? await Task.aggregate([
+      {
+        $match: {
+          timeline: { $exists: true, $ne: [] }
+        }
+      },
+      { $unwind: '$timeline' },
+      {
+        $lookup: {
+          from: 'timelines',
+          localField: 'timeline',
+          foreignField: '_id',
+          as: 'timelineDetails'
+        }
+      },
+      { $unwind: '$timelineDetails' },
+      {
+        $match: {
+          'timelineDetails.client': { $in: allClientIds }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            client: '$timelineDetails.client',
+            status: '$status'
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]) : [];
+
+    // Get all timeline statistics grouped by client
+    const allTimelineStatsByClient = allClientIds.length > 0 ? await Timeline.aggregate([
+      {
+        $match: {
+          client: { $in: allClientIds }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            client: '$client',
+            status: '$status'
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]) : [];
+
+    // Create maps for quick lookup
+    const taskStatsMap = new Map();
+    allTaskStatsByClient.forEach(stat => {
+      const clientId = stat._id.client.toString();
+      if (!taskStatsMap.has(clientId)) {
+        taskStatsMap.set(clientId, {});
+      }
+      taskStatsMap.get(clientId)[stat._id.status] = stat.count;
+    });
+
+    const timelineStatsMap = new Map();
+    allTimelineStatsByClient.forEach(stat => {
+      const clientId = stat._id.client.toString();
+      if (!timelineStatsMap.has(clientId)) {
+        timelineStatsMap.set(clientId, {});
+      }
+      timelineStatsMap.get(clientId)[stat._id.status] = stat.count;
+    });
+
+    // Get per-group statistics
+    const groupAnalytics = groups.map((group) => {
+      const groupClientIds = groupClientMap.get(group._id.toString()) || [];
+      
+      const taskStatus = {
+        total: 0,
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        on_hold: 0,
+        cancelled: 0,
+        delayed: 0
+      };
+
+      const timelineStatus = {
+        total: 0,
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        delayed: 0
+      };
+
+      // Aggregate statistics for all clients in this group
+      groupClientIds.forEach(clientId => {
+        const clientIdStr = clientId.toString();
+        
+        // Aggregate task stats
+        const clientTaskStats = taskStatsMap.get(clientIdStr) || {};
+        Object.keys(clientTaskStats).forEach(status => {
+          if (status in taskStatus) {
+            taskStatus[status] += clientTaskStats[status];
+            taskStatus.total += clientTaskStats[status];
+          }
+        });
+
+        // Aggregate timeline stats
+        const clientTimelineStats = timelineStatsMap.get(clientIdStr) || {};
+        Object.keys(clientTimelineStats).forEach(status => {
+          if (status in timelineStatus) {
+            timelineStatus[status] += clientTimelineStats[status];
+            timelineStatus.total += clientTimelineStats[status];
+          }
+        });
+      });
+
+      return {
+        groupId: group._id,
+        groupName: group.name,
+        branch: group.branch,
+        numberOfClients: group.numberOfClients || groupClientIds.length,
+        taskStatus,
+        timelineStatus
+      };
+    });
+
+    return {
+      totalGroups: groups.length,
+      totalClients: allClientIds.length,
+      groups: groupAnalytics,
+      summary
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Get detailed analytics for a specific group
+ * @param {ObjectId} groupId - Group ID
+ * @param {Object} user - User object with role information
+ * @returns {Promise<Object>} - Detailed group analytics
+ */
+const getGroupAnalytics = async (groupId, user = null) => {
+  try {
+    const group = await Group.findById(groupId)
+      .populate('branch', '_id name')
+      .populate('clients', '_id name email phone branch')
+      .lean();
+
+    if (!group) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Group not found');
+    }
+
+    // Check branch access
+    if (user && user.role && group.branch) {
+      const branchId = group.branch._id || group.branch;
+      if (!hasBranchAccess(user.role, branchId)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    }
+
+    const clientIds = (group.clients || []).map(c => c._id || c);
+
+    if (clientIds.length === 0) {
+      return {
+        group: {
+          _id: group._id,
+          name: group.name,
+          branch: group.branch,
+          numberOfClients: 0
+        },
+        clients: [],
+        taskAnalytics: {
+          total: 0,
+          statusBreakdown: {
+            pending: 0,
+            ongoing: 0,
+            completed: 0,
+            on_hold: 0,
+            cancelled: 0,
+            delayed: 0
+          },
+          priorityBreakdown: {
+            low: 0,
+            medium: 0,
+            high: 0,
+            urgent: 0,
+            critical: 0
+          }
+        },
+        timelineAnalytics: {
+          total: 0,
+          statusBreakdown: {
+            pending: 0,
+            ongoing: 0,
+            completed: 0,
+            delayed: 0
+          },
+          frequencyBreakdown: {
+            None: 0,
+            OneTime: 0,
+            Hourly: 0,
+            Daily: 0,
+            Weekly: 0,
+            Monthly: 0,
+            Quarterly: 0,
+            Yearly: 0
+          }
+        }
+      };
+    }
+
+    // Get task analytics - status and priority breakdown
+    const [taskStatusCounts, taskPriorityCounts, taskTotal] = await Promise.all([
+      Task.aggregate([
+        {
+          $match: {
+            timeline: { $exists: true, $ne: [] }
+          }
+        },
+        { $unwind: '$timeline' },
+        {
+          $lookup: {
+            from: 'timelines',
+            localField: 'timeline',
+            foreignField: '_id',
+            as: 'timelineDetails'
+          }
+        },
+        { $unwind: '$timelineDetails' },
+        {
+          $match: {
+            'timelineDetails.client': { $in: clientIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+      Task.aggregate([
+        {
+          $match: {
+            timeline: { $exists: true, $ne: [] }
+          }
+        },
+        { $unwind: '$timeline' },
+        {
+          $lookup: {
+            from: 'timelines',
+            localField: 'timeline',
+            foreignField: '_id',
+            as: 'timelineDetails'
+          }
+        },
+        { $unwind: '$timelineDetails' },
+        {
+          $match: {
+            'timelineDetails.client': { $in: clientIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$priority',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+      Task.aggregate([
+        {
+          $match: {
+            timeline: { $exists: true, $ne: [] }
+          }
+        },
+        { $unwind: '$timeline' },
+        {
+          $lookup: {
+            from: 'timelines',
+            localField: 'timeline',
+            foreignField: '_id',
+            as: 'timelineDetails'
+          }
+        },
+        { $unwind: '$timelineDetails' },
+        {
+          $match: {
+            'timelineDetails.client': { $in: clientIds }
+          }
+        },
+        { $count: 'total' }
+      ])
+    ]);
+
+    // Get timeline analytics - status and frequency breakdown
+    const [timelineStatusCounts, timelineFrequencyCounts, timelineTotal] = await Promise.all([
+      Timeline.aggregate([
+        {
+          $match: {
+            client: { $in: clientIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+      Timeline.aggregate([
+        {
+          $match: {
+            client: { $in: clientIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$frequency',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+      Timeline.countDocuments({ client: { $in: clientIds } })
+    ]);
+
+    // Process task analytics
+    const processedTaskAnalytics = {
+      total: taskTotal[0]?.total || 0,
+      statusBreakdown: {
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        on_hold: 0,
+        cancelled: 0,
+        delayed: 0
+      },
+      priorityBreakdown: {
+        low: 0,
+        medium: 0,
+        high: 0,
+        urgent: 0,
+        critical: 0
+      }
+    };
+
+    taskStatusCounts.forEach(stat => {
+      if (stat._id in processedTaskAnalytics.statusBreakdown) {
+        processedTaskAnalytics.statusBreakdown[stat._id] = stat.count;
+      }
+    });
+
+    taskPriorityCounts.forEach(stat => {
+      if (stat._id in processedTaskAnalytics.priorityBreakdown) {
+        processedTaskAnalytics.priorityBreakdown[stat._id] = stat.count;
+      }
+    });
+
+    // Process timeline analytics
+    const processedTimelineAnalytics = {
+      total: timelineTotal || 0,
+      statusBreakdown: {
+        pending: 0,
+        ongoing: 0,
+        completed: 0,
+        delayed: 0
+      },
+      frequencyBreakdown: {
+        None: 0,
+        OneTime: 0,
+        Hourly: 0,
+        Daily: 0,
+        Weekly: 0,
+        Monthly: 0,
+        Quarterly: 0,
+        Yearly: 0
+      }
+    };
+
+    timelineStatusCounts.forEach(stat => {
+      if (stat._id in processedTimelineAnalytics.statusBreakdown) {
+        processedTimelineAnalytics.statusBreakdown[stat._id] = stat.count;
+      }
+    });
+
+    timelineFrequencyCounts.forEach(stat => {
+      if (stat._id in processedTimelineAnalytics.frequencyBreakdown) {
+        processedTimelineAnalytics.frequencyBreakdown[stat._id] = stat.count;
+      }
+    });
+
+    // Get client-level statistics efficiently
+    const [clientTaskCounts, clientTimelineCounts] = await Promise.all([
+      Task.aggregate([
+        {
+          $match: {
+            timeline: { $exists: true, $ne: [] }
+          }
+        },
+        { $unwind: '$timeline' },
+        {
+          $lookup: {
+            from: 'timelines',
+            localField: 'timeline',
+            foreignField: '_id',
+            as: 'timelineDetails'
+          }
+        },
+        { $unwind: '$timelineDetails' },
+        {
+          $match: {
+            'timelineDetails.client': { $in: clientIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$timelineDetails.client',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+      Timeline.aggregate([
+        {
+          $match: {
+            client: { $in: clientIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$client',
+            count: { $sum: 1 }
+          }
+        }
+      ])
+    ]);
+
+    const taskCountMap = new Map();
+    clientTaskCounts.forEach(stat => {
+      taskCountMap.set(stat._id.toString(), stat.count);
+    });
+
+    const timelineCountMap = new Map();
+    clientTimelineCounts.forEach(stat => {
+      timelineCountMap.set(stat._id.toString(), stat.count);
+    });
+
+    // Map client stats to client details
+    const clientsWithStats = group.clients.map(client => {
+      const clientId = (client._id || client).toString();
+      return {
+        ...client,
+        taskCount: taskCountMap.get(clientId) || 0,
+        timelineCount: timelineCountMap.get(clientId) || 0
+      };
+    });
+
+    return {
+      group: {
+        _id: group._id,
+        name: group.name,
+        branch: group.branch,
+        numberOfClients: group.numberOfClients || clientIds.length
+      },
+      clients: clientsWithStats,
+      taskAnalytics: processedTaskAnalytics,
+      timelineAnalytics: processedTimelineAnalytics
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Error fetching group analytics');
+  }
+};
+
 export {
   createGroup,
   queryGroups,
@@ -717,4 +1385,6 @@ export {
   getClientsByGroup,
   bulkImportGroups,
   getGroupTaskStatistics,
+  getAllGroupsAnalytics,
+  getGroupAnalytics,
 }; 
