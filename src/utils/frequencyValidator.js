@@ -36,7 +36,11 @@ export const validateFrequencyConfig = (frequency, frequencyConfig) => {
       }
       break;
     case 'Yearly':
-      if (!frequencyConfig.yearlyMonth || !frequencyConfig.yearlyDate || !frequencyConfig.yearlyTime) {
+      // Check if yearlyMonth is array with items or non-empty string
+      const hasYearlyMonth = Array.isArray(frequencyConfig.yearlyMonth) 
+        ? frequencyConfig.yearlyMonth.length > 0 
+        : frequencyConfig.yearlyMonth;
+      if (!hasYearlyMonth || !frequencyConfig.yearlyDate || !frequencyConfig.yearlyTime) {
         return 'yearlyMonth, yearlyDate, and yearlyTime are required for Yearly frequency';
       }
       break;

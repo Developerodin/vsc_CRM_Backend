@@ -27,7 +27,9 @@ const frequencyConfigSchema = Joi.object({
   quarterlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
   
   // Yearly frequency fields
-  yearlyMonth: Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December').allow('', null).optional(),
+  yearlyMonth: Joi.array().items(
+    Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
+  ).allow(null).optional(),
   yearlyDate: Joi.number().min(1).max(31).allow(null).optional(),
   yearlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
 });

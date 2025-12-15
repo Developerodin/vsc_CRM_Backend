@@ -140,9 +140,13 @@ export const calculateNextOccurrence = (frequencyConfig, frequency, startDate = 
       
     case 'Yearly':
       if (frequencyConfig.yearlyMonth && frequencyConfig.yearlyDate) {
+        // Handle both array and string for backward compatibility
+        const monthValue = Array.isArray(frequencyConfig.yearlyMonth) 
+          ? frequencyConfig.yearlyMonth[0] 
+          : frequencyConfig.yearlyMonth;
         const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
                            'July', 'August', 'September', 'October', 'November', 'December'];
-        const targetMonth = monthNames.indexOf(frequencyConfig.yearlyMonth);
+        const targetMonth = monthNames.indexOf(monthValue);
         nextDate.setMonth(targetMonth);
         nextDate.setDate(frequencyConfig.yearlyDate);
         

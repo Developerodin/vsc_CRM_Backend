@@ -170,10 +170,14 @@ const calculateDueDate = (frequency, frequencyConfig, period) => {
     case 'Yearly':
       if (frequencyConfig && frequencyConfig.yearlyMonth && frequencyConfig.yearlyDate) {
         const [startYear] = period.split('-');
+        // Handle both array and string for backward compatibility
+        const monthValue = Array.isArray(frequencyConfig.yearlyMonth) 
+          ? frequencyConfig.yearlyMonth[0] 
+          : frequencyConfig.yearlyMonth;
         const monthIndex = [
           'January', 'February', 'March', 'April', 'May', 'June',
           'July', 'August', 'September', 'October', 'November', 'December'
-        ].indexOf(frequencyConfig.yearlyMonth);
+        ].indexOf(monthValue);
         
         // For financial year, determine correct year for the month
         const year = monthIndex >= 3 ? parseInt(startYear) : parseInt(startYear) + 1;

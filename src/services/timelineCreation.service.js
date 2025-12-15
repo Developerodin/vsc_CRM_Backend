@@ -163,8 +163,14 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
       // Calculate due date based on subactivity configuration
       let dueDate = new Date(financialYearStart, 3, 1); // April 1st
       if (subactivity.frequencyConfig && subactivity.frequencyConfig.yearlyMonth) {
-        const monthIndex = getMonthIndex(subactivity.frequencyConfig.yearlyMonth);
-        dueDate.setMonth(monthIndex);
+        // Handle both array and string for backward compatibility
+        const monthValue = Array.isArray(subactivity.frequencyConfig.yearlyMonth) 
+          ? subactivity.frequencyConfig.yearlyMonth[0] 
+          : subactivity.frequencyConfig.yearlyMonth;
+        if (monthValue) {
+          const monthIndex = getMonthIndex(monthValue);
+          dueDate.setMonth(monthIndex);
+        }
       }
       if (subactivity.frequencyConfig && subactivity.frequencyConfig.yearlyDate) {
         dueDate.setDate(subactivity.frequencyConfig.yearlyDate);

@@ -859,10 +859,14 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
           
         case 'Yearly':
           if (frequencyConfig.yearlyMonth && frequencyConfig.yearlyDate) {
+            // Handle both array and string for backward compatibility
+            const monthValue = Array.isArray(frequencyConfig.yearlyMonth) 
+              ? frequencyConfig.yearlyMonth[0] 
+              : frequencyConfig.yearlyMonth;
             const monthIndex = [
               'January', 'February', 'March', 'April', 'May', 'June',
               'July', 'August', 'September', 'October', 'November', 'December'
-            ].indexOf(frequencyConfig.yearlyMonth);
+            ].indexOf(monthValue);
             
             if (monthIndex !== -1) {
               // For financial year, determine correct year
@@ -870,7 +874,7 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
               const yearlyDue = new Date(year, monthIndex, frequencyConfig.yearlyDate);
               
               if (isNaN(yearlyDue.getTime())) {
-                throw new Error(`Invalid date for Yearly: month ${frequencyConfig.yearlyMonth}, day ${frequencyConfig.yearlyDate}`);
+                throw new Error(`Invalid date for Yearly: month ${monthValue}, day ${frequencyConfig.yearlyDate}`);
               }
               
               if (yearlyDue > now) {
@@ -879,7 +883,7 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
                 // Next year
                 const nextYear = new Date(year + 1, monthIndex, frequencyConfig.yearlyDate);
                 if (isNaN(nextYear.getTime())) {
-                  throw new Error(`Invalid date for Yearly: month ${frequencyConfig.yearlyMonth}, day ${frequencyConfig.yearlyDate}`);
+                  throw new Error(`Invalid date for Yearly: month ${monthValue}, day ${frequencyConfig.yearlyDate}`);
                 }
                 return nextYear;
               }
