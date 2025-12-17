@@ -30,8 +30,14 @@ const bulkImportTimelineFields = async (timelineUpdates, user = null) => {
           throw new Error('Timeline ID is required');
         }
         
-        if (!update.fields || !Array.isArray(update.fields) || update.fields.length === 0) {
-          throw new Error('Fields array is required and must not be empty');
+        // Validate that at least one update field is provided
+        if (!update.fields && !update.status && !update.completedAt) {
+          throw new Error('At least one of fields, status, or completedAt must be provided');
+        }
+        
+        // Validate fields array if provided
+        if (update.fields && !Array.isArray(update.fields)) {
+          throw new Error('Fields must be an array');
         }
 
         // Find the timeline
@@ -46,25 +52,43 @@ const bulkImportTimelineFields = async (timelineUpdates, user = null) => {
           // For now, we'll allow the update
         }
 
-        // Update timeline fields
-        const updatedFields = await updateTimelineFields(timeline, update.fields);
+        // Update timeline fields if provided
+        let updatedFields = timeline.fields;
+        let allFieldsCompleted = false;
         
-        // Check if all fields are completed and update status if needed
-        const allFieldsCompleted = updatedFields.every(field => 
-          field.fieldValue !== null && 
-          field.fieldValue !== undefined && 
-          field.fieldValue !== ''
-        );
+        if (update.fields && update.fields.length > 0) {
+          updatedFields = await updateTimelineFields(timeline, update.fields);
+          
+          // Check if all fields are completed and update status if needed
+          allFieldsCompleted = updatedFields.every(field => 
+            field.fieldValue !== null && 
+            field.fieldValue !== undefined && 
+            field.fieldValue !== ''
+          );
+        }
 
         // Update timeline
-        const updateData = {
-          fields: updatedFields
-        };
+        const updateData = {};
+        
+        // Only update fields if they were provided
+        if (update.fields && update.fields.length > 0) {
+          updateData.fields = updatedFields;
+        }
 
-        // Auto-update status to completed if all fields are filled
-        if (allFieldsCompleted && timeline.status !== 'completed') {
+        // If status is explicitly provided, use it
+        if (update.status) {
+          updateData.status = update.status;
+        } else if (allFieldsCompleted && timeline.status !== 'completed') {
+          // Auto-update status to completed if all fields are filled
           updateData.status = 'completed';
+        }
 
+        // If completedAt is provided, use it
+        if (update.completedAt) {
+          updateData.completedAt = update.completedAt;
+        } else if (updateData.status === 'completed' && !timeline.completedAt) {
+          // Auto-set completedAt if status is completed and not already set
+          updateData.completedAt = new Date();
         }
 
         // Update the timeline
@@ -78,7 +102,8 @@ const bulkImportTimelineFields = async (timelineUpdates, user = null) => {
         results.updatedTimelines.push({
           timelineId: update.timelineId,
           status: updatedTimeline.status,
-          fieldsUpdated: updatedFields.length,
+          completedAt: updatedTimeline.completedAt,
+          fieldsUpdated: update.fields ? update.fields.length : 0,
           allFieldsCompleted,
           updatedAt: updatedTimeline.updatedAt
         });

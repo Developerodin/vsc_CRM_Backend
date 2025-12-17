@@ -47,6 +47,7 @@ const createTimeline = {
     dueDate: Joi.date().optional(),
     startDate: Joi.date().optional(),
     endDate: Joi.date().optional(),
+    completedAt: Joi.date().optional(),
     frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional(),
     frequencyConfig: frequencyConfigSchema.optional(),
     timelineType: Joi.string().valid('oneTime', 'recurring').optional(),
@@ -91,6 +92,7 @@ const getTimelines = {
     period: Joi.string().trim(),
     startDate: Joi.date().iso(),
     endDate: Joi.date().iso(),
+    completedAt: Joi.date().iso(),
     financialYear: Joi.string().trim(),
   }),
 };
@@ -115,6 +117,7 @@ const updateTimeline = {
       dueDate: Joi.date(),
       startDate: Joi.date(),
       endDate: Joi.date(),
+      completedAt: Joi.date(),
       frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
       frequencyConfig: frequencyConfigSchema,
       timelineType: Joi.string().valid('oneTime', 'recurring'),
@@ -172,7 +175,9 @@ const bulkImportTimelineFields = {
             fileName: Joi.string().required(),
             fieldValue: Joi.any().required(),
           })
-        ).min(1).required(),
+        ).optional(),
+        status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').optional(),
+        completedAt: Joi.date().optional(),
       })
     ).min(1).required(),
   }),

@@ -31,6 +31,7 @@ const getTimelines = catchAsync(async (req, res) => {
     'frequency',
     'startDate',
     'endDate',
+    'completedAt',
     'financialYear'
   ]);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);

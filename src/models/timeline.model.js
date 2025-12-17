@@ -44,6 +44,10 @@ const timelineSchema = mongoose.Schema(
       type: Date,
       required: false,
     },
+    completedAt: {
+      type: Date,
+      required: false,
+    },
     frequency: {
       type: String,
       enum: ['None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'],
@@ -92,7 +96,7 @@ const timelineSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Branch',
       required: true,
-    }
+    },
   },
   {
     timestamps: true,
@@ -100,7 +104,7 @@ const timelineSchema = mongoose.Schema(
 );
 
 // Simple pre-save middleware to ensure status is set
-timelineSchema.pre('save', function(next) {
+timelineSchema.pre('save', function (next) {
   // Ensure status is always set
   if (!this.status) {
     this.status = 'pending';
