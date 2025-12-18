@@ -58,6 +58,7 @@ const updateTeamMember = {
       branch: Joi.string().custom(objectId),
       sortOrder: Joi.number().min(0),
       skills: Joi.array().items(Joi.string().custom(objectId)).min(1),
+      accessibleTeamMembers: Joi.array().items(Joi.string().custom(objectId)),
     })
     .min(1),
 };
@@ -93,6 +94,21 @@ const bulkImportTeamMembers = {
   }),
 };
 
+const updateAccessibleTeamMembers = {
+  params: Joi.object().keys({
+    teamMemberId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    accessibleTeamMembers: Joi.array().items(Joi.string().custom(objectId)).required(),
+  }),
+};
+
+const getAccessibleTeamMembers = {
+  params: Joi.object().keys({
+    teamMemberId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 export {
   createTeamMember,
   getTeamMembers,
@@ -100,4 +116,6 @@ export {
   updateTeamMember,
   deleteTeamMember,
   bulkImportTeamMembers,
+  updateAccessibleTeamMembers,
+  getAccessibleTeamMembers,
 }; 

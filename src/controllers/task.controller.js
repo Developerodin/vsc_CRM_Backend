@@ -346,6 +346,47 @@ const removeAttachment = catchAsync(async (req, res) => {
   res.send(task);
 });
 
+/**
+ * Get tasks of accessible team members
+ * @route GET /v1/tasks/accessible-team-members/:teamMemberId
+ * @access Private
+ */
+const getTasksOfAccessibleTeamMembers = catchAsync(async (req, res) => {
+  const options = pick(req.query, ['sortBy', 'limit', 'page', 'status', 'priority']);
+  const result = await taskService.getTasksOfAccessibleTeamMembers(
+    req.params.teamMemberId,
+    options
+  );
+  res.send(result);
+});
+
+/**
+ * Create task for accessible team member
+ * @route POST /v1/tasks/assign-to-accessible/:teamMemberId
+ * @access Private
+ */
+const createTaskForAccessibleTeamMember = catchAsync(async (req, res) => {
+  const task = await taskService.createTaskForAccessibleTeamMember(
+    req.params.teamMemberId,
+    req.body
+  );
+  res.status(httpStatus.CREATED).send(task);
+});
+
+/**
+ * Update task of accessible team member
+ * @route PATCH /v1/tasks/accessible/:taskId/:teamMemberId
+ * @access Private
+ */
+const updateTaskOfAccessibleTeamMember = catchAsync(async (req, res) => {
+  const task = await taskService.updateTaskOfAccessibleTeamMember(
+    req.params.teamMemberId,
+    req.params.taskId,
+    req.body
+  );
+  res.send(task);
+});
+
 export default {
   createTask,
   getTasks,
@@ -371,4 +412,7 @@ export default {
   bulkDeleteTasks,
   addAttachment,
   removeAttachment,
+  getTasksOfAccessibleTeamMembers,
+  createTaskForAccessibleTeamMember,
+  updateTaskOfAccessibleTeamMember,
 };

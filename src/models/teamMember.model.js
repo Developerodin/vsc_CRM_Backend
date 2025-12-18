@@ -77,6 +77,10 @@ const teamMemberSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Activity',
       required: true
+    }],
+    accessibleTeamMembers: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TeamMember',
     }]
   },
   {
@@ -95,6 +99,7 @@ teamMemberSchema.index({ country: 1 });
 teamMemberSchema.index({ sortOrder: 1 });
 teamMemberSchema.index({ branch: 1, sortOrder: 1 }); // Compound index for branch + sorting
 teamMemberSchema.index({ name: 1, branch: 1 }); // For name searches within branch
+teamMemberSchema.index({ accessibleTeamMembers: 1 }); // For accessible team members queries
 
 // add plugin that converts mongoose to json
 teamMemberSchema.plugin(toJSON);
@@ -120,6 +125,27 @@ teamMemberSchema.statics.isEmailTaken = async function (email, excludeUserId) {
 teamMemberSchema.statics.isPhoneTaken = async function (phone, excludeUserId) {
   const teamMember = await this.findOne({ phone, _id: { $ne: excludeUserId } });
   return !!teamMember;
+};
+
+/**
+ * Check if a team member has access to another team member
+ * @param {ObjectId} teamMemberId - The team member checking access
+ * @param {ObjectId} targetTeamMemberId - The team member being accessed
+ * @returns {Promise<boolean>}
+ */
+teamMemberSchema.statics.hasAccessToTeamMember = async function (teamMemberId, targetTeamMemberId) {
+  const teamMember = await this.findById(teamMemberId);
+  if (!teamMember) {
+    return false;
+  }
+  // Team member always has access to themselves
+  if (teamMemberId.toString() === targetTeamMemberId.toString()) {
+    return true;
+  }
+  // Check if target team member is in accessibleTeamMembers array
+  return teamMember.accessibleTeamMembers.some(
+    id => id.toString() === targetTeamMemberId.toString()
+  );
 };
 
 /**

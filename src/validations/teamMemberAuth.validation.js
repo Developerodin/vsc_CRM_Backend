@@ -93,6 +93,91 @@ const updateTask = {
   })
 };
 
+const getTasksOfAccessibleTeamMembers = {
+  query: Joi.object().keys({
+    status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed')
+      .description('Filter tasks by status'),
+    priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical')
+      .description('Filter tasks by priority'),
+    page: Joi.number().integer().min(1).default(1)
+      .description('Page number for pagination'),
+    limit: Joi.number().integer().min(1).max(100).optional()
+      .description('Number of tasks per page'),
+    sortBy: Joi.string()
+      .description('Sort option in the format: sortField:(desc|asc)')
+  })
+};
+
+const assignTaskToAccessibleTeamMember = {
+  body: Joi.object().keys({
+    teamMember: Joi.string().custom(objectId).required()
+      .description('Team member ID to assign task to'),
+    startDate: Joi.date().required()
+      .description('Task start date'),
+    endDate: Joi.date().min(Joi.ref('startDate')).required()
+      .description('Task end date'),
+    priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical').default('medium')
+      .description('Task priority'),
+    branch: Joi.string().custom(objectId).required()
+      .description('Branch ID'),
+    timeline: Joi.array().items(Joi.string().custom(objectId))
+      .description('Array of timeline IDs'),
+    remarks: Joi.string().trim().max(1000)
+      .description('Task remarks'),
+    status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed').default('pending')
+      .description('Task status'),
+    metadata: Joi.object()
+      .description('Additional task metadata'),
+    attachments: Joi.array().items(
+      Joi.object({
+        fileName: Joi.string().required(),
+        fileUrl: Joi.string().uri().required(),
+        uploadedAt: Joi.date()
+      })
+    )
+  })
+};
+
+const updateTaskOfAccessibleTeamMember = {
+  params: Joi.object().keys({
+    taskId: Joi.string().custom(objectId).required()
+      .description('Task ID')
+  }),
+  body: Joi.object()
+    .keys({
+      teamMember: Joi.string().custom(objectId)
+        .description('Team member ID (must be accessible)'),
+      startDate: Joi.date()
+        .description('Task start date'),
+      endDate: Joi.date().when('startDate', {
+        is: Joi.exist(),
+        then: Joi.date().min(Joi.ref('startDate')),
+        otherwise: Joi.date()
+      })
+        .description('Task end date'),
+      priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical')
+        .description('Task priority'),
+      branch: Joi.string().custom(objectId)
+        .description('Branch ID'),
+      timeline: Joi.array().items(Joi.string().custom(objectId))
+        .description('Array of timeline IDs'),
+      remarks: Joi.string().trim().max(1000)
+        .description('Task remarks'),
+      status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed')
+        .description('Task status'),
+      metadata: Joi.object()
+        .description('Additional task metadata'),
+      attachments: Joi.array().items(
+        Joi.object({
+          fileName: Joi.string().required(),
+          fileUrl: Joi.string().uri().required(),
+          uploadedAt: Joi.date()
+        })
+      )
+    })
+    .min(1)
+};
+
 export {
   generateOTP,
   verifyOTPAndLogin,
@@ -102,5 +187,8 @@ export {
   updateProfile,
   getMyTasks,
   getTaskDetails,
-  updateTask
+  updateTask,
+  getTasksOfAccessibleTeamMembers,
+  assignTaskToAccessibleTeamMember,
+  updateTaskOfAccessibleTeamMember
 };

@@ -55,6 +55,22 @@ router
   );
 
 router
+  .route('/tasks/accessible-team-members')
+  .get(
+    teamMemberAuth(),
+    validate(teamMemberAuthValidation.getTasksOfAccessibleTeamMembers),
+    teamMemberAuthController.getTasksOfAccessibleTeamMembers
+  );
+
+router
+  .route('/tasks/assign')
+  .post(
+    teamMemberAuth(),
+    validate(teamMemberAuthValidation.assignTaskToAccessibleTeamMember),
+    teamMemberAuthController.assignTaskToAccessibleTeamMember
+  );
+
+router
   .route('/tasks/:taskId')
   .get(
     teamMemberAuth(),
@@ -63,6 +79,14 @@ router
   .patch(
     teamMemberAuth(),
     teamMemberAuthController.updateTask
+  );
+
+router
+  .route('/tasks/accessible/:taskId')
+  .patch(
+    teamMemberAuth(),
+    validate(teamMemberAuthValidation.updateTaskOfAccessibleTeamMember),
+    teamMemberAuthController.updateTaskOfAccessibleTeamMember
   );
 
 export default router;

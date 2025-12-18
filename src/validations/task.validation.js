@@ -320,6 +320,74 @@ const removeAttachment = {
   }),
 };
 
+const getTasksOfAccessibleTeamMembers = {
+  params: Joi.object().keys({
+    teamMemberId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    sortBy: Joi.string(),
+    limit: Joi.number().integer(),
+    page: Joi.number().integer(),
+    status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),
+    priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical'),
+  }),
+};
+
+const createTaskForAccessibleTeamMember = {
+  params: Joi.object().keys({
+    teamMemberId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    teamMember: Joi.string().custom(objectId).required(),
+    startDate: Joi.date().required(),
+    endDate: Joi.date().min(Joi.ref('startDate')).required(),
+    priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical').default('medium'),
+    branch: Joi.string().custom(objectId).required(),
+    timeline: Joi.array().items(Joi.string().custom(objectId)),
+    remarks: Joi.string().max(1000),
+    status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed').default('pending'),
+    metadata: Joi.object(),
+    attachments: Joi.array().items(
+      Joi.object({
+        fileName: Joi.string().required(),
+        fileUrl: Joi.string().uri().required(),
+        uploadedAt: Joi.date()
+      })
+    )
+  }),
+};
+
+const updateTaskOfAccessibleTeamMember = {
+  params: Joi.object().keys({
+    taskId: Joi.string().custom(objectId).required(),
+    teamMemberId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      teamMember: Joi.string().custom(objectId),
+      startDate: Joi.date(),
+      endDate: Joi.date().when('startDate', {
+        is: Joi.exist(),
+        then: Joi.date().min(Joi.ref('startDate')),
+        otherwise: Joi.date()
+      }),
+      priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical'),
+      branch: Joi.string().custom(objectId),
+      timeline: Joi.array().items(Joi.string().custom(objectId)),
+      remarks: Joi.string().max(1000),
+      status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),
+      metadata: Joi.object(),
+      attachments: Joi.array().items(
+        Joi.object({
+          fileName: Joi.string().required(),
+          fileUrl: Joi.string().uri().required(),
+          uploadedAt: Joi.date()
+        })
+      )
+    })
+    .min(1),
+};
+
 export default {
   createTask,
   getTasks,
@@ -345,4 +413,7 @@ export default {
   bulkDeleteTasks,
   addAttachment,
   removeAttachment,
+  getTasksOfAccessibleTeamMembers,
+  createTaskForAccessibleTeamMember,
+  updateTaskOfAccessibleTeamMember,
 };

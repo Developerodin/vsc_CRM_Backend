@@ -205,7 +205,17 @@ const getTeamMemberById = async (id) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid team member ID format');
   }
-  const teamMember = await TeamMember.findById(id).populate(['skills', 'branch']);
+  const teamMember = await TeamMember.findById(id)
+    .populate('skills', 'name category description')
+    .populate('branch', 'name location city state country')
+    .populate({
+      path: 'accessibleTeamMembers',
+      select: 'name email phone address city state country pinCode branch skills sortOrder',
+      populate: [
+        { path: 'branch', select: 'name location city state country' },
+        { path: 'skills', select: 'name category description' }
+      ]
+    });
   if (!teamMember) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
   }
@@ -218,7 +228,17 @@ const getTeamMemberById = async (id) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberByPhone = async (phone) => {
-  const teamMember = await TeamMember.findOne({ phone }).populate(['skills', 'branch']);
+  const teamMember = await TeamMember.findOne({ phone })
+    .populate('skills', 'name category description')
+    .populate('branch', 'name location city state country')
+    .populate({
+      path: 'accessibleTeamMembers',
+      select: 'name email phone address city state country pinCode branch skills sortOrder',
+      populate: [
+        { path: 'branch', select: 'name location city state country' },
+        { path: 'skills', select: 'name category description' }
+      ]
+    });
   if (!teamMember) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
   }
@@ -231,7 +251,17 @@ const getTeamMemberByPhone = async (phone) => {
  * @returns {Promise<TeamMember>}
  */
 const getTeamMemberByEmail = async (email) => {
-  const teamMember = await TeamMember.findOne({ email }).populate(['skills', 'branch']);
+  const teamMember = await TeamMember.findOne({ email })
+    .populate('skills', 'name category description')
+    .populate('branch', 'name location city state country')
+    .populate({
+      path: 'accessibleTeamMembers',
+      select: 'name email phone address city state country pinCode branch skills sortOrder',
+      populate: [
+        { path: 'branch', select: 'name location city state country' },
+        { path: 'skills', select: 'name category description' }
+      ]
+    });
   if (!teamMember) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
   }
@@ -270,7 +300,18 @@ const updateTeamMemberById = async (teamMemberId, updateBody, user = null) => {
   
   Object.assign(teamMember, updateBody);
   await teamMember.save();
-  return teamMember.populate(['skills', 'branch']);
+  return teamMember.populate([
+    { path: 'skills', select: 'name category description' },
+    { path: 'branch', select: 'name location city state country' },
+    {
+      path: 'accessibleTeamMembers',
+      select: 'name email phone address city state country pinCode branch skills sortOrder',
+      populate: [
+        { path: 'branch', select: 'name location city state country' },
+        { path: 'skills', select: 'name category description' }
+      ]
+    }
+  ]);
 };
 
 /**
@@ -469,6 +510,75 @@ const bulkImportTeamMembers = async (teamMembers) => {
   return results;
 };
 
+/**
+ * Update accessible team members for a team member
+ * @param {ObjectId} teamMemberId
+ * @param {Array<ObjectId>} accessibleTeamMemberIds
+ * @returns {Promise<TeamMember>}
+ */
+const updateAccessibleTeamMembers = async (teamMemberId, accessibleTeamMemberIds) => {
+  const teamMember = await getTeamMemberById(teamMemberId);
+  
+  // Validate that all accessible team member IDs exist
+  if (accessibleTeamMemberIds && accessibleTeamMemberIds.length > 0) {
+    const validTeamMembers = await TeamMember.find({
+      _id: { $in: accessibleTeamMemberIds }
+    });
+    
+    if (validTeamMembers.length !== accessibleTeamMemberIds.length) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'One or more accessible team member IDs are invalid');
+    }
+    
+    // Prevent self-reference
+    const filteredIds = accessibleTeamMemberIds.filter(
+      id => id.toString() !== teamMemberId.toString()
+    );
+    
+    teamMember.accessibleTeamMembers = filteredIds;
+  } else {
+    teamMember.accessibleTeamMembers = [];
+  }
+  
+  await teamMember.save();
+  return teamMember.populate([
+    { path: 'skills', select: 'name category description' },
+    { path: 'branch', select: 'name location city state country' },
+    {
+      path: 'accessibleTeamMembers',
+      select: 'name email phone address city state country pinCode branch skills sortOrder createdAt updatedAt',
+      populate: [
+        { path: 'branch', select: 'name location city state country' },
+        { path: 'skills', select: 'name category description' }
+      ]
+    }
+  ]);
+};
+
+/**
+ * Get accessible team members for a team member
+ * @param {ObjectId} teamMemberId
+ * @returns {Promise<TeamMember>}
+ */
+const getAccessibleTeamMembers = async (teamMemberId) => {
+  const teamMember = await TeamMember.findById(teamMemberId)
+    .populate('skills', 'name category description')
+    .populate('branch', 'name location city state country')
+    .populate({
+      path: 'accessibleTeamMembers',
+      select: 'name email phone address city state country pinCode branch skills sortOrder createdAt updatedAt',
+      populate: [
+        { path: 'branch', select: 'name location city state country' },
+        { path: 'skills', select: 'name category description' }
+      ]
+    });
+  
+  if (!teamMember) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
+  }
+  
+  return teamMember;
+};
+
 export {
   createTeamMember,
   queryTeamMembers,
@@ -478,4 +588,6 @@ export {
   updateTeamMemberById,
   deleteTeamMemberById,
   bulkImportTeamMembers,
+  updateAccessibleTeamMembers,
+  getAccessibleTeamMembers,
 }; 

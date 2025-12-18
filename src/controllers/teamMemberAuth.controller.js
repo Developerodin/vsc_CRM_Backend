@@ -4,6 +4,8 @@ import ApiError from '../utils/ApiError.js';
 import { generateTeamMemberAuthTokens } from '../services/token.service.js';
 import { sendEmail } from '../services/email.service.js';
 import { TeamMember, Task } from '../models/index.js';
+import taskService from '../services/task.service.js';
+import pick from '../utils/pick.js';
 import logger from '../config/logger.js';
 
 /**
@@ -155,6 +157,14 @@ const getProfile = catchAsync(async (req, res) => {
     const teamMember = await TeamMember.findById(teamMemberId)
       .populate('branch', 'name address city state country')
       .populate('skills', 'name description category')
+      .populate({
+        path: 'accessibleTeamMembers',
+        select: 'name email phone address city state country pinCode branch skills sortOrder createdAt updatedAt',
+        populate: [
+          { path: 'branch', select: 'name location city state country' },
+          { path: 'skills', select: 'name category description' }
+        ]
+      })
       .select('-__v');
 
     if (!teamMember) {
@@ -192,6 +202,14 @@ const updateProfile = catchAsync(async (req, res) => {
       { new: true, runValidators: true }
     ).populate('branch', 'name address city state country')
      .populate('skills', 'name description category')
+     .populate({
+       path: 'accessibleTeamMembers',
+       select: 'name email phone address city state country pinCode branch skills sortOrder createdAt updatedAt',
+       populate: [
+         { path: 'branch', select: 'name location city state country' },
+         { path: 'skills', select: 'name category description' }
+       ]
+     })
      .select('-__v');
 
     if (!teamMember) {
@@ -378,6 +396,76 @@ const updateTask = catchAsync(async (req, res) => {
   }
 });
 
+/**
+ * Get tasks of accessible team members
+ */
+const getTasksOfAccessibleTeamMembers = catchAsync(async (req, res) => {
+  try {
+    const teamMemberId = req.user.id;
+    const options = pick(req.query, ['sortBy', 'limit', 'page', 'status', 'priority']);
+    
+    const result = await taskService.getTasksOfAccessibleTeamMembers(teamMemberId, options);
+    
+    res.status(httpStatus.OK).json({
+      success: true,
+      message: 'Tasks retrieved successfully',
+      data: result
+    });
+  } catch (error) {
+    logger.error('Error getting tasks of accessible team members:', error);
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve tasks');
+  }
+});
+
+/**
+ * Assign task to accessible team member
+ */
+const assignTaskToAccessibleTeamMember = catchAsync(async (req, res) => {
+  try {
+    const teamMemberId = req.user.id;
+    
+    const task = await taskService.createTaskForAccessibleTeamMember(teamMemberId, req.body);
+    
+    logger.info(`Task assigned by team member ${teamMemberId} to ${req.body.teamMember}`);
+    
+    res.status(httpStatus.CREATED).json({
+      success: true,
+      message: 'Task assigned successfully',
+      data: task
+    });
+  } catch (error) {
+    logger.error('Error assigning task:', error);
+    throw error;
+  }
+});
+
+/**
+ * Update task of accessible team member
+ */
+const updateTaskOfAccessibleTeamMember = catchAsync(async (req, res) => {
+  try {
+    const teamMemberId = req.user.id;
+    const { taskId } = req.params;
+    
+    const task = await taskService.updateTaskOfAccessibleTeamMember(
+      teamMemberId,
+      taskId,
+      req.body
+    );
+    
+    logger.info(`Task ${taskId} updated by team member ${teamMemberId}`);
+    
+    res.status(httpStatus.OK).json({
+      success: true,
+      message: 'Task updated successfully',
+      data: task
+    });
+  } catch (error) {
+    logger.error('Error updating task of accessible team member:', error);
+    throw error;
+  }
+});
+
 export {
   generateOTP,
   verifyOTPAndLogin,
@@ -387,5 +475,8 @@ export {
   updateProfile,
   getMyTasks,
   getTaskDetails,
-  updateTask
+  updateTask,
+  getTasksOfAccessibleTeamMembers,
+  assignTaskToAccessibleTeamMember,
+  updateTaskOfAccessibleTeamMember
 };

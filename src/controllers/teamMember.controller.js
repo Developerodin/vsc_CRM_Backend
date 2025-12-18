@@ -41,6 +41,19 @@ const bulkImportTeamMembers = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+const updateAccessibleTeamMembers = catchAsync(async (req, res) => {
+  const teamMember = await teamMemberService.updateAccessibleTeamMembers(
+    req.params.teamMemberId,
+    req.body.accessibleTeamMembers
+  );
+  res.send(teamMember);
+});
+
+const getAccessibleTeamMembers = catchAsync(async (req, res) => {
+  const teamMember = await teamMemberService.getAccessibleTeamMembers(req.params.teamMemberId);
+  res.send(teamMember);
+});
+
 export {
   createTeamMember,
   getTeamMembers,
@@ -48,4 +61,6 @@ export {
   updateTeamMember,
   deleteTeamMember,
   bulkImportTeamMembers,
+  updateAccessibleTeamMembers,
+  getAccessibleTeamMembers,
 }; 

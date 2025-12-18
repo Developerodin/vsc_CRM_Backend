@@ -59,6 +59,15 @@ router
   .route('/due-this-month')
   .get(validate(taskValidation.getTasksDueThisMonth), taskController.getTasksDueThisMonth);
 
+// Accessible team members routes - MUST be before /:taskId routes
+router
+  .route('/accessible-team-members/:teamMemberId')
+  .get(validate(taskValidation.getTasksOfAccessibleTeamMembers), taskController.getTasksOfAccessibleTeamMembers);
+
+router
+  .route('/assign-to-accessible/:teamMemberId')
+  .post(validate(taskValidation.createTaskForAccessibleTeamMember), taskController.createTaskForAccessibleTeamMember);
+
 // Filtering routes - MUST be before /:taskId routes
 router
   .route('/team-member/:teamMemberId')
@@ -85,6 +94,10 @@ router
   .get(validate(taskValidation.getTasksByPriority), taskController.getTasksByPriority);
 
 // Parameterized routes - MUST be last
+router
+  .route('/accessible/:taskId/:teamMemberId')
+  .patch(validate(taskValidation.updateTaskOfAccessibleTeamMember), taskController.updateTaskOfAccessibleTeamMember);
+
 router
   .route('/:taskId')
   .get(validate(taskValidation.getTask), taskController.getTask)

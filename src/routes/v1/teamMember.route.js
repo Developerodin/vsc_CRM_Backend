@@ -17,6 +17,11 @@ router
   .post(auth(), validate(teamMemberValidation.bulkImportTeamMembers), teamMemberController.bulkImportTeamMembers);
 
 router
+  .route('/:teamMemberId/accessible-members')
+  .get(auth(), validate(teamMemberValidation.getAccessibleTeamMembers), teamMemberController.getAccessibleTeamMembers)
+  .patch(auth(), validate(teamMemberValidation.updateAccessibleTeamMembers), teamMemberController.updateAccessibleTeamMembers);
+
+router
   .route('/:teamMemberId')
   .get(auth(), validate(teamMemberValidation.getTeamMember), teamMemberController.getTeamMember)
   .patch(auth(), validate(teamMemberValidation.updateTeamMember), teamMemberController.updateTeamMember)

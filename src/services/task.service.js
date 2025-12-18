@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { Task, TeamMember } from '../models/index.js';
+import { Task, TeamMember, Timeline } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
 
@@ -160,8 +160,10 @@ const queryTasks = async (filter, options) => {
     delete mongoFilter.search;
   }
   
-  // Handle team member name search
-  if (mongoFilter.teamMember && !mongoose.Types.ObjectId.isValid(mongoFilter.teamMember)) {
+  // Handle team member name search (only if teamMember is a string, not an object with $in)
+  if (mongoFilter.teamMember && 
+      typeof mongoFilter.teamMember === 'string' && 
+      !mongoose.Types.ObjectId.isValid(mongoFilter.teamMember)) {
     try {
       // Search for team member by name (case-insensitive)
       const teamMember = await TeamMember.findOne({
@@ -220,10 +222,22 @@ const queryTasks = async (filter, options) => {
     populate: [
       { path: 'teamMember', select: 'name email phone' },
       { path: 'assignedBy', select: 'name email' },
-      { path: 'timeline', select: 'activity client status' },
+      { path: 'timeline' },
       { path: 'branch', select: 'name location' }
     ],
   });
+  
+  // Manually populate timeline array with activity and client
+  if (tasks.results && tasks.results.length > 0) {
+    for (const task of tasks.results) {
+      if (task.timeline && task.timeline.length > 0) {
+        await Timeline.populate(task.timeline, [
+          { path: 'activity', select: 'name description category', strictPopulate: false },
+          { path: 'client', select: 'name email phone company address city state country pinCode businessType entityType', strictPopulate: false }
+        ]);
+      }
+    }
+  }
   
   // Handle search filtering after population
   if (mongoFilter.searchValue) {
@@ -241,16 +255,26 @@ const queryTasks = async (filter, options) => {
         return true;
       }
       
-      // Search in timeline activity
-      if (task.timeline && task.timeline.activity && 
-          task.timeline.activity.toLowerCase().includes(searchValue)) {
-        return true;
-      }
-      
-      // Search in timeline client
-      if (task.timeline && task.timeline.client && 
-          task.timeline.client.toLowerCase().includes(searchValue)) {
-        return true;
+      // Search in timeline activity (handle array of timelines)
+      if (task.timeline && Array.isArray(task.timeline)) {
+        for (const timeline of task.timeline) {
+          if (timeline && timeline.activity) {
+            const activityName = typeof timeline.activity === 'object' 
+              ? timeline.activity.name 
+              : String(timeline.activity);
+            if (activityName && activityName.toLowerCase().includes(searchValue)) {
+              return true;
+            }
+          }
+          if (timeline && timeline.client) {
+            const clientName = typeof timeline.client === 'object' 
+              ? timeline.client.name 
+              : String(timeline.client);
+            if (clientName && clientName.toLowerCase().includes(searchValue)) {
+              return true;
+            }
+          }
+        }
       }
       
       // Search in branch name
@@ -610,6 +634,130 @@ const bulkDeleteTasks = async (taskIds) => {
   return result;
 };
 
+/**
+ * Get tasks of accessible team members for a team member
+ * @param {ObjectId|string} teamMemberId - The team member requesting access
+ * @param {Object} options - Query options
+ * @returns {Promise<QueryResult>}
+ */
+const getTasksOfAccessibleTeamMembers = async (teamMemberId, options = {}) => {
+  // Validate and convert teamMemberId to ObjectId
+  if (!mongoose.Types.ObjectId.isValid(teamMemberId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid team member ID format');
+  }
+  
+  const teamMemberObjectId = typeof teamMemberId === 'string' 
+    ? new mongoose.Types.ObjectId(teamMemberId) 
+    : teamMemberId;
+  
+  // Get the team member (without populating accessibleTeamMembers to get raw ObjectIds)
+  const teamMember = await TeamMember.findById(teamMemberObjectId).lean();
+  if (!teamMember) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
+  }
+  
+  // Build list of accessible team member IDs
+  // Include the team member themselves in the list
+  const accessibleTeamMemberIds = [teamMemberObjectId];
+  
+  // Add accessible team members (they are already ObjectIds in the database)
+  if (teamMember.accessibleTeamMembers && teamMember.accessibleTeamMembers.length > 0) {
+    teamMember.accessibleTeamMembers.forEach(id => {
+      // Convert to ObjectId if needed (should already be ObjectId, but handle string case)
+      const objectId = mongoose.Types.ObjectId.isValid(id) 
+        ? (typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id)
+        : null;
+      if (objectId && !accessibleTeamMemberIds.some(existing => existing.toString() === objectId.toString())) {
+        accessibleTeamMemberIds.push(objectId);
+      }
+    });
+  }
+  
+  // Filter tasks by accessible team members
+  const filter = { teamMember: { $in: accessibleTeamMemberIds } };
+  
+  // Merge with any additional filters from options
+  if (options.status) {
+    filter.status = options.status;
+  }
+  if (options.priority) {
+    filter.priority = options.priority;
+  }
+  
+  return queryTasks(filter, options);
+};
+
+/**
+ * Create task for an accessible team member (with validation)
+ * @param {ObjectId} assignedByTeamMemberId - Team member assigning the task
+ * @param {Object} taskBody - Task data
+ * @returns {Promise<Task>}
+ */
+const createTaskForAccessibleTeamMember = async (assignedByTeamMemberId, taskBody) => {
+  // Validate that the assigned team member is accessible
+  const hasAccess = await TeamMember.hasAccessToTeamMember(
+    assignedByTeamMemberId,
+    taskBody.teamMember
+  );
+  
+  if (!hasAccess) {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      'You do not have access to assign tasks to this team member'
+    );
+  }
+  
+  // Create the task with assignedBy set to the team member
+  const taskData = {
+    ...taskBody,
+    assignedBy: null, // Team members don't have User reference, can be null or we can track differently
+  };
+  
+  return createTask(taskData);
+};
+
+/**
+ * Update task assigned to accessible team member (with validation)
+ * @param {ObjectId} teamMemberId - Team member trying to update
+ * @param {ObjectId} taskId - Task ID
+ * @param {Object} updateBody - Update data
+ * @returns {Promise<Task>}
+ */
+const updateTaskOfAccessibleTeamMember = async (teamMemberId, taskId, updateBody) => {
+  // Get the task first
+  const task = await getTaskByIdMinimal(taskId);
+  
+  // Validate that the team member has access to the task's team member
+  const hasAccess = await TeamMember.hasAccessToTeamMember(
+    teamMemberId,
+    task.teamMember
+  );
+  
+  if (!hasAccess) {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      'You do not have access to update tasks for this team member'
+    );
+  }
+  
+  // If teamMember is being updated, validate access to new team member
+  if (updateBody.teamMember && updateBody.teamMember !== task.teamMember.toString()) {
+    const hasAccessToNew = await TeamMember.hasAccessToTeamMember(
+      teamMemberId,
+      updateBody.teamMember
+    );
+    
+    if (!hasAccessToNew) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'You do not have access to assign tasks to this team member'
+      );
+    }
+  }
+  
+  return updateTaskById(taskId, updateBody);
+};
+
 export default {
   createTask,
   getTaskById,
@@ -634,4 +782,7 @@ export default {
   bulkCreateTasks,
   bulkUpdateTaskStatus,
   bulkDeleteTasks,
+  getTasksOfAccessibleTeamMembers,
+  createTaskForAccessibleTeamMember,
+  updateTaskOfAccessibleTeamMember,
 };
