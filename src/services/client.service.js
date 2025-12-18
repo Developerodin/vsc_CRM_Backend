@@ -243,6 +243,17 @@ const getClientByEmail = async (email) => {
 };
 
 /**
+ * Get client by email and PAN
+ * @param {string} email
+ * @param {string} pan
+ * @returns {Promise<Client>}
+ */
+const getClientByEmailAndPan = async (email, pan) => {
+  const client = await Client.findOne({ email, pan });
+  return client;
+};
+
+/**
  * Update client by id
  * @param {ObjectId} clientId
  * @param {Object} updateBody
@@ -1983,6 +1994,7 @@ export {
   queryClients, 
   getClientById, 
   getClientByEmail,
+  getClientByEmailAndPan,
   updateClientById, 
   updateClientStatus,
   deleteClientById,

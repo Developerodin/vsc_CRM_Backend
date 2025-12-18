@@ -253,7 +253,11 @@ const searchTasks = {
 
 const getTaskStatistics = {
   query: Joi.object().keys({
-    branchId: Joi.string().custom(objectId),
+    branchId: Joi.alternatives().try(
+      Joi.string().custom(objectId),
+      Joi.string().allow('').empty(''),
+      Joi.valid(null, '')
+    ).optional(),
   }),
 };
 

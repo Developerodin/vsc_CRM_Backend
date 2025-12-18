@@ -255,7 +255,9 @@ const searchTasks = catchAsync(async (req, res) => {
  */
 const getTaskStatistics = catchAsync(async (req, res) => {
   const { branchId } = req.query;
-  const stats = await taskService.getTaskStatistics(branchId);
+  // Convert empty string to null/undefined
+  const normalizedBranchId = branchId && branchId.trim() !== '' ? branchId : null;
+  const stats = await taskService.getTaskStatistics(normalizedBranchId);
   res.send(stats);
 });
 

@@ -15,38 +15,26 @@ router
   .post(validate(taskValidation.createTask), taskController.createTask)
   .get(validate(taskValidation.getTasks), taskController.getTasks);
 
+// Search and statistics - MUST be before /:taskId routes
 router
-  .route('/:taskId')
-  .get(validate(taskValidation.getTask), taskController.getTask)
-  .patch(validate(taskValidation.updateTask), taskController.updateTask)
-  .delete(validate(taskValidation.deleteTask), taskController.deleteTask);
-
-// Filtering routes
-router
-  .route('/team-member/:teamMemberId')
-  .get(validate(taskValidation.getTasksByTeamMember), taskController.getTasksByTeamMember);
+  .route('/search')
+  .get(validate(taskValidation.searchTasks), taskController.searchTasks);
 
 router
-  .route('/timeline/:timelineId')
-  .get(validate(taskValidation.getTasksByTimeline), taskController.getTasksByTimeline);
+  .route('/statistics')
+  .get(validate(taskValidation.getTaskStatistics), taskController.getTaskStatistics);
+
+// Bulk operations - MUST be before /:taskId routes
+router
+  .route('/bulk')
+  .post(validate(taskValidation.bulkCreateTasks), taskController.bulkCreateTasks)
+  .delete(validate(taskValidation.bulkDeleteTasks), taskController.bulkDeleteTasks);
 
 router
-  .route('/assigned-by/:userId')
-  .get(validate(taskValidation.getTasksByAssignedBy), taskController.getTasksByAssignedBy);
+  .route('/bulk/status')
+  .patch(validate(taskValidation.bulkUpdateTaskStatus), taskController.bulkUpdateTaskStatus);
 
-router
-  .route('/branch/:branchId')
-  .get(validate(taskValidation.getTasksByBranch), taskController.getTasksByBranch);
-
-router
-  .route('/status/:status')
-  .get(validate(taskValidation.getTasksByStatus), taskController.getTasksByStatus);
-
-router
-  .route('/priority/:priority')
-  .get(validate(taskValidation.getTasksByPriority), taskController.getTasksByPriority);
-
-// Date-based routes
+// Date-based routes - MUST be before /:taskId routes
 router
   .route('/date-range')
   .get(validate(taskValidation.getTasksByDateRange), taskController.getTasksByDateRange);
@@ -71,24 +59,37 @@ router
   .route('/due-this-month')
   .get(validate(taskValidation.getTasksDueThisMonth), taskController.getTasksDueThisMonth);
 
-// Search and statistics
+// Filtering routes - MUST be before /:taskId routes
 router
-  .route('/search')
-  .get(validate(taskValidation.searchTasks), taskController.searchTasks);
+  .route('/team-member/:teamMemberId')
+  .get(validate(taskValidation.getTasksByTeamMember), taskController.getTasksByTeamMember);
 
 router
-  .route('/statistics')
-  .get(validate(taskValidation.getTaskStatistics), taskController.getTaskStatistics);
-
-// Bulk operations
-router
-  .route('/bulk')
-  .post(validate(taskValidation.bulkCreateTasks), taskController.bulkCreateTasks)
-  .delete(validate(taskValidation.bulkDeleteTasks), taskController.bulkDeleteTasks);
+  .route('/timeline/:timelineId')
+  .get(validate(taskValidation.getTasksByTimeline), taskController.getTasksByTimeline);
 
 router
-  .route('/bulk/status')
-  .patch(validate(taskValidation.bulkUpdateTaskStatus), taskController.bulkUpdateTaskStatus);
+  .route('/assigned-by/:userId')
+  .get(validate(taskValidation.getTasksByAssignedBy), taskController.getTasksByAssignedBy);
+
+router
+  .route('/branch/:branchId')
+  .get(validate(taskValidation.getTasksByBranch), taskController.getTasksByBranch);
+
+router
+  .route('/status/:status')
+  .get(validate(taskValidation.getTasksByStatus), taskController.getTasksByStatus);
+
+router
+  .route('/priority/:priority')
+  .get(validate(taskValidation.getTasksByPriority), taskController.getTasksByPriority);
+
+// Parameterized routes - MUST be last
+router
+  .route('/:taskId')
+  .get(validate(taskValidation.getTask), taskController.getTask)
+  .patch(validate(taskValidation.updateTask), taskController.updateTask)
+  .delete(validate(taskValidation.deleteTask), taskController.deleteTask);
 
 // Attachment management
 router
