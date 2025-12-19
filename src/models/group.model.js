@@ -33,6 +33,12 @@ const groupSchema = mongoose.Schema(
   }
 );
 
+// Indexes for better query performance
+groupSchema.index({ branch: 1, name: 1 }); // For branch filtering and name searches
+groupSchema.index({ clients: 1 }); // For client-based queries
+groupSchema.index({ name: 1 }); // For name searches
+groupSchema.index({ branch: 1 }); // For branch filtering
+
 // add plugin that converts mongoose to json
 groupSchema.plugin(toJSON);
 groupSchema.plugin(paginate);

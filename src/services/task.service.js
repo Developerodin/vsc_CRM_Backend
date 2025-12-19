@@ -227,15 +227,55 @@ const queryTasks = async (filter, options) => {
     ],
   });
   
-  // Manually populate timeline array with activity and client
+  // Manually populate timeline array with activity and client (batch operation for performance)
   if (tasks.results && tasks.results.length > 0) {
-    for (const task of tasks.results) {
-      if (task.timeline && task.timeline.length > 0) {
-        await Timeline.populate(task.timeline, [
-          { path: 'activity', select: 'name description category', strictPopulate: false },
-          { path: 'client', select: 'name email phone company address city state country pinCode businessType entityType', strictPopulate: false }
-        ]);
+    // Collect all unique timeline IDs from all tasks
+    const allTimelineIds = [];
+    const timelineMap = new Map(); // Map timeline ID to timeline object
+    
+    tasks.results.forEach(task => {
+      if (task.timeline && Array.isArray(task.timeline) && task.timeline.length > 0) {
+        task.timeline.forEach(timeline => {
+          const timelineId = timeline._id || timeline;
+          if (timelineId && !timelineMap.has(timelineId.toString())) {
+            allTimelineIds.push(timelineId);
+            timelineMap.set(timelineId.toString(), timeline);
+          }
+        });
       }
+    });
+    
+    // Batch populate all timelines in a single query
+    if (allTimelineIds.length > 0) {
+      const populatedTimelines = await Timeline.find({ _id: { $in: allTimelineIds } })
+        .populate('activity', 'name description category')
+        .populate('client', 'name email phone company address city state country pinCode businessType entityType')
+        .lean();
+      
+      // Create a map of populated timelines for quick lookup
+      const populatedMap = new Map();
+      populatedTimelines.forEach(timeline => {
+        populatedMap.set(timeline._id.toString(), timeline);
+      });
+      
+      // Merge populated activity and client into existing timeline objects
+      tasks.results.forEach(task => {
+        if (task.timeline && Array.isArray(task.timeline)) {
+          task.timeline = task.timeline.map(timeline => {
+            const timelineId = (timeline._id || timeline).toString();
+            const populatedTimeline = populatedMap.get(timelineId);
+            if (populatedTimeline) {
+              // Merge populated fields into existing timeline object
+              return {
+                ...timeline,
+                activity: populatedTimeline.activity,
+                client: populatedTimeline.client
+              };
+            }
+            return timeline;
+          });
+        }
+      });
     }
   }
   

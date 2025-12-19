@@ -150,8 +150,16 @@ const queryGroups = async (filter, options, user) => {
     }
   }
 
+  // Cap limit to prevent performance issues with large datasets
+  const paginateOptions = { ...options };
+  if (paginateOptions.limit) {
+    paginateOptions.limit = Math.min(parseInt(paginateOptions.limit), 100);
+  } else {
+    paginateOptions.limit = 50; // Default limit
+  }
+
   const groups = await Group.paginate(mongoFilter, {
-    ...options,
+    ...paginateOptions,
     populate: {
       path: 'clients',
       select: '_id name email', // Only select necessary fields
@@ -464,9 +472,10 @@ const getGroupTaskStatistics = async (filter = {}, options = {}, user = null) =>
       mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
     }
 
-    // Get pagination options
+    // Get pagination options with max limit cap to prevent performance issues
     const page = parseInt(options.page) || 1;
-    const limit = parseInt(options.limit) || 50;
+    const rawLimit = parseInt(options.limit) || 50;
+    const limit = Math.min(rawLimit, 100); // Cap at 100 to prevent performance issues
     const skip = (page - 1) * limit;
 
     // First, get the groups that match the filter
@@ -517,69 +526,70 @@ const getGroupTaskStatistics = async (filter = {}, options = {}, user = null) =>
       };
     }
 
-    // Get task statistics for all clients using aggregation
-    const clientStats = await Task.aggregate([
-      // Match tasks that have timelines
+    // Optimized: Start from Timeline (which has client directly) instead of Task
+    // This avoids expensive $unwind operations on Task.timeline array
+    const clientStats = await Timeline.aggregate([
+      // Match timelines for our clients (indexed query)
       {
         $match: {
-          timeline: { $exists: true, $ne: [] }
+          client: { $in: allClientIds }
         }
       },
-      // Unwind timeline array to get individual timeline references
-      {
-        $unwind: '$timeline'
-      },
-      // Lookup timeline details
+      // Lookup tasks that reference this timeline
       {
         $lookup: {
-          from: 'timelines',
-          localField: 'timeline',
-          foreignField: '_id',
-          as: 'timelineDetails'
+          from: 'tasks',
+          let: { timelineId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: ['$$timelineId', '$timeline']
+                }
+              }
+            },
+            {
+              $project: {
+                status: 1
+              }
+            }
+          ],
+          as: 'tasks'
         }
       },
-      // Unwind timeline details
+      // Unwind tasks to get individual task statuses
       {
-        $unwind: '$timelineDetails'
-      },
-      // Lookup client details from timeline
-      {
-        $lookup: {
-          from: 'clients',
-          localField: 'timelineDetails.client',
-          foreignField: '_id',
-          as: 'clientDetails'
-        }
-      },
-      // Unwind client details
-      {
-        $unwind: '$clientDetails'
-      },
-      // Match only the clients we're interested in (from our groups)
-      {
-        $match: {
-          'clientDetails._id': { $in: allClientIds }
-        }
+        $unwind: '$tasks'
       },
       // Group by client and status
       {
         $group: {
           _id: {
-            clientId: '$clientDetails._id',
-            clientName: '$clientDetails.name',
-            clientEmail: '$clientDetails.email',
-            status: '$status'
+            clientId: '$client',
+            status: '$tasks.status'
           },
           count: { $sum: 1 }
         }
+      },
+      // Lookup client details
+      {
+        $lookup: {
+          from: 'clients',
+          localField: '_id.clientId',
+          foreignField: '_id',
+          as: 'clientDetails'
+        }
+      },
+      {
+        $unwind: '$clientDetails'
       },
       // Group by client to get all statuses together
       {
         $group: {
           _id: {
             clientId: '$_id.clientId',
-            clientName: '$_id.clientName',
-            clientEmail: '$_id.clientEmail'
+            clientName: '$clientDetails.name',
+            clientEmail: '$clientDetails.email'
           },
           statusCounts: {
             $push: {
@@ -825,33 +835,40 @@ const getAllGroupsAnalytics = async (filter = {}, user = null) => {
       }
     };
 
-    // Get task statistics for all clients
+    // Optimized: Start from Timeline instead of Task to avoid expensive $unwind
     let taskStats = [];
     if (allClientIds.length > 0) {
-      taskStats = await Task.aggregate([
+      taskStats = await Timeline.aggregate([
         {
           $match: {
-            timeline: { $exists: true, $ne: [] }
+            client: { $in: allClientIds }
           }
         },
-        { $unwind: '$timeline' },
         {
           $lookup: {
-            from: 'timelines',
-            localField: 'timeline',
-            foreignField: '_id',
-            as: 'timelineDetails'
+            from: 'tasks',
+            let: { timelineId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $in: ['$$timelineId', '$timeline']
+                  }
+                }
+              },
+              {
+                $project: {
+                  status: 1
+                }
+              }
+            ],
+            as: 'tasks'
           }
         },
-        { $unwind: '$timelineDetails' },
-        {
-          $match: {
-            'timelineDetails.client': { $in: allClientIds }
-          }
-        },
+        { $unwind: '$tasks' },
         {
           $group: {
-            _id: '$status',
+            _id: '$tasks.status',
             count: { $sum: 1 }
           }
         }
@@ -899,33 +916,40 @@ const getAllGroupsAnalytics = async (filter = {}, user = null) => {
       groupClientMap.set(group._id.toString(), clientIds);
     });
 
-    // Get all task statistics grouped by client
-    const allTaskStatsByClient = allClientIds.length > 0 ? await Task.aggregate([
+    // Optimized: Start from Timeline instead of Task
+    const allTaskStatsByClient = allClientIds.length > 0 ? await Timeline.aggregate([
       {
         $match: {
-          timeline: { $exists: true, $ne: [] }
+          client: { $in: allClientIds }
         }
       },
-      { $unwind: '$timeline' },
       {
         $lookup: {
-          from: 'timelines',
-          localField: 'timeline',
-          foreignField: '_id',
-          as: 'timelineDetails'
+          from: 'tasks',
+          let: { timelineId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: ['$$timelineId', '$timeline']
+                }
+              }
+            },
+            {
+              $project: {
+                status: 1
+              }
+            }
+          ],
+          as: 'tasks'
         }
       },
-      { $unwind: '$timelineDetails' },
-      {
-        $match: {
-          'timelineDetails.client': { $in: allClientIds }
-        }
-      },
+      { $unwind: '$tasks' },
       {
         $group: {
           _id: {
-            client: '$timelineDetails.client',
-            status: '$status'
+            client: '$client',
+            status: '$tasks.status'
           },
           count: { $sum: 1 }
         }
@@ -1111,83 +1135,103 @@ const getGroupAnalytics = async (groupId, user = null) => {
       };
     }
 
-    // Get task analytics - status and priority breakdown
+    // Optimized: Start from Timeline instead of Task to avoid expensive $unwind
     const [taskStatusCounts, taskPriorityCounts, taskTotal] = await Promise.all([
-      Task.aggregate([
+      Timeline.aggregate([
         {
           $match: {
-            timeline: { $exists: true, $ne: [] }
+            client: { $in: clientIds }
           }
         },
-        { $unwind: '$timeline' },
         {
           $lookup: {
-            from: 'timelines',
-            localField: 'timeline',
-            foreignField: '_id',
-            as: 'timelineDetails'
+            from: 'tasks',
+            let: { timelineId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $in: ['$$timelineId', '$timeline']
+                  }
+                }
+              },
+              {
+                $project: {
+                  status: 1
+                }
+              }
+            ],
+            as: 'tasks'
           }
         },
-        { $unwind: '$timelineDetails' },
-        {
-          $match: {
-            'timelineDetails.client': { $in: clientIds }
-          }
-        },
+        { $unwind: '$tasks' },
         {
           $group: {
-            _id: '$status',
+            _id: '$tasks.status',
             count: { $sum: 1 }
           }
         }
       ]),
-      Task.aggregate([
+      Timeline.aggregate([
         {
           $match: {
-            timeline: { $exists: true, $ne: [] }
+            client: { $in: clientIds }
           }
         },
-        { $unwind: '$timeline' },
         {
           $lookup: {
-            from: 'timelines',
-            localField: 'timeline',
-            foreignField: '_id',
-            as: 'timelineDetails'
+            from: 'tasks',
+            let: { timelineId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $in: ['$$timelineId', '$timeline']
+                  }
+                }
+              },
+              {
+                $project: {
+                  priority: 1
+                }
+              }
+            ],
+            as: 'tasks'
           }
         },
-        { $unwind: '$timelineDetails' },
-        {
-          $match: {
-            'timelineDetails.client': { $in: clientIds }
-          }
-        },
+        { $unwind: '$tasks' },
         {
           $group: {
-            _id: '$priority',
+            _id: '$tasks.priority',
             count: { $sum: 1 }
           }
         }
       ]),
-      Task.aggregate([
+      Timeline.aggregate([
         {
           $match: {
-            timeline: { $exists: true, $ne: [] }
+            client: { $in: clientIds }
           }
         },
-        { $unwind: '$timeline' },
         {
           $lookup: {
-            from: 'timelines',
-            localField: 'timeline',
-            foreignField: '_id',
-            as: 'timelineDetails'
+            from: 'tasks',
+            let: { timelineId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $in: ['$$timelineId', '$timeline']
+                  }
+                }
+              }
+            ],
+            as: 'tasks'
           }
         },
-        { $unwind: '$timelineDetails' },
         {
           $match: {
-            'timelineDetails.client': { $in: clientIds }
+            'tasks.0': { $exists: true }
           }
         },
         { $count: 'total' }
@@ -1290,32 +1334,38 @@ const getGroupAnalytics = async (groupId, user = null) => {
       }
     });
 
-    // Get client-level statistics efficiently
+    // Optimized: Get client-level statistics efficiently
     const [clientTaskCounts, clientTimelineCounts] = await Promise.all([
-      Task.aggregate([
+      Timeline.aggregate([
         {
           $match: {
-            timeline: { $exists: true, $ne: [] }
+            client: { $in: clientIds }
           }
         },
-        { $unwind: '$timeline' },
         {
           $lookup: {
-            from: 'timelines',
-            localField: 'timeline',
-            foreignField: '_id',
-            as: 'timelineDetails'
+            from: 'tasks',
+            let: { timelineId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $in: ['$$timelineId', '$timeline']
+                  }
+                }
+              }
+            ],
+            as: 'tasks'
           }
         },
-        { $unwind: '$timelineDetails' },
         {
           $match: {
-            'timelineDetails.client': { $in: clientIds }
+            'tasks.0': { $exists: true }
           }
         },
         {
           $group: {
-            _id: '$timelineDetails.client',
+            _id: '$client',
             count: { $sum: 1 }
           }
         }
