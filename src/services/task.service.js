@@ -227,19 +227,41 @@ const queryTasks = async (filter, options) => {
     ],
   });
   
+  // Convert Mongoose documents to plain objects for easier manipulation
+  if (tasks.results && tasks.results.length > 0) {
+    tasks.results = tasks.results.map(task => {
+      // Convert to plain object if it's a Mongoose document
+      if (task.toObject) {
+        return task.toObject();
+      }
+      return task;
+    });
+  }
+  
   // Manually populate timeline array with activity and client (batch operation for performance)
   if (tasks.results && tasks.results.length > 0) {
     // Collect all unique timeline IDs from all tasks
     const allTimelineIds = [];
-    const timelineMap = new Map(); // Map timeline ID to timeline object
+    const timelineIdToOriginalMap = new Map(); // Map timeline ID string to original timeline value
     
     tasks.results.forEach(task => {
       if (task.timeline && Array.isArray(task.timeline) && task.timeline.length > 0) {
         task.timeline.forEach(timeline => {
-          const timelineId = timeline._id || timeline;
-          if (timelineId && !timelineMap.has(timelineId.toString())) {
+          // Handle different timeline formats: string ID, ObjectId, or populated object
+          let timelineId;
+          if (typeof timeline === 'string') {
+            timelineId = timeline;
+          } else if (timeline && timeline._id) {
+            timelineId = timeline._id.toString();
+          } else if (timeline && timeline.toString) {
+            timelineId = timeline.toString();
+          } else {
+            timelineId = String(timeline);
+          }
+          
+          if (timelineId && mongoose.Types.ObjectId.isValid(timelineId) && !timelineIdToOriginalMap.has(timelineId)) {
             allTimelineIds.push(timelineId);
-            timelineMap.set(timelineId.toString(), timeline);
+            timelineIdToOriginalMap.set(timelineId, timeline);
           }
         });
       }
@@ -247,9 +269,12 @@ const queryTasks = async (filter, options) => {
     
     // Batch populate all timelines in a single query
     if (allTimelineIds.length > 0) {
-      const populatedTimelines = await Timeline.find({ _id: { $in: allTimelineIds } })
+      // Convert all IDs to ObjectIds for proper querying
+      const timelineObjectIds = allTimelineIds.map(id => new mongoose.Types.ObjectId(id));
+      
+      const populatedTimelines = await Timeline.find({ _id: { $in: timelineObjectIds } })
         .populate('activity', 'name description category')
-        .populate('client', 'name email phone company address city state country pinCode businessType entityType')
+        .populate('client', 'name email phone company address city state country pinCode gst branch status businessType entityType')
         .lean();
       
       // Create a map of populated timelines for quick lookup
@@ -258,19 +283,26 @@ const queryTasks = async (filter, options) => {
         populatedMap.set(timeline._id.toString(), timeline);
       });
       
-      // Merge populated activity and client into existing timeline objects
+      // Replace timeline objects with fully populated ones
       tasks.results.forEach(task => {
         if (task.timeline && Array.isArray(task.timeline)) {
           task.timeline = task.timeline.map(timeline => {
-            const timelineId = (timeline._id || timeline).toString();
+            // Extract timeline ID in the same way as above
+            let timelineId;
+            if (typeof timeline === 'string') {
+              timelineId = timeline;
+            } else if (timeline && timeline._id) {
+              timelineId = timeline._id.toString();
+            } else if (timeline && timeline.toString) {
+              timelineId = timeline.toString();
+            } else {
+              timelineId = String(timeline);
+            }
+            
             const populatedTimeline = populatedMap.get(timelineId);
             if (populatedTimeline) {
-              // Merge populated fields into existing timeline object
-              return {
-                ...timeline,
-                activity: populatedTimeline.activity,
-                client: populatedTimeline.client
-              };
+              // Replace with fully populated timeline object
+              return populatedTimeline;
             }
             return timeline;
           });

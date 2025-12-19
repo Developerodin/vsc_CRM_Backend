@@ -42,7 +42,7 @@ const getTimelines = catchAsync(async (req, res) => {
 });
 
 const getTimeline = catchAsync(async (req, res) => {
-  const timeline = await timelineService.getTimelineById(req.params.timelineId);
+  const timeline = await timelineService.getTimelineById(req.params.timelineId, req.user);
   if (!timeline) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Timeline not found');
   }
@@ -55,7 +55,7 @@ const updateTimeline = catchAsync(async (req, res) => {
 });
 
 const deleteTimeline = catchAsync(async (req, res) => {
-  await timelineService.deleteTimelineById(req.params.timelineId);
+  await timelineService.deleteTimelineById(req.params.timelineId, req.user);
   res.status(httpStatus.NO_CONTENT).send();
 });
 

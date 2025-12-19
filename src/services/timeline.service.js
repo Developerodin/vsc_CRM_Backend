@@ -52,9 +52,19 @@ const createTimeline = async (timelineBody, user = null) => {
   await validateClient(timelineBody.client);
   
   // Validate branch access if user is provided
-  if (user && user.role && timelineBody.branch) {
-    if (!hasBranchAccess(user.role, timelineBody.branch)) {
-      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  if (user && timelineBody.branch) {
+    if (user.userType === 'teamMember') {
+      // Team members can only create timelines in their own branch
+      const teamMemberBranchId = user.branch?.toString() || user.branch;
+      const requestedBranchId = timelineBody.branch.toString();
+      if (requestedBranchId !== teamMemberBranchId) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    } else if (user.role) {
+      // Regular user with role
+      if (!hasBranchAccess(user.role, timelineBody.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
     }
   }
 
@@ -246,25 +256,42 @@ const queryTimelines = async (filter, options, user) => {
   }
 
   // Apply branch filtering based on user's access
-  if (user && user.role) {
-    // If specific branch is requested in filter
-    if (mongoFilter.branch) {
-      // Check if user has access to this specific branch
-      if (!hasBranchAccess(user.role, mongoFilter.branch)) {
-        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
-      }
-    } else {
-      // Get user's allowed branch IDs
-      const allowedBranchIds = getUserBranchIds(user.role);
+  if (user) {
+    // Handle team members (they don't have roles, but have a branch)
+    if (user.userType === 'teamMember') {
+      const teamMemberBranchId = user.branch?.toString() || user.branch;
       
-      if (allowedBranchIds === null) {
-        // User has access to all branches, no filtering needed
-      } else if (allowedBranchIds.length > 0) {
-        // Filter by user's allowed branches
-        mongoFilter.branch = { $in: allowedBranchIds };
+      if (mongoFilter.branch) {
+        // Check if requested branch matches team member's branch
+        const requestedBranchId = mongoFilter.branch.toString();
+        if (requestedBranchId !== teamMemberBranchId) {
+          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+        }
       } else {
-        // User has no branch access
-        throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+        // Filter by team member's branch
+        mongoFilter.branch = teamMemberBranchId;
+      }
+    } else if (user.role) {
+      // Regular user with role
+      // If specific branch is requested in filter
+      if (mongoFilter.branch) {
+        // Check if user has access to this specific branch
+        if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+        }
+      } else {
+        // Get user's allowed branch IDs
+        const allowedBranchIds = getUserBranchIds(user.role);
+        
+        if (allowedBranchIds === null) {
+          // User has access to all branches, no filtering needed
+        } else if (allowedBranchIds.length > 0) {
+          // Filter by user's allowed branches
+          mongoFilter.branch = { $in: allowedBranchIds };
+        } else {
+          // User has no branch access
+          throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+        }
       }
     }
   }
@@ -481,11 +508,24 @@ const queryTimelines = async (filter, options, user) => {
  * @param {ObjectId} id
  * @returns {Promise<Timeline>}
  */
-const getTimelineById = async (id) => {
+const getTimelineById = async (id, user = null) => {
   const timeline = await Timeline.findById(id).populate([
     { path: 'activity', select: 'name sortOrder subactivities' },
     { path: 'client', select: 'name email phone' }
   ]);
+  
+  if (!timeline) {
+    return null;
+  }
+  
+  // Check branch access for team members
+  if (user && user.userType === 'teamMember') {
+    const teamMemberBranchId = user.branch?.toString() || user.branch;
+    const timelineBranchId = timeline.branch?.toString() || timeline.branch;
+    if (timelineBranchId !== teamMemberBranchId) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this timeline');
+    }
+  }
   
   // Process subactivity data since it's stored as embedded document
   if (timeline && timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
@@ -508,12 +548,34 @@ const getTimelineById = async (id) => {
  * @returns {Promise<Timeline>}
  */
 const updateTimelineById = async (timelineId, updateBody, user = null) => {
-  const timeline = await getTimelineById(timelineId);
+  const timeline = await getTimelineById(timelineId, user);
   
   // Validate branch access if user is provided and branch is being updated
-  if (user && user.role && updateBody.branch) {
-    if (!hasBranchAccess(user.role, updateBody.branch)) {
-      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  if (user && updateBody.branch) {
+    if (user.userType === 'teamMember') {
+      // Team members can only update timelines in their own branch
+      const teamMemberBranchId = user.branch?.toString() || user.branch;
+      const requestedBranchId = updateBody.branch.toString();
+      if (requestedBranchId !== teamMemberBranchId) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+      // Also check if the existing timeline is in their branch
+      const timelineBranchId = timeline.branch?.toString() || timeline.branch;
+      if (timelineBranchId !== teamMemberBranchId) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this timeline');
+      }
+    } else if (user.role) {
+      // Regular user with role
+      if (!hasBranchAccess(user.role, updateBody.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    }
+  } else if (user && user.userType === 'teamMember') {
+    // Even if branch is not being updated, check if team member can access this timeline
+    const teamMemberBranchId = user.branch?.toString() || user.branch;
+    const timelineBranchId = timeline.branch?.toString() || timeline.branch;
+    if (timelineBranchId !== teamMemberBranchId) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this timeline');
     }
   }
   
@@ -535,10 +597,11 @@ const updateTimelineById = async (timelineId, updateBody, user = null) => {
 /**
  * Delete timeline by id
  * @param {ObjectId} timelineId
+ * @param {Object} user
  * @returns {Promise<Timeline>}
  */
-const deleteTimelineById = async (timelineId) => {
-  const timeline = await getTimelineById(timelineId);
+const deleteTimelineById = async (timelineId, user = null) => {
+  const timeline = await getTimelineById(timelineId, user);
   await timeline.deleteOne();
   return timeline;
 };
