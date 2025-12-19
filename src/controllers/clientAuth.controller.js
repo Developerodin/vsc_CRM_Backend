@@ -8,9 +8,9 @@ import { generateClientOTP, verifyClientOTP, logoutClient } from '../services/cl
  * @param {Object} res - Express response object
  */
 const generateOTP = catchAsync(async (req, res) => {
-  const { email, pan } = req.body;
+  const { pan } = req.body;
   
-  const result = await generateClientOTP(email, pan);
+  const result = await generateClientOTP(pan);
   
   res.status(httpStatus.OK).send({
     success: true,

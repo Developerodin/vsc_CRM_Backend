@@ -905,6 +905,158 @@ const getClientFolderContents = async (clientId, options = {}) => {
   };
 };
 
+/**
+ * Get folder contents by folderId (for client file manager)
+ * This method can handle any folder, including subfolders, and returns client info if applicable
+ * @param {ObjectId} folderId
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const getClientFolderContentsByFolderId = async (folderId, options = {}) => {
+  // Validate and convert folderId to ObjectId if needed
+  // Mongoose will auto-convert strings, but we ensure it's valid
+  if (!mongoose.Types.ObjectId.isValid(folderId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid folder ID format');
+  }
+  
+  const folderObjectId = typeof folderId === 'string' 
+    ? new mongoose.Types.ObjectId(folderId) 
+    : folderId;
+
+  // Try to find folder by document _id first, then by folder._id (nested schema _id)
+  let folder = await FileManager.findOne({
+    _id: folderObjectId,
+    type: 'folder',
+    isDeleted: false,
+  }).populate('folder.createdBy', 'name email');
+
+  // If not found by document _id, try finding by folder._id (nested schema _id)
+  if (!folder) {
+    folder = await FileManager.findOne({
+      'folder._id': folderObjectId,
+      type: 'folder',
+      isDeleted: false,
+    }).populate('folder.createdBy', 'name email');
+  }
+  
+  if (!folder || folder.type !== 'folder') {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Folder not found');
+  }
+
+  // Use the document's _id for querying contents (parentFolder references document _id, not folder._id)
+  const documentId = folder._id;
+
+  // Get all contents of the folder
+  const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
+  const limit = hasLimit ? parseInt(options.limit, 10) : null;
+  const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
+  const skip = hasLimit ? (page - 1) * limit : 0;
+
+  const filter = {
+    $or: [
+      { 'folder.parentFolder': documentId },
+      { 'file.parentFolder': documentId }
+    ],
+    isDeleted: false,
+  };
+
+  const countPromise = FileManager.countDocuments(filter);
+  let docsPromise = FileManager.find(filter)
+    .sort(options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc');
+  
+  if (hasLimit) {
+    docsPromise = docsPromise.skip(skip).limit(limit);
+  }
+  
+  const docsResult = await docsPromise.lean();
+  const [totalResults, results] = await Promise.all([countPromise, Promise.resolve(docsResult)]);
+  const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
+
+  // Add id field to each result since we're using lean()
+  const resultsWithId = results.map(item => ({
+    ...item,
+    id: item._id.toString()
+  }));
+
+  const result = {
+    results: resultsWithId,
+    page,
+    limit,
+    totalPages,
+    totalResults,
+  };
+
+  // Check if this folder is a client folder or is within a client folder hierarchy
+  let clientFolder = null;
+  let client = null;
+
+  // Check if current folder has clientId in metadata
+  if (folder.folder.metadata && folder.folder.metadata.clientId) {
+    const clientId = folder.folder.metadata.clientId;
+    client = await Client.findById(clientId);
+    
+    if (client) {
+      clientFolder = {
+        id: folder._id.toString(),
+        name: folder.folder.name,
+        path: folder.folder.path,
+        description: folder.folder.description,
+        createdAt: folder.createdAt,
+        updatedAt: folder.updatedAt,
+      };
+    }
+  } else {
+    // If not, check if parent folder is a client folder by traversing up
+    let currentFolder = folder;
+    let foundClientFolder = false;
+    
+    // Traverse up to find client folder (limit to 10 levels to avoid infinite loops)
+    for (let i = 0; i < 10 && currentFolder && currentFolder.folder.parentFolder; i++) {
+      const parentFolder = await FileManager.findById(currentFolder.folder.parentFolder);
+      if (!parentFolder || parentFolder.type !== 'folder') {
+        break;
+      }
+      
+      if (parentFolder.folder.metadata && parentFolder.folder.metadata.clientId) {
+        const clientId = parentFolder.folder.metadata.clientId;
+        client = await Client.findById(clientId);
+        
+        if (client) {
+          clientFolder = {
+            id: parentFolder._id.toString(),
+            name: parentFolder.folder.name,
+            path: parentFolder.folder.path,
+            description: parentFolder.folder.description,
+            createdAt: parentFolder.createdAt,
+            updatedAt: parentFolder.updatedAt,
+          };
+          foundClientFolder = true;
+          break;
+        }
+      }
+      
+      currentFolder = parentFolder;
+    }
+  }
+
+  // Build response
+  const response = {
+    ...result,
+  };
+
+  // Add clientFolder and client if found
+  if (clientFolder && client) {
+    response.clientFolder = clientFolder;
+    response.client = {
+      id: client._id.toString(),
+      name: client.name,
+      email: client.email,
+    };
+  }
+
+  return response;
+};
+
 export {
   createFolder,
   createFile,
@@ -924,4 +1076,5 @@ export {
   getFolderTree,
   uploadFileToClientFolder,
   getClientFolderContents,
+  getClientFolderContentsByFolderId,
 }; 

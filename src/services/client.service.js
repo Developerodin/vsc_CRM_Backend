@@ -254,6 +254,16 @@ const getClientByEmailAndPan = async (email, pan) => {
 };
 
 /**
+ * Get client by PAN
+ * @param {string} pan
+ * @returns {Promise<Client>}
+ */
+const getClientByPan = async (pan) => {
+  const client = await Client.findOne({ pan });
+  return client;
+};
+
+/**
  * Update client by id
  * @param {ObjectId} clientId
  * @param {Object} updateBody
@@ -1995,6 +2005,7 @@ export {
   getClientById, 
   getClientByEmail,
   getClientByEmailAndPan,
+  getClientByPan,
   updateClientById, 
   updateClientStatus,
   deleteClientById,

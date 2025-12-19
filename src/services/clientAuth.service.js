@@ -2,7 +2,7 @@ import httpStatus from 'http-status';
 import jwt from 'jsonwebtoken';
 import moment from 'moment';
 import config from '../config/config.js';
-import { getClientByEmail, getClientByEmailAndPan } from './client.service.js';
+import { getClientByEmailAndPan, getClientByPan } from './client.service.js';
 import Token from '../models/token.model.js';
 import ApiError from '../utils/ApiError.js';
 import { tokenTypes } from '../config/tokens.js';
@@ -10,14 +10,17 @@ import { emailService } from './index.js';
 
 /**
  * Generate OTP for client login
- * @param {string} email
  * @param {string} pan
- * @returns {Promise<string>}
+ * @returns {Promise<Object>}
  */
-const generateClientOTP = async (email, pan) => {
-  const client = await getClientByEmailAndPan(email, pan);
+const generateClientOTP = async (pan) => {
+  const client = await getClientByPan(pan);
   if (!client) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'No client found with this email and PAN');
+    throw new ApiError(httpStatus.NOT_FOUND, 'No client found with this PAN');
+  }
+
+  if (!client.email) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Client email not found. Please contact support.');
   }
 
   // Generate 6-digit OTP
@@ -56,9 +59,12 @@ const generateClientOTP = async (email, pan) => {
     </div>
   `;
 
-  await emailService.sendEmail(email, subject, text, htmlContent);
+  await emailService.sendEmail(client.email, subject, text, htmlContent);
 
-  return { message: 'OTP sent successfully' };
+  return { 
+    message: 'OTP sent successfully',
+    email: client.email
+  };
 };
 
 /**
