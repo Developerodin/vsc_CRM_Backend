@@ -7,6 +7,7 @@ import { TeamMember, Task } from '../models/index.js';
 import taskService from '../services/task.service.js';
 import pick from '../utils/pick.js';
 import logger from '../config/logger.js';
+import mongoose from 'mongoose';
 
 /**
  * Generate OTP for team member login
@@ -362,9 +363,42 @@ const updateTask = catchAsync(async (req, res) => {
       }
     });
 
-    // Find and update task, ensuring it belongs to the team member
-    const task = await Task.findOneAndUpdate(
-      { _id: taskId, teamMember: teamMemberId },
+    // First, check if task exists and belongs directly to the team member
+    let task = await Task.findOne({
+      _id: taskId,
+      teamMember: teamMemberId
+    });
+    
+    // If not found, check if it belongs to an accessible team member
+    if (!task) {
+      // Get the task to check its team member
+      const taskToCheck = await Task.findById(taskId);
+      
+      if (!taskToCheck) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Task not found');
+      }
+      
+      // Check if task belongs to an accessible team member
+      if (taskToCheck.teamMember) {
+        const hasAccess = await TeamMember.hasAccessToTeamMember(
+          teamMemberId,
+          taskToCheck.teamMember
+        );
+        
+        if (!hasAccess) {
+          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied: Task does not belong to you or an accessible team member');
+        }
+        
+        // Task belongs to accessible team member, proceed with update
+        task = taskToCheck;
+      } else {
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Task has no assigned team member');
+      }
+    }
+
+    // Update the task
+    const updatedTask = await Task.findByIdAndUpdate(
+      taskId,
       filteredUpdates,
       { new: true, runValidators: true }
     ).populate('assignedBy', 'name email phone')
@@ -378,8 +412,8 @@ const updateTask = catchAsync(async (req, res) => {
        ]
      });
 
-    if (!task) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Task not found or access denied');
+    if (!updatedTask) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Task not found');
     }
 
     logger.info(`Task ${taskId} updated by team member ${teamMemberId}`);
@@ -387,11 +421,16 @@ const updateTask = catchAsync(async (req, res) => {
     res.status(httpStatus.OK).json({
       success: true,
       message: 'Task updated successfully',
-      data: task
+      data: updatedTask
     });
 
   } catch (error) {
     logger.error('Error updating task:', error);
+    // If it's already an ApiError, re-throw it
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    // Otherwise, throw a generic error
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update task');
   }
 });

@@ -147,6 +147,9 @@ const activitySchema = mongoose.Schema(
   }
 );
 
+// Indexes for better query performance
+activitySchema.index({ name: 1 }); // For activity name searches
+
 // add plugin that converts mongoose to json
 activitySchema.plugin(toJSON);
 activitySchema.plugin(paginate);

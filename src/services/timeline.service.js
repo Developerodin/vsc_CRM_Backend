@@ -97,24 +97,26 @@ const queryTimelines = async (filter, options, user) => {
     delete mongoFilter.status;
   }
 
+  // Handle activityName filter - optimize by querying Activity collection first
+  let activityNameFilter = null;
   if (mongoFilter.activityName === '' || !mongoFilter.activityName) {
     delete mongoFilter.activityName;
   } else if (mongoFilter.activityName) {
     // Clean up whitespace and URL-decoded characters
-    mongoFilter.activityName = mongoFilter.activityName.trim();
-    // Remove activityName from mongoFilter since it's not a field in Timeline model
-    // We'll filter by this after population
+    activityNameFilter = mongoFilter.activityName.trim();
+    // Remove activityName from mongoFilter - will be converted to activity IDs
     delete mongoFilter.activityName;
   }
 
   // Handle activity filter (can be activity ID or activity name)
+  let activityNameStringFilter = null;
   if (mongoFilter.activity) {
     // If it's an ObjectId, keep as is
     if (mongoose.Types.ObjectId.isValid(mongoFilter.activity)) {
       // Keep the activity filter as is
     } else {
-      // If it's a string (activity name), we'll filter after population
-      // Remove from mongoFilter - will be handled in post-query filtering
+      // If it's a string (activity name), store for later optimization
+      activityNameStringFilter = mongoFilter.activity;
       delete mongoFilter.activity;
     }
   }
@@ -296,10 +298,60 @@ const queryTimelines = async (filter, options, user) => {
     }
   }
 
+  // Optimize: If activityName or activity (as string) is provided, resolve to activity IDs first
+  // This avoids loading all timelines into memory
+  if (activityNameFilter || activityNameStringFilter) {
+    const activitySearchTerm = (activityNameFilter || activityNameStringFilter).toLowerCase().trim();
+    if (activitySearchTerm) {
+      // Find matching activity IDs
+      const matchingActivities = await Activity.find({
+        name: { $regex: activitySearchTerm, $options: 'i' }
+      }).select('_id').lean();
+      
+      const activityIds = matchingActivities.map(a => a._id);
+      
+      if (activityIds.length === 0) {
+        // No matching activities, return empty result
+        return {
+          results: [],
+          page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+          limit: options.limit ? parseInt(options.limit, 10) : 0,
+          totalPages: 0,
+          totalResults: 0,
+        };
+      }
+      
+      // Use activity IDs in MongoDB filter
+      if (mongoFilter.activity) {
+        // If activity filter already exists (as ObjectId), check if it's in the matching IDs
+        const existingActivityId = mongoFilter.activity.toString();
+        const isInMatchingIds = activityIds.some(id => id.toString() === existingActivityId);
+        if (isInMatchingIds) {
+          // Keep the existing filter (it's already in the matching set)
+          // No change needed
+        } else {
+          // Existing activity ID doesn't match the name filter, return empty
+          return {
+            results: [],
+            page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+            limit: options.limit ? parseInt(options.limit, 10) : 0,
+            totalPages: 0,
+            totalResults: 0,
+          };
+        }
+      } else {
+        mongoFilter.activity = { $in: activityIds };
+      }
+      
+      // Clear activityName filters since we've converted them to activity IDs
+      activityNameFilter = null;
+      activityNameStringFilter = null;
+    }
+  }
+
   // Check if we need to apply post-query filters (text-based searches on activity/client name or search parameter)
-  const needsPostQueryFilter = (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) ||
-                                (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) ||
-                                filter.activityName ||
+  // Note: activityName and activity (as string) are now handled above, so they won't trigger post-query
+  const needsPostQueryFilter = (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) ||
                                 !!searchTerm;
 
   let result;
@@ -357,30 +409,8 @@ const queryTimelines = async (filter, options, user) => {
       }
     });
 
-    // Apply post-query filters for text-based searches
-    if (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) {
-      // Filter by activity name (case-insensitive partial match)
-      const activitySearchTerm = filter.activity.toLowerCase().trim();
-      if (activitySearchTerm) { // Only filter if search term is not empty
-        allResults = allResults.filter(timeline => 
-          timeline.activity && 
-          timeline.activity.name && 
-          timeline.activity.name.toLowerCase().includes(activitySearchTerm)
-        );
-      }
-    }
-
-    if (filter.activityName) {
-      // Filter by activity name (case-insensitive partial match)
-      const activityNameSearchTerm = filter.activityName.toLowerCase().trim();
-      if (activityNameSearchTerm) { // Only filter if search term is not empty
-        allResults = allResults.filter(timeline => 
-          timeline.activity && 
-          timeline.activity.name && 
-          timeline.activity.name.toLowerCase().includes(activityNameSearchTerm)
-        );
-      }
-    }
+    // Note: activityName and activity (as string) filters are now handled by converting to activity IDs
+    // before this point, so they don't need post-query filtering
 
     if (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
       // Filter by client name (case-insensitive partial match)
