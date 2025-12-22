@@ -101,6 +101,10 @@ const getTasksOfAccessibleTeamMembers = {
       .description('Filter tasks by priority'),
     teamMember: Joi.string().custom(objectId)
       .description('Filter tasks by specific accessible team member ID'),
+    startDate: Joi.date().iso()
+      .description('Filter tasks from this date'),
+    endDate: Joi.date().iso().min(Joi.ref('startDate'))
+      .description('Filter tasks until this date'),
     page: Joi.number().integer().min(1).default(1)
       .description('Page number for pagination'),
     limit: Joi.number().integer().min(1).max(100).optional()

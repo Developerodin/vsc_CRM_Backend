@@ -790,7 +790,53 @@ const getTasksOfAccessibleTeamMembers = async (teamMemberId, options = {}) => {
     filter.priority = options.priority;
   }
   
-  return queryTasks(filter, options);
+  // Handle date range filtering
+  if (options.startDate || options.endDate) {
+    const dateConditions = [];
+    
+    if (options.startDate && options.endDate) {
+      // Both dates provided - filter tasks that overlap with the date range
+      const startDate = new Date(options.startDate);
+      const endDate = new Date(options.endDate);
+      
+      dateConditions.push(
+        { startDate: { $gte: startDate, $lte: endDate } },
+        { endDate: { $gte: startDate, $lte: endDate } },
+        { 
+          startDate: { $lte: startDate },
+          endDate: { $gte: endDate }
+        }
+      );
+    } else if (options.startDate) {
+      // Only start date provided - filter tasks that start on or after this date
+      const startDate = new Date(options.startDate);
+      dateConditions.push({ startDate: { $gte: startDate } });
+    } else if (options.endDate) {
+      // Only end date provided - filter tasks that end on or before this date
+      const endDate = new Date(options.endDate);
+      dateConditions.push({ endDate: { $lte: endDate } });
+    }
+    
+    if (dateConditions.length > 0) {
+      if (filter.$or) {
+        // If there's already an $or condition, combine them
+        filter.$and = [
+          { $or: filter.$or },
+          { $or: dateConditions }
+        ];
+        delete filter.$or;
+      } else {
+        filter.$or = dateConditions;
+      }
+    }
+  }
+  
+  // Remove date options from options object before passing to queryTasks
+  const queryOptions = { ...options };
+  delete queryOptions.startDate;
+  delete queryOptions.endDate;
+  
+  return queryTasks(filter, queryOptions);
 };
 
 /**
