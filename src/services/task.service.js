@@ -92,6 +92,7 @@ const createTask = async (taskBody) => {
     const populatedTask = await Task.findById(task._id)
       .populate('teamMember', 'name email phone')
       .populate('assignedBy', 'name email')
+      .populate('assignedByTeamMember', 'name email phone')
       .populate('branch', 'name location');
 
     // Queue email notification for background processing
@@ -114,6 +115,7 @@ const getTaskById = async (id) => {
   const task = await Task.findById(id)
     .populate('teamMember', 'name email phone')
     .populate('assignedBy', 'name email')
+    .populate('assignedByTeamMember', 'name email phone')
     .populate('timeline', 'activity client status')
     .populate('branch', 'name location');
   
@@ -222,6 +224,7 @@ const queryTasks = async (filter, options) => {
     populate: [
       { path: 'teamMember', select: 'name email phone' },
       { path: 'assignedBy', select: 'name email' },
+      { path: 'assignedByTeamMember', select: 'name email phone' },
       { path: 'timeline' },
       { path: 'branch', select: 'name location' }
     ],
@@ -745,8 +748,12 @@ const getTasksOfAccessibleTeamMembers = async (teamMemberId, options = {}) => {
     });
   }
   
-  // Filter tasks by accessible team members
-  let filter = { teamMember: { $in: accessibleTeamMemberIds } };
+  // Filter tasks: only show tasks assigned by the current team member
+  // AND assigned to accessible team members
+  let filter = {
+    assignedByTeamMember: teamMemberObjectId, // Only tasks assigned by this team member
+    teamMember: { $in: accessibleTeamMemberIds } // Assigned to accessible team members
+  };
   
   // If filtering by specific team member, validate they are accessible
   if (options.teamMember) {
@@ -806,10 +813,11 @@ const createTaskForAccessibleTeamMember = async (assignedByTeamMemberId, taskBod
     );
   }
   
-  // Create the task with assignedBy set to the team member
+  // Create the task with assignedByTeamMember set to track who assigned it
   const taskData = {
     ...taskBody,
-    assignedBy: null, // Team members don't have User reference, can be null or we can track differently
+    assignedBy: null, // Team members don't have User reference
+    assignedByTeamMember: assignedByTeamMemberId, // Track which team member assigned this task
   };
   
   return createTask(taskData);

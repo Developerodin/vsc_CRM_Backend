@@ -35,6 +35,10 @@ const taskSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    assignedByTeamMember: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TeamMember',
+    },
     timeline: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Timeline',
@@ -78,6 +82,8 @@ taskSchema.index({ branch: 1, status: 1 });
 taskSchema.index({ startDate: 1, endDate: 1 });
 taskSchema.index({ priority: 1, status: 1 });
 taskSchema.index({ assignedBy: 1 });
+taskSchema.index({ assignedByTeamMember: 1 });
+taskSchema.index({ assignedByTeamMember: 1, teamMember: 1 }); // Compound index for team member assignment queries
 taskSchema.index({ status: 1, createdAt: -1 }); // For status-based queries with recent first
 taskSchema.index({ createdAt: -1 }); // For general sorting by creation date
 taskSchema.index({ teamMember: 1, createdAt: -1 }); // For team member task history
