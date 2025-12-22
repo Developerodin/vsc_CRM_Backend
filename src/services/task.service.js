@@ -674,7 +674,34 @@ const getTasksOfAccessibleTeamMembers = async (teamMemberId, options = {}) => {
   }
   
   // Filter tasks by accessible team members
-  const filter = { teamMember: { $in: accessibleTeamMemberIds } };
+  let filter = { teamMember: { $in: accessibleTeamMemberIds } };
+  
+  // If filtering by specific team member, validate they are accessible
+  if (options.teamMember) {
+    // Validate team member ID
+    if (!mongoose.Types.ObjectId.isValid(options.teamMember)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid team member ID format');
+    }
+    
+    const filterTeamMemberId = typeof options.teamMember === 'string' 
+      ? new mongoose.Types.ObjectId(options.teamMember) 
+      : options.teamMember;
+    
+    // Check if the requested team member is in the accessible list
+    const isAccessible = accessibleTeamMemberIds.some(
+      id => id.toString() === filterTeamMemberId.toString()
+    );
+    
+    if (!isAccessible) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'You do not have access to view tasks for this team member'
+      );
+    }
+    
+    // Filter by the specific team member
+    filter.teamMember = filterTeamMemberId;
+  }
   
   // Merge with any additional filters from options
   if (options.status) {

@@ -402,7 +402,7 @@ const updateTask = catchAsync(async (req, res) => {
 const getTasksOfAccessibleTeamMembers = catchAsync(async (req, res) => {
   try {
     const teamMemberId = req.user.id;
-    const options = pick(req.query, ['sortBy', 'limit', 'page', 'status', 'priority']);
+    const options = pick(req.query, ['sortBy', 'limit', 'page', 'status', 'priority', 'teamMember']);
     
     const result = await taskService.getTasksOfAccessibleTeamMembers(teamMemberId, options);
     

@@ -99,6 +99,8 @@ const getTasksOfAccessibleTeamMembers = {
       .description('Filter tasks by status'),
     priority: Joi.string().valid('low', 'medium', 'high', 'urgent', 'critical')
       .description('Filter tasks by priority'),
+    teamMember: Joi.string().custom(objectId)
+      .description('Filter tasks by specific accessible team member ID'),
     page: Joi.number().integer().min(1).default(1)
       .description('Page number for pagination'),
     limit: Joi.number().integer().min(1).max(100).optional()
