@@ -128,6 +128,8 @@ timelineSchema.index({ dueDate: 1, status: 1 });
 timelineSchema.index({ branch: 1, frequency: 1, status: 1 }); // For frequency stats
 timelineSchema.index({ startDate: 1, branch: 1 }); // For assigned task counts
 timelineSchema.index({ frequency: 1, branch: 1 }); // For frequency analytics
+// Critical index for group task statistics - client lookup in aggregations
+timelineSchema.index({ client: 1 }); // Single field index for faster $in queries
 
 // add plugin that converts mongoose to json
 timelineSchema.plugin(toJSON);

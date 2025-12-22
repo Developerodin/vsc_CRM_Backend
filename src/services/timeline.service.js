@@ -52,9 +52,19 @@ const createTimeline = async (timelineBody, user = null) => {
   await validateClient(timelineBody.client);
   
   // Validate branch access if user is provided
-  if (user && user.role && timelineBody.branch) {
-    if (!hasBranchAccess(user.role, timelineBody.branch)) {
-      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  if (user && timelineBody.branch) {
+    if (user.userType === 'teamMember') {
+      // Team members can only create timelines in their own branch
+      const teamMemberBranchId = user.branch?.toString() || user.branch;
+      const requestedBranchId = timelineBody.branch.toString();
+      if (requestedBranchId !== teamMemberBranchId) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    } else if (user.role) {
+      // Regular user with role
+      if (!hasBranchAccess(user.role, timelineBody.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
     }
   }
 
@@ -87,24 +97,26 @@ const queryTimelines = async (filter, options, user) => {
     delete mongoFilter.status;
   }
 
+  // Handle activityName filter - optimize by querying Activity collection first
+  let activityNameFilter = null;
   if (mongoFilter.activityName === '' || !mongoFilter.activityName) {
     delete mongoFilter.activityName;
   } else if (mongoFilter.activityName) {
     // Clean up whitespace and URL-decoded characters
-    mongoFilter.activityName = mongoFilter.activityName.trim();
-    // Remove activityName from mongoFilter since it's not a field in Timeline model
-    // We'll filter by this after population
+    activityNameFilter = mongoFilter.activityName.trim();
+    // Remove activityName from mongoFilter - will be converted to activity IDs
     delete mongoFilter.activityName;
   }
 
   // Handle activity filter (can be activity ID or activity name)
+  let activityNameStringFilter = null;
   if (mongoFilter.activity) {
     // If it's an ObjectId, keep as is
     if (mongoose.Types.ObjectId.isValid(mongoFilter.activity)) {
       // Keep the activity filter as is
     } else {
-      // If it's a string (activity name), we'll filter after population
-      // Remove from mongoFilter - will be handled in post-query filtering
+      // If it's a string (activity name), store for later optimization
+      activityNameStringFilter = mongoFilter.activity;
       delete mongoFilter.activity;
     }
   }
@@ -246,33 +258,100 @@ const queryTimelines = async (filter, options, user) => {
   }
 
   // Apply branch filtering based on user's access
-  if (user && user.role) {
-    // If specific branch is requested in filter
-    if (mongoFilter.branch) {
-      // Check if user has access to this specific branch
-      if (!hasBranchAccess(user.role, mongoFilter.branch)) {
-        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
-      }
-    } else {
-      // Get user's allowed branch IDs
-      const allowedBranchIds = getUserBranchIds(user.role);
+  if (user) {
+    // Handle team members (they don't have roles, but have a branch)
+    if (user.userType === 'teamMember') {
+      const teamMemberBranchId = user.branch?.toString() || user.branch;
       
-      if (allowedBranchIds === null) {
-        // User has access to all branches, no filtering needed
-      } else if (allowedBranchIds.length > 0) {
-        // Filter by user's allowed branches
-        mongoFilter.branch = { $in: allowedBranchIds };
+      if (mongoFilter.branch) {
+        // Check if requested branch matches team member's branch
+        const requestedBranchId = mongoFilter.branch.toString();
+        if (requestedBranchId !== teamMemberBranchId) {
+          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+        }
       } else {
-        // User has no branch access
-        throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+        // Filter by team member's branch
+        mongoFilter.branch = teamMemberBranchId;
+      }
+    } else if (user.role) {
+      // Regular user with role
+      // If specific branch is requested in filter
+      if (mongoFilter.branch) {
+        // Check if user has access to this specific branch
+        if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+        }
+      } else {
+        // Get user's allowed branch IDs
+        const allowedBranchIds = getUserBranchIds(user.role);
+        
+        if (allowedBranchIds === null) {
+          // User has access to all branches, no filtering needed
+        } else if (allowedBranchIds.length > 0) {
+          // Filter by user's allowed branches
+          mongoFilter.branch = { $in: allowedBranchIds };
+        } else {
+          // User has no branch access
+          throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+        }
       }
     }
   }
 
+  // Optimize: If activityName or activity (as string) is provided, resolve to activity IDs first
+  // This avoids loading all timelines into memory
+  if (activityNameFilter || activityNameStringFilter) {
+    const activitySearchTerm = (activityNameFilter || activityNameStringFilter).toLowerCase().trim();
+    if (activitySearchTerm) {
+      // Find matching activity IDs
+      const matchingActivities = await Activity.find({
+        name: { $regex: activitySearchTerm, $options: 'i' }
+      }).select('_id').lean();
+      
+      const activityIds = matchingActivities.map(a => a._id);
+      
+      if (activityIds.length === 0) {
+        // No matching activities, return empty result
+        return {
+          results: [],
+          page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+          limit: options.limit ? parseInt(options.limit, 10) : 0,
+          totalPages: 0,
+          totalResults: 0,
+        };
+      }
+      
+      // Use activity IDs in MongoDB filter
+      if (mongoFilter.activity) {
+        // If activity filter already exists (as ObjectId), check if it's in the matching IDs
+        const existingActivityId = mongoFilter.activity.toString();
+        const isInMatchingIds = activityIds.some(id => id.toString() === existingActivityId);
+        if (isInMatchingIds) {
+          // Keep the existing filter (it's already in the matching set)
+          // No change needed
+        } else {
+          // Existing activity ID doesn't match the name filter, return empty
+          return {
+            results: [],
+            page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+            limit: options.limit ? parseInt(options.limit, 10) : 0,
+            totalPages: 0,
+            totalResults: 0,
+          };
+        }
+      } else {
+        mongoFilter.activity = { $in: activityIds };
+      }
+      
+      // Clear activityName filters since we've converted them to activity IDs
+      activityNameFilter = null;
+      activityNameStringFilter = null;
+    }
+  }
+
   // Check if we need to apply post-query filters (text-based searches on activity/client name or search parameter)
-  const needsPostQueryFilter = (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) ||
-                                (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) ||
-                                filter.activityName ||
+  // Note: activityName and activity (as string) are now handled above, so they won't trigger post-query
+  const needsPostQueryFilter = (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) ||
                                 !!searchTerm;
 
   let result;
@@ -330,30 +409,8 @@ const queryTimelines = async (filter, options, user) => {
       }
     });
 
-    // Apply post-query filters for text-based searches
-    if (filter.activity && !mongoose.Types.ObjectId.isValid(filter.activity)) {
-      // Filter by activity name (case-insensitive partial match)
-      const activitySearchTerm = filter.activity.toLowerCase().trim();
-      if (activitySearchTerm) { // Only filter if search term is not empty
-        allResults = allResults.filter(timeline => 
-          timeline.activity && 
-          timeline.activity.name && 
-          timeline.activity.name.toLowerCase().includes(activitySearchTerm)
-        );
-      }
-    }
-
-    if (filter.activityName) {
-      // Filter by activity name (case-insensitive partial match)
-      const activityNameSearchTerm = filter.activityName.toLowerCase().trim();
-      if (activityNameSearchTerm) { // Only filter if search term is not empty
-        allResults = allResults.filter(timeline => 
-          timeline.activity && 
-          timeline.activity.name && 
-          timeline.activity.name.toLowerCase().includes(activityNameSearchTerm)
-        );
-      }
-    }
+    // Note: activityName and activity (as string) filters are now handled by converting to activity IDs
+    // before this point, so they don't need post-query filtering
 
     if (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
       // Filter by client name (case-insensitive partial match)
@@ -481,11 +538,24 @@ const queryTimelines = async (filter, options, user) => {
  * @param {ObjectId} id
  * @returns {Promise<Timeline>}
  */
-const getTimelineById = async (id) => {
+const getTimelineById = async (id, user = null) => {
   const timeline = await Timeline.findById(id).populate([
     { path: 'activity', select: 'name sortOrder subactivities' },
     { path: 'client', select: 'name email phone' }
   ]);
+  
+  if (!timeline) {
+    return null;
+  }
+  
+  // Check branch access for team members
+  if (user && user.userType === 'teamMember') {
+    const teamMemberBranchId = user.branch?.toString() || user.branch;
+    const timelineBranchId = timeline.branch?.toString() || timeline.branch;
+    if (timelineBranchId !== teamMemberBranchId) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this timeline');
+    }
+  }
   
   // Process subactivity data since it's stored as embedded document
   if (timeline && timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
@@ -508,12 +578,34 @@ const getTimelineById = async (id) => {
  * @returns {Promise<Timeline>}
  */
 const updateTimelineById = async (timelineId, updateBody, user = null) => {
-  const timeline = await getTimelineById(timelineId);
+  const timeline = await getTimelineById(timelineId, user);
   
   // Validate branch access if user is provided and branch is being updated
-  if (user && user.role && updateBody.branch) {
-    if (!hasBranchAccess(user.role, updateBody.branch)) {
-      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  if (user && updateBody.branch) {
+    if (user.userType === 'teamMember') {
+      // Team members can only update timelines in their own branch
+      const teamMemberBranchId = user.branch?.toString() || user.branch;
+      const requestedBranchId = updateBody.branch.toString();
+      if (requestedBranchId !== teamMemberBranchId) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+      // Also check if the existing timeline is in their branch
+      const timelineBranchId = timeline.branch?.toString() || timeline.branch;
+      if (timelineBranchId !== teamMemberBranchId) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this timeline');
+      }
+    } else if (user.role) {
+      // Regular user with role
+      if (!hasBranchAccess(user.role, updateBody.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    }
+  } else if (user && user.userType === 'teamMember') {
+    // Even if branch is not being updated, check if team member can access this timeline
+    const teamMemberBranchId = user.branch?.toString() || user.branch;
+    const timelineBranchId = timeline.branch?.toString() || timeline.branch;
+    if (timelineBranchId !== teamMemberBranchId) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this timeline');
     }
   }
   
@@ -535,10 +627,11 @@ const updateTimelineById = async (timelineId, updateBody, user = null) => {
 /**
  * Delete timeline by id
  * @param {ObjectId} timelineId
+ * @param {Object} user
  * @returns {Promise<Timeline>}
  */
-const deleteTimelineById = async (timelineId) => {
-  const timeline = await getTimelineById(timelineId);
+const deleteTimelineById = async (timelineId, user = null) => {
+  const timeline = await getTimelineById(timelineId, user);
   await timeline.deleteOne();
   return timeline;
 };

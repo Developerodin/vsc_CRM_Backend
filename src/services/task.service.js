@@ -227,15 +227,87 @@ const queryTasks = async (filter, options) => {
     ],
   });
   
-  // Manually populate timeline array with activity and client
+  // Convert Mongoose documents to plain objects for easier manipulation
   if (tasks.results && tasks.results.length > 0) {
-    for (const task of tasks.results) {
-      if (task.timeline && task.timeline.length > 0) {
-        await Timeline.populate(task.timeline, [
-          { path: 'activity', select: 'name description category', strictPopulate: false },
-          { path: 'client', select: 'name email phone company address city state country pinCode businessType entityType', strictPopulate: false }
-        ]);
+    tasks.results = tasks.results.map(task => {
+      // Convert to plain object if it's a Mongoose document
+      if (task.toObject) {
+        return task.toObject();
       }
+      return task;
+    });
+  }
+  
+  // Manually populate timeline array with activity and client (batch operation for performance)
+  if (tasks.results && tasks.results.length > 0) {
+    // Collect all unique timeline IDs from all tasks
+    const allTimelineIds = [];
+    const timelineIdToOriginalMap = new Map(); // Map timeline ID string to original timeline value
+    
+    tasks.results.forEach(task => {
+      if (task.timeline && Array.isArray(task.timeline) && task.timeline.length > 0) {
+        task.timeline.forEach(timeline => {
+          // Handle different timeline formats: string ID, ObjectId, or populated object
+          let timelineId;
+          if (typeof timeline === 'string') {
+            timelineId = timeline;
+          } else if (timeline && timeline._id) {
+            timelineId = timeline._id.toString();
+          } else if (timeline && timeline.toString) {
+            timelineId = timeline.toString();
+          } else {
+            timelineId = String(timeline);
+          }
+          
+          if (timelineId && mongoose.Types.ObjectId.isValid(timelineId) && !timelineIdToOriginalMap.has(timelineId)) {
+            allTimelineIds.push(timelineId);
+            timelineIdToOriginalMap.set(timelineId, timeline);
+          }
+        });
+      }
+    });
+    
+    // Batch populate all timelines in a single query
+    if (allTimelineIds.length > 0) {
+      // Convert all IDs to ObjectIds for proper querying
+      const timelineObjectIds = allTimelineIds.map(id => new mongoose.Types.ObjectId(id));
+      
+      const populatedTimelines = await Timeline.find({ _id: { $in: timelineObjectIds } })
+        .populate('activity', 'name description category')
+        .populate('client', 'name email phone company address city state country pinCode gst branch status businessType entityType')
+        .lean();
+      
+      // Create a map of populated timelines for quick lookup
+      const populatedMap = new Map();
+      populatedTimelines.forEach(timeline => {
+        populatedMap.set(timeline._id.toString(), timeline);
+      });
+      
+      // Replace timeline objects with fully populated ones
+      tasks.results.forEach(task => {
+        if (task.timeline && Array.isArray(task.timeline)) {
+          task.timeline = task.timeline.map(timeline => {
+            // Extract timeline ID in the same way as above
+            let timelineId;
+            if (typeof timeline === 'string') {
+              timelineId = timeline;
+            } else if (timeline && timeline._id) {
+              timelineId = timeline._id.toString();
+            } else if (timeline && timeline.toString) {
+              timelineId = timeline.toString();
+            } else {
+              timelineId = String(timeline);
+            }
+            
+            const populatedTimeline = populatedMap.get(timelineId);
+            if (populatedTimeline) {
+              // Replace with fully populated timeline object
+              return populatedTimeline;
+            }
+            return timeline;
+          });
+        }
+      });
     }
   }
   
