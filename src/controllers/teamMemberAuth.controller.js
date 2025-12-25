@@ -263,6 +263,7 @@ const getMyTasks = catchAsync(async (req, res) => {
     // Get tasks with pagination
     const tasks = await Task.find(query)
       .populate('assignedBy', 'name email')
+      .populate('assignedByTeamMember', 'name email')
       .populate('branch', 'name address city state')
       .populate({
         path: 'timeline',
@@ -317,6 +318,7 @@ const getTaskDetails = catchAsync(async (req, res) => {
     // Find task and verify it belongs to the team member
     const task = await Task.findOne({ _id: taskId, teamMember: teamMemberId })
       .populate('assignedBy', 'name email phone')
+      .populate('assignedByTeamMember', 'name email')
       .populate('branch', 'name address city state country')
       .populate('teamMember', 'name email phone')
       .populate({
@@ -402,6 +404,7 @@ const updateTask = catchAsync(async (req, res) => {
       filteredUpdates,
       { new: true, runValidators: true }
     ).populate('assignedBy', 'name email phone')
+     .populate('assignedByTeamMember', 'name email')
      .populate('branch', 'name address city state country')
      .populate('teamMember', 'name email phone')
      .populate({

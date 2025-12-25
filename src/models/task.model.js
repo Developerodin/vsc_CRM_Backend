@@ -113,7 +113,10 @@ taskSchema.statics.getTasksByTeamMember = function(teamMemberId, status = null) 
   if (status) {
     query.status = status;
   }
-  return this.find(query).populate('assignedBy', 'name email').populate('timeline', 'activity client');
+  return this.find(query)
+    .populate('assignedBy', 'name email')
+    .populate('assignedByTeamMember', 'name email')
+    .populate('timeline', 'activity client');
 };
 
 // Static method to get tasks by branch
@@ -122,7 +125,10 @@ taskSchema.statics.getTasksByBranch = function(branchId, status = null) {
   if (status) {
     query.status = status;
   }
-  return this.find(query).populate('teamMember', 'name email').populate('assignedBy', 'name email');
+  return this.find(query)
+    .populate('teamMember', 'name email')
+    .populate('assignedBy', 'name email')
+    .populate('assignedByTeamMember', 'name email');
 };
 
 // Static method to get overdue tasks
@@ -131,7 +137,10 @@ taskSchema.statics.getOverdueTasks = function() {
   return this.find({
     endDate: { $lt: now },
     status: { $nin: ['completed', 'cancelled'] }
-  }).populate('teamMember', 'name email').populate('assignedBy', 'name email');
+  })
+    .populate('teamMember', 'name email')
+    .populate('assignedBy', 'name email')
+    .populate('assignedByTeamMember', 'name email');
 };
 
 // Static method to get high priority tasks
@@ -139,14 +148,20 @@ taskSchema.statics.getHighPriorityTasks = function() {
   return this.find({
     priority: { $in: ['high', 'urgent', 'critical'] },
     status: { $nin: ['completed', 'cancelled'] }
-  }).populate('teamMember', 'name email').populate('assignedBy', 'name email');
+  })
+    .populate('teamMember', 'name email')
+    .populate('assignedBy', 'name email')
+    .populate('assignedByTeamMember', 'name email');
 };
 
 // Static method to get delayed tasks
 taskSchema.statics.getDelayedTasks = function() {
   return this.find({
     status: 'delayed'
-  }).populate('teamMember', 'name email').populate('assignedBy', 'name email');
+  })
+    .populate('teamMember', 'name email')
+    .populate('assignedBy', 'name email')
+    .populate('assignedByTeamMember', 'name email');
 };
 
 // Static method to automatically update delayed status for all tasks
