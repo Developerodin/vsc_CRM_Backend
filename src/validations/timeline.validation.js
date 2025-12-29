@@ -88,6 +88,7 @@ const getTimelines = {
       Joi.string().custom(objectId),
       Joi.string().trim()
     ),
+    subactivityName: Joi.string(),
     frequency: Joi.string(),
     period: Joi.string().trim(),
     startDate: Joi.date().iso(),

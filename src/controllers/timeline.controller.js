@@ -27,6 +27,7 @@ const getTimelines = catchAsync(async (req, res) => {
     'group',
     'today',
     'subactivity',
+    'subactivityName',
     'period',
     'frequency',
     'startDate',

@@ -121,6 +121,17 @@ const queryTimelines = async (filter, options, user) => {
     }
   }
 
+  // Handle subactivityName filter - optimize by querying Activity collection first
+  let subactivityNameFilter = null;
+  if (mongoFilter.subactivityName === '' || !mongoFilter.subactivityName) {
+    delete mongoFilter.subactivityName;
+  } else if (mongoFilter.subactivityName) {
+    // Clean up whitespace and URL-decoded characters
+    subactivityNameFilter = mongoFilter.subactivityName.trim().replace(/\+/g, ' '); // Handle URL encoding
+    // Remove subactivityName from mongoFilter - will be converted to activity IDs and subactivity filter
+    delete mongoFilter.subactivityName;
+  }
+
   // Handle subactivity filter
   if (mongoFilter.subactivity) {
     if (mongoose.Types.ObjectId.isValid(mongoFilter.subactivity)) {
@@ -301,11 +312,16 @@ const queryTimelines = async (filter, options, user) => {
   // Optimize: If activityName or activity (as string) is provided, resolve to activity IDs first
   // This avoids loading all timelines into memory
   if (activityNameFilter || activityNameStringFilter) {
-    const activitySearchTerm = (activityNameFilter || activityNameStringFilter).toLowerCase().trim();
+    const activitySearchTerm = (activityNameFilter || activityNameStringFilter).trim();
     if (activitySearchTerm) {
-      // Find matching activity IDs
+      // Find matching activity IDs - escape special regex characters and use word boundaries
+      // This ensures "Direct Taxation" doesn't match "Indirect Taxation"
+      const escapedTerm = activitySearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const matchingActivities = await Activity.find({
-        name: { $regex: activitySearchTerm, $options: 'i' }
+        $or: [
+          { name: { $regex: `^${escapedTerm}$`, $options: 'i' } }, // Exact match
+          { name: { $regex: `\\b${escapedTerm}\\b`, $options: 'i' } } // Word boundary match
+        ]
       }).select('_id').lean();
       
       const activityIds = matchingActivities.map(a => a._id);
@@ -349,10 +365,162 @@ const queryTimelines = async (filter, options, user) => {
     }
   }
 
+  // Optimize: If subactivityName is provided, resolve to subactivity IDs
+  // IMPORTANT: If activity filter already exists (from activityName), only search within those activities
+  if (subactivityNameFilter) {
+    const subactivitySearchTerm = subactivityNameFilter.trim();
+    if (subactivitySearchTerm) {
+      // Build activity filter for subactivity search
+      // If we already have an activity filter (from activityName), ONLY search within those activities
+      let activityFilterForSubactivity = {};
+      
+      if (mongoFilter.activity) {
+        // We have an activity filter - only search for subactivities within these specific activities
+        if (mongoFilter.activity.$in) {
+          activityFilterForSubactivity = { 
+            _id: { $in: mongoFilter.activity.$in },
+            'subactivities.name': { $regex: subactivitySearchTerm, $options: 'i' }
+          };
+        } else {
+          // Single activity ID
+          activityFilterForSubactivity = { 
+            _id: mongoFilter.activity,
+            'subactivities.name': { $regex: subactivitySearchTerm, $options: 'i' }
+          };
+        }
+      } else {
+        // No activity filter - search all activities for this subactivity name
+        activityFilterForSubactivity = {
+          'subactivities.name': { $regex: subactivitySearchTerm, $options: 'i' }
+        };
+      }
+      
+      // Find activities that contain subactivities with this name
+      // If activity filter exists, this will only search within those activities
+      const matchingActivities = await Activity.find(activityFilterForSubactivity)
+        .select('_id subactivities').lean();
+      
+      // Extract subactivity IDs that match the name
+      // Only extract from activities that match our filter (if activity filter was set)
+      const matchingSubactivityIds = [];
+      const activityIdsWithSubactivity = [];
+      
+      matchingActivities.forEach(activity => {
+        if (activity.subactivities && Array.isArray(activity.subactivities)) {
+          let foundMatchingSub = false;
+          activity.subactivities.forEach(sub => {
+            if (sub.name && new RegExp(subactivitySearchTerm, 'i').test(sub.name)) {
+              // Convert to ObjectId if needed
+              const subId = sub._id ? (typeof sub._id === 'string' ? new mongoose.Types.ObjectId(sub._id) : sub._id) : null;
+              if (subId) {
+                matchingSubactivityIds.push(subId);
+                foundMatchingSub = true;
+              }
+            }
+          });
+          if (foundMatchingSub) {
+            activityIdsWithSubactivity.push(activity._id);
+          }
+        }
+      });
+      
+      if (matchingSubactivityIds.length === 0) {
+        // No matching subactivities found in the specified activities, return empty result
+        return {
+          results: [],
+          page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+          limit: options.limit ? parseInt(options.limit, 10) : 0,
+          totalPages: 0,
+          totalResults: 0,
+        };
+      }
+      
+      // If we had an activity filter, ensure we only keep activities that have the subactivity
+      // If we didn't have an activity filter, set it to the activities that have this subactivity
+      if (mongoFilter.activity) {
+        // Activity filter exists - intersect to keep only activities that have both the name match AND the subactivity
+        if (mongoFilter.activity.$in) {
+          // Intersect arrays - only keep activities that are in both lists
+          const existingActivityIds = mongoFilter.activity.$in.map(id => 
+            (id && id.toString) ? id.toString() : String(id)
+          );
+          const newActivityIds = activityIdsWithSubactivity.map(id => 
+            (id && id.toString) ? id.toString() : String(id)
+          );
+          const intersection = existingActivityIds.filter(id => 
+            newActivityIds.includes(id)
+          );
+          
+          if (intersection.length === 0) {
+            // No intersection - the activities matching the name don't have this subactivity
+            return {
+              results: [],
+              page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+              limit: options.limit ? parseInt(options.limit, 10) : 0,
+              totalPages: 0,
+              totalResults: 0,
+            };
+          }
+          
+          // Update activity filter to only include activities that have the subactivity
+          mongoFilter.activity = { 
+            $in: intersection.map(id => {
+              // Find the original ObjectId from existing filter
+              const originalId = mongoFilter.activity.$in.find(origId => 
+                (origId && origId.toString ? origId.toString() : String(origId)) === id
+              );
+              return originalId || (typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id);
+            })
+          };
+        } else {
+          // Single activity ID - check if it has the subactivity
+          const existingActivityId = (mongoFilter.activity && mongoFilter.activity.toString) 
+            ? mongoFilter.activity.toString() 
+            : String(mongoFilter.activity);
+          const hasSubactivity = activityIdsWithSubactivity.some(id => 
+            (id && id.toString ? id.toString() : String(id)) === existingActivityId
+          );
+          if (!hasSubactivity) {
+            // This activity doesn't contain this subactivity, return empty
+            return {
+              results: [],
+              page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+              limit: options.limit ? parseInt(options.limit, 10) : 0,
+              totalPages: 0,
+              totalResults: 0,
+            };
+          }
+          // Activity has the subactivity, keep the filter as is
+        }
+      } else {
+        // No activity filter - set it to activities that have this subactivity
+        mongoFilter.activity = { $in: activityIdsWithSubactivity };
+      }
+      
+      // Filter by subactivity ID (more reliable than name since subactivity is stored as embedded doc)
+      // Convert all IDs to ObjectIds for consistent comparison
+      const subactivityObjectIds = matchingSubactivityIds.map(id => {
+        if (typeof id === 'string') {
+          return new mongoose.Types.ObjectId(id);
+        }
+        return id;
+      });
+      
+      // Use $in with ObjectIds - MongoDB will handle the comparison
+      mongoFilter['subactivity._id'] = { $in: subactivityObjectIds };
+      
+      // Clear subactivityName filter since we've converted it to subactivity._id
+      subactivityNameFilter = null;
+    }
+  }
+
   // Check if we need to apply post-query filters (text-based searches on activity/client name or search parameter)
-  // Note: activityName and activity (as string) are now handled above, so they won't trigger post-query
+  // Note: activityName, subactivityName and activity (as string) are now handled above, so they won't trigger post-query
+  // However, if sortBy includes activityName, we need post-query filtering to sort by populated activity name
+  const sortByIncludesActivityName = options.sortBy && options.sortBy.includes('activityName');
   const needsPostQueryFilter = (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) ||
-                                !!searchTerm;
+                                !!searchTerm ||
+                                sortByIncludesActivityName;
 
   let result;
   
@@ -387,7 +555,9 @@ const queryTimelines = async (filter, options, user) => {
     }
     
     // Get all documents matching the filter with sorting (no pagination)
-    let allResults = await Timeline.find(mongoFilter).sort(sort);
+    // Ensure subactivity filter is preserved if it was set
+    const queryFilter = { ...mongoFilter };
+    let allResults = await Timeline.find(queryFilter).sort(sort);
     
     // Populate the results with activity and client data
     // Use strictPopulate: false to handle null references gracefully
@@ -397,14 +567,21 @@ const queryTimelines = async (filter, options, user) => {
     ]);
     
     // Process subactivity data since it's stored as embedded document
+    // Note: subactivity is already in the timeline document, but we may want to enrich it from activity
     allResults.forEach(timeline => {
-      if (timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
-        // Find the matching subactivity in the populated activity
-        const subactivity = timeline.activity.subactivities.find(
-          sub => sub._id.toString() === timeline.subactivity._id.toString()
-        );
-        if (subactivity) {
-          timeline.subactivity = subactivity;
+      // If subactivity exists in timeline (embedded doc), keep it
+      // Only enrich if we have activity data and subactivity needs enrichment
+      if (timeline.subactivity && timeline.subactivity._id) {
+        // Subactivity is already present as embedded document - keep it
+        // Optionally enrich from activity if activity is populated and has more complete data
+        if (timeline.activity && timeline.activity.subactivities && Array.isArray(timeline.activity.subactivities)) {
+          const matchingSub = timeline.activity.subactivities.find(
+            sub => sub._id && sub._id.toString() === timeline.subactivity._id.toString()
+          );
+          if (matchingSub) {
+            // Merge to get complete subactivity data (activity has more fields like frequencyConfig)
+            timeline.subactivity = { ...timeline.subactivity, ...matchingSub };
+          }
         }
       }
     });
@@ -462,6 +639,24 @@ const queryTimelines = async (filter, options, user) => {
       }
     }
 
+    // Handle sorting by activityName (requires post-query since it's a populated field)
+    if (sortByIncludesActivityName && allResults.length > 0) {
+      const sortFields = options.sortBy.split(',');
+      sortFields.forEach(sortField => {
+        const [field, order] = sortField.split(':');
+        if (field === 'activityName') {
+          const sortOrder = order === 'desc' ? -1 : 1;
+          allResults.sort((a, b) => {
+            const aName = (a.activity && a.activity.name) ? a.activity.name.toLowerCase() : '';
+            const bName = (b.activity && b.activity.name) ? b.activity.name.toLowerCase() : '';
+            if (aName < bName) return -1 * sortOrder;
+            if (aName > bName) return 1 * sortOrder;
+            return 0;
+          });
+        }
+      });
+    }
+
     // Get total count of filtered results (this is the true total)
     const totalResults = allResults.length;
     
@@ -516,14 +711,21 @@ const queryTimelines = async (filter, options, user) => {
       ]);
       
       // Process subactivity data since it's stored as embedded document
+      // Note: subactivity is already in the timeline document, but we may want to enrich it from activity
       result.results.forEach(timeline => {
-        if (timeline.subactivity && timeline.subactivity._id && timeline.activity && timeline.activity.subactivities) {
-          // Find the matching subactivity in the populated activity
-          const subactivity = timeline.activity.subactivities.find(
-            sub => sub._id.toString() === timeline.subactivity._id.toString()
-          );
-          if (subactivity) {
-            timeline.subactivity = subactivity;
+        // If subactivity exists in timeline (embedded doc), keep it
+        // Only enrich if we have activity data and subactivity needs enrichment
+        if (timeline.subactivity && timeline.subactivity._id) {
+          // Subactivity is already present as embedded document - keep it
+          // Optionally enrich from activity if activity is populated and has more complete data
+          if (timeline.activity && timeline.activity.subactivities && Array.isArray(timeline.activity.subactivities)) {
+            const matchingSub = timeline.activity.subactivities.find(
+              sub => sub._id && sub._id.toString() === timeline.subactivity._id.toString()
+            );
+            if (matchingSub) {
+              // Merge to get complete subactivity data (activity has more fields like frequencyConfig)
+              timeline.subactivity = { ...timeline.subactivity, ...matchingSub };
+            }
           }
         }
       });

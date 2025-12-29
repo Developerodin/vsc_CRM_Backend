@@ -1,7 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import ApiError from '../utils/ApiError.js';
-import { teamMemberAnalytics, clientAnalytics } from '../services/analytics/index.js';
+import { teamMemberAnalytics, clientAnalytics, timelineAnalytics } from '../services/analytics/index.js';
 import pick from '../utils/pick.js';
 import Client from '../models/client.model.js';
 import Timeline from '../models/timeline.model.js';
@@ -228,7 +228,12 @@ const getAllClientsTableData = catchAsync(async (req, res) => {
       'iecCode',
       'entityType',
       'branch',
-      'search'
+      'search',
+      'activity',
+      'activitySearch',
+      'activityName',
+      'subactivity',
+      'subactivitySearch'
     ]);
     
     const options = pick(req.query, ['sortBy', 'limit', 'page']);
@@ -439,13 +444,100 @@ const getAllTeamMembersTableData = catchAsync(async (req, res) => {
 });
 
 /**
+ * Get all timelines table data with comprehensive information
+ * @route GET /v1/analytics/timelines/table
+ * @access Private
+ */
+const getAllTimelinesTableData = catchAsync(async (req, res) => {
+  try {
+    const filter = pick(req.query, [
+      'client',
+      'clientSearch',
+      'businessType',
+      'entityType',
+      'activity',
+      'activitySearch',
+      'subactivity',
+      'subactivitySearch',
+      'status',
+      'frequency',
+      'timelineType',
+      'period',
+      'financialYear',
+      'startDate',
+      'endDate',
+      'branch',
+      'search'
+    ]);
+    
+    const options = pick(req.query, ['sortBy', 'limit', 'page']);
+    
+    const result = await timelineAnalytics.getAllTimelinesTableData(filter, options, req.user);
+    
+    res.status(httpStatus.OK).json({
+      success: true,
+      message: 'Timelines table data retrieved successfully',
+      data: result
+    });
+  } catch (error) {
+    if (error.message.includes('Access denied')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
+    }
+    if (error.message.includes('No branch access')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
+    }
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve timelines table data');
+  }
+});
+
+/**
+ * Get detailed overview for a specific timeline
+ * @route GET /v1/analytics/timelines/:timelineId/overview
+ * @access Private
+ */
+const getTimelineDetailsOverview = catchAsync(async (req, res) => {
+  try {
+    const { timelineId } = req.params;
+    
+    if (!timelineId) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Timeline ID is required');
+    }
+    
+    // Extract filters from query parameters
+    const filters = pick(req.query, [
+      'teamMemberId',
+      'startDate', 
+      'endDate',
+      'priority',
+      'status'
+    ]);
+    
+    // Extract options from query parameters
+    const options = pick(req.query, ['limit', 'page']);
+    
+    const overview = await timelineAnalytics.getTimelineDetailsOverview(timelineId, filters, options);
+    
+    res.status(httpStatus.OK).json({
+      success: true,
+      message: 'Timeline details overview retrieved successfully',
+      data: overview
+    });
+  } catch (error) {
+    if (error.message === 'Timeline not found') {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Timeline not found');
+    }
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve timeline overview');
+  }
+});
+
+/**
  * Get analytics endpoints information
  * @route GET /v1/analytics/info
  * @access Private
  */
 const getAnalyticsInfo = catchAsync(async (req, res) => {
   const analyticsInfo = {
-    description: 'Comprehensive analytics API for team members, clients, and system performance',
+    description: 'Comprehensive analytics API for team members, clients, timelines, and system performance',
     version: '1.0.0',
     endpoints: {
       'team-members': {
@@ -553,6 +645,55 @@ const getAnalyticsInfo = catchAsync(async (req, res) => {
             }
           }
         ]
+      },
+      'timelines': {
+        description: 'Timeline performance and analytics',
+        endpoints: [
+          {
+            path: '/v1/analytics/timelines/table',
+            method: 'GET',
+            description: 'Get all timelines table data with comprehensive information',
+            query: {
+              client: 'Client ID filter (optional)',
+              clientSearch: 'Search clients by name, email, phone (optional)',
+              businessType: 'Client business type filter (optional)',
+              entityType: 'Client entity type filter (optional)',
+              activity: 'Activity ID filter (optional)',
+              activitySearch: 'Search activities by name or description (optional)',
+              subactivity: 'Subactivity ID filter (optional)',
+              subactivitySearch: 'Search subactivities by name (optional)',
+              status: 'Timeline status filter (pending, completed, delayed, ongoing)',
+              frequency: 'Frequency filter (None, OneTime, Hourly, Daily, Weekly, Monthly, Quarterly, Yearly)',
+              timelineType: 'Timeline type filter (oneTime, recurring)',
+              period: 'Period filter (optional)',
+              financialYear: 'Financial year filter (optional)',
+              startDate: 'Start date filter (ISO format, optional)',
+              endDate: 'End date filter (ISO format, optional)',
+              branch: 'Branch ID filter (optional)',
+              search: 'Global search term (optional)',
+              sortBy: 'Sort field and order (e.g., createdAt:desc)',
+              limit: 'Number of results per page (optional)',
+              page: 'Page number (default: 1)'
+            }
+          },
+          {
+            path: '/v1/analytics/timelines/:timelineId/overview',
+            method: 'GET',
+            description: 'Get detailed overview for a specific timeline',
+            params: {
+              timelineId: 'Timeline ID (required)'
+            },
+            query: {
+              teamMemberId: 'Filter tasks by team member ID (optional)',
+              startDate: 'Start date for filtering tasks (ISO format, optional)',
+              endDate: 'End date for filtering tasks (ISO format, optional)',
+              priority: 'Filter tasks by priority (low, medium, high, urgent)',
+              status: 'Filter tasks by status (pending, ongoing, completed, on_hold, delayed, cancelled)',
+              limit: 'Number of recent tasks to return (optional)',
+              page: 'Page number (default: 1)'
+            }
+          }
+        ]
       }
     }
   };
@@ -573,6 +714,8 @@ export default {
   getTeamMemberDetailsOverview,
   getClientDetailsOverview,
   getAllClientsTableData,
+  getAllTimelinesTableData,
+  getTimelineDetailsOverview,
   getAnalyticsInfo,
   getAllTeamMembersTableData,
   testTeamMembersDatabase,

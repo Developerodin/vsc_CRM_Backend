@@ -448,6 +448,144 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
     // Create a new filter object to avoid modifying the original
     const mongoFilter = { ...filter };
     
+    // Extract analytics-specific filters that need special handling
+    const activitySearch = mongoFilter.activitySearch;
+    const activityName = mongoFilter.activityName;
+    const subactivitySearch = mongoFilter.subactivitySearch;
+    const subactivity = mongoFilter.subactivity;
+    const activity = mongoFilter.activity;
+    
+    delete mongoFilter.activitySearch;
+    delete mongoFilter.activityName;
+    delete mongoFilter.subactivitySearch;
+    
+    // Handle activity filters by finding activity IDs first
+    if (activitySearch || activityName || activity) {
+      let activityIds = [];
+      
+      if (activity && mongoose.Types.ObjectId.isValid(activity)) {
+        // Direct activity ID filter
+        activityIds = [new mongoose.Types.ObjectId(activity)];
+      } else {
+        // Search by activity name
+        const searchTerm = activitySearch || activityName || activity;
+        if (searchTerm) {
+          const activityRegex = { $regex: searchTerm, $options: 'i' };
+          const matchingActivities = await Activity.find({ name: activityRegex }).select('_id').lean();
+          activityIds = matchingActivities.map(a => a._id);
+          
+          if (activityIds.length === 0) {
+            // No matching activities found, return empty result
+            return {
+              results: [],
+              page: parseInt(options.page) || 1,
+              limit: parseInt(options.limit) || 50,
+              totalPages: 0,
+              totalResults: 0,
+              hasNextPage: false,
+              hasPrevPage: false
+            };
+          }
+        }
+      }
+      
+      // Filter clients that have these activities assigned
+      if (activityIds.length > 0) {
+        mongoFilter['activities.activity'] = { $in: activityIds };
+      }
+    }
+    
+    // Handle subactivity filter
+    if (subactivity || subactivitySearch) {
+      if (subactivity && mongoose.Types.ObjectId.isValid(subactivity)) {
+        // Direct subactivity ID filter - need to find which activities contain this subactivity
+        const activitiesWithSubactivity = await Activity.find({
+          'subactivities._id': new mongoose.Types.ObjectId(subactivity)
+        }).select('_id').lean();
+        
+        const activityIds = activitiesWithSubactivity.map(a => a._id);
+        if (activityIds.length > 0) {
+          // Combine with existing activity filter if any
+          if (mongoFilter['activities.activity']) {
+            const existingActivityFilter = mongoFilter['activities.activity'];
+            if (existingActivityFilter.$in) {
+              // Intersect the arrays
+              const intersection = existingActivityFilter.$in.filter(id => 
+                activityIds.some(aid => aid.toString() === id.toString())
+              );
+              mongoFilter['activities.activity'] = intersection.length > 0 ? { $in: intersection } : { $in: [] };
+            } else {
+              // Single activity ID - check if it's in the list
+              if (activityIds.some(aid => aid.toString() === existingActivityFilter.toString())) {
+                mongoFilter['activities.activity'] = existingActivityFilter;
+              } else {
+                mongoFilter['activities.activity'] = { $in: [] };
+              }
+            }
+          } else {
+            mongoFilter['activities.activity'] = { $in: activityIds };
+          }
+          
+          // Also filter by subactivity ID in client activities (subactivity is stored as Mixed type)
+          mongoFilter['activities.subactivity._id'] = new mongoose.Types.ObjectId(subactivity);
+        } else {
+          // No activities found with this subactivity
+          return {
+            results: [],
+            page: parseInt(options.page) || 1,
+            limit: parseInt(options.limit) || 50,
+            totalPages: 0,
+            totalResults: 0,
+            hasNextPage: false,
+            hasPrevPage: false
+          };
+        }
+      } else if (subactivitySearch) {
+        // Search by subactivity name - need to find which activities contain subactivities with this name
+        const activitiesWithSubactivity = await Activity.find({
+          'subactivities.name': { $regex: subactivitySearch, $options: 'i' }
+        }).select('_id').lean();
+        
+        const activityIds = activitiesWithSubactivity.map(a => a._id);
+        if (activityIds.length > 0) {
+          // Combine with existing activity filter if any
+          if (mongoFilter['activities.activity']) {
+            const existingActivityFilter = mongoFilter['activities.activity'];
+            if (existingActivityFilter.$in) {
+              // Intersect the arrays
+              const intersection = existingActivityFilter.$in.filter(id => 
+                activityIds.some(aid => aid.toString() === id.toString())
+              );
+              mongoFilter['activities.activity'] = intersection.length > 0 ? { $in: intersection } : { $in: [] };
+            } else {
+              // Single activity ID - check if it's in the list
+              if (activityIds.some(aid => aid.toString() === existingActivityFilter.toString())) {
+                mongoFilter['activities.activity'] = existingActivityFilter;
+              } else {
+                mongoFilter['activities.activity'] = { $in: [] };
+              }
+            }
+          } else {
+            mongoFilter['activities.activity'] = { $in: activityIds };
+          }
+          
+          // Also filter by subactivity name in client activities
+          mongoFilter['activities.subactivity.name'] = { $regex: subactivitySearch, $options: 'i' };
+        } else {
+          // No activities found with this subactivity name
+          return {
+            results: [],
+            page: parseInt(options.page) || 1,
+            limit: parseInt(options.limit) || 50,
+            totalPages: 0,
+            totalResults: 0,
+            hasNextPage: false,
+            hasPrevPage: false
+          };
+        }
+      }
+    }
+    
     // Handle search parameter (searches across multiple fields)
     if (mongoFilter.search) {
       const searchValue = mongoFilter.search;
@@ -460,6 +598,7 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
         { phone: searchRegex },
         { district: searchRegex },
         { businessType: searchRegex },
+        { entityType: searchRegex },
         { pan: searchRegex },
         { gstNumber: searchRegex },
         { tanNumber: searchRegex },
@@ -500,6 +639,11 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
       // If businessType filter exists, convert it to case-insensitive regex
       if (mongoFilter.businessType) {
         mongoFilter.businessType = { $regex: mongoFilter.businessType, $options: 'i' };
+      }
+      
+      // If entityType filter exists, convert it to case-insensitive regex
+      if (mongoFilter.entityType) {
+        mongoFilter.entityType = { $regex: mongoFilter.entityType, $options: 'i' };
       }
       
       // If pan filter exists, convert it to case-insensitive regex
@@ -561,9 +705,9 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
     // Get all client IDs we're interested in
     const clientIds = clients.map(c => c._id);
 
-    // Get timelines for these clients
+    // Get timelines for these clients with full details for better analytics
     const timelines = await Timeline.find({ client: { $in: clientIds } })
-      .select('_id client activity')
+      .select('_id client activity status frequency timelineType period financialYear')
       .lean();
 
     // Get tasks for these clients' timelines (only if there are timelines)
@@ -714,9 +858,23 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
         // Timeline Information
         timelines: {
           total: clientTimelineIds.length,
+          byStatus: clientTimelines.reduce((acc, timeline) => {
+            const status = timeline.status || 'pending';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+          }, {}),
+          byFrequency: clientTimelines.reduce((acc, timeline) => {
+            const frequency = timeline.frequency || 'None';
+            acc[frequency] = (acc[frequency] || 0) + 1;
+            return acc;
+          }, {}),
           summary: clientTimelines.map(timeline => ({
             id: timeline._id,
-            client: timeline.client
+            status: timeline.status,
+            frequency: timeline.frequency,
+            timelineType: timeline.timelineType,
+            period: timeline.period,
+            financialYear: timeline.financialYear
           })),
           hasTimelines: clientTimelineIds.length > 0
         }

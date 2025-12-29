@@ -117,6 +117,11 @@ const getAllClientsTableData = {
     entityType: Joi.string().trim().allow(''),
     branch: Joi.string().custom(objectId),
     search: Joi.string().trim().allow(''),
+    activity: Joi.string().custom(objectId).allow(''),
+    activitySearch: Joi.string().trim().allow(''),
+    activityName: Joi.string().trim().allow(''),
+    subactivity: Joi.string().custom(objectId).allow(''),
+    subactivitySearch: Joi.string().trim().allow(''),
     sortBy: Joi.string(),
     limit: Joi.number().integer().min(1).max(10000).optional(),
     page: Joi.number().integer().min(1).default(1)
@@ -139,6 +144,72 @@ const getAllTeamMembersTableData = {
   })
 };
 
+const getAllTimelinesTableData = {
+  query: Joi.object().keys({
+    // Client filters
+    client: Joi.string().custom(objectId),
+    clientSearch: Joi.string().trim().allow(''),
+    businessType: Joi.string().trim().allow(''),
+    entityType: Joi.string().trim().allow(''),
+    
+    // Activity filters
+    activity: Joi.string().custom(objectId),
+    activitySearch: Joi.string().trim().allow(''),
+    
+    // Subactivity filters
+    subactivity: Joi.string().custom(objectId),
+    subactivitySearch: Joi.string().trim().allow(''),
+    
+    // Timeline filters
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
+    frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
+    timelineType: Joi.string().valid('oneTime', 'recurring'),
+    period: Joi.string().trim().allow(''),
+    financialYear: Joi.string().trim().allow(''),
+    
+    // Date filters
+    startDate: Joi.date().iso(),
+    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+    
+    // Other filters
+    branch: Joi.string().custom(objectId),
+    search: Joi.string().trim().allow(''),
+    sortBy: Joi.string(),
+    limit: Joi.number().integer().min(1).max(10000).optional(),
+    page: Joi.number().integer().min(1).default(1)
+  })
+};
+
+const getTimelineDetailsOverview = {
+  params: Joi.object().keys({
+    timelineId: Joi.string().custom(objectId).required()
+      .description('Timeline ID')
+  }),
+  query: Joi.object().keys({
+    // Team member filter
+    teamMemberId: Joi.string().custom(objectId)
+      .description('Filter tasks by assigned team member ID'),
+    
+    // Date range filters
+    startDate: Joi.date().iso()
+      .description('Start date for filtering tasks (ISO format)'),
+    endDate: Joi.date().iso().min(Joi.ref('startDate'))
+      .description('End date for filtering tasks (ISO format, must be after startDate)'),
+    
+    // Task filters
+    priority: Joi.string().valid('low', 'medium', 'high', 'urgent')
+      .description('Filter tasks by priority'),
+    status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'delayed', 'cancelled')
+      .description('Filter tasks by status'),
+    
+    // Pagination options
+    limit: Joi.number().integer().min(1).max(100).optional()
+      .description('Number of recent tasks to return (1-100). If not provided, returns all results.'),
+    page: Joi.number().integer().min(1).default(1)
+      .description('Page number for pagination')
+  })
+};
+
 export default {
   getTaskCompletionTrends,
   getTopTeamMembersByCompletion,
@@ -146,5 +217,7 @@ export default {
   getTeamMemberDetailsOverview,
   getClientDetailsOverview,
   getAllClientsTableData,
-  getAllTeamMembersTableData
+  getAllTeamMembersTableData,
+  getAllTimelinesTableData,
+  getTimelineDetailsOverview
 };

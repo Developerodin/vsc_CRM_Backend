@@ -100,7 +100,25 @@ router.get('/clients/table',
   analyticsController.getAllClientsTableData
 );
 
+/**
+ * @route GET /v1/analytics/timelines/table
+ * @desc Get all timelines table data with comprehensive information
+ * @access Private
+ */
+router.get('/timelines/table', 
+  validate(analyticsValidation.getAllTimelinesTableData),
+  analyticsController.getAllTimelinesTableData
+);
 
+/**
+ * @route GET /v1/analytics/timelines/:timelineId/overview
+ * @desc Get detailed overview for a specific timeline
+ * @access Private
+ */
+router.get('/timelines/:timelineId/overview', 
+  validate(analyticsValidation.getTimelineDetailsOverview),
+  analyticsController.getTimelineDetailsOverview
+);
 
 /**
  * @route GET /v1/analytics/test-team-members-db
