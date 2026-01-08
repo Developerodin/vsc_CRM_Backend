@@ -52,6 +52,7 @@ const createTimeline = {
     frequencyConfig: frequencyConfigSchema.optional(),
     timelineType: Joi.string().valid('oneTime', 'recurring').optional(),
     financialYear: Joi.string().trim().optional(),
+    referenceNumber: Joi.string().trim().optional(),
     fields: Joi.array().items(
       Joi.object({
         fileName: Joi.string().trim().required(),
@@ -123,6 +124,7 @@ const updateTimeline = {
       frequencyConfig: frequencyConfigSchema,
       timelineType: Joi.string().valid('oneTime', 'recurring'),
       financialYear: Joi.string().trim(),
+      referenceNumber: Joi.string().trim(),
       fields: Joi.array().items(
         Joi.object({
           fileName: Joi.string().trim().required(),
@@ -152,6 +154,7 @@ const bulkImportTimelines = {
         subactivity: Joi.string().custom(objectId).optional(),
         period: Joi.string().trim().optional(),
         dueDate: Joi.date().optional(),
+        referenceNumber: Joi.string().trim().optional(),
         fields: Joi.array().items(
           Joi.object({
             fileName: Joi.string().trim().required(),

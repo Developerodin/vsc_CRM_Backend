@@ -70,6 +70,11 @@ const timelineSchema = mongoose.Schema(
       trim: true,
       // Format: "2024-2025", "2025-2026"
     },
+    referenceNumber: {
+      type: String,
+      required: false,
+      trim: true,
+    },
     fields: [{
       fileName: {
         type: String,
