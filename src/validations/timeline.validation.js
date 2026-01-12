@@ -27,9 +27,19 @@ const frequencyConfigSchema = Joi.object({
   quarterlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
   
   // Yearly frequency fields
-  yearlyMonth: Joi.array().items(
-    Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
-  ).allow(null).optional(),
+  // Accept both string and array - normalize to string (model expects string)
+  yearlyMonth: Joi.alternatives().try(
+    Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'),
+    Joi.array().items(
+      Joi.string().valid('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
+    )
+  ).custom((value, helpers) => {
+    // Convert array to string (take first element) if needed, since model expects string
+    if (Array.isArray(value)) {
+      return value.length > 0 ? value[0] : null;
+    }
+    return value;
+  }, 'normalize yearlyMonth').allow(null).optional(),
   yearlyDate: Joi.number().min(1).max(31).allow(null).optional(),
   yearlyTime: Joi.string().pattern(/^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$|^(0?[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/).allow('', null).optional(),
 });
