@@ -139,7 +139,7 @@ const updateClientStatus = {
 
 const deleteClient = {
   params: Joi.object().keys({
-    clientId: Joi.string().custom(objectId),
+    clientId: Joi.string().custom(objectId).required(),
   }),
 };
 

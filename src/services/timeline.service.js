@@ -189,6 +189,12 @@ const queryTimelines = async (filter, options, user) => {
     mongoFilter.financialYear = { $regex: mongoFilter.financialYear, $options: 'i' };
   }
 
+  // Handle state filter (for GST-related timelines)
+  if (mongoFilter.state) {
+    // Case-insensitive state matching
+    mongoFilter.state = { $regex: mongoFilter.state, $options: 'i' };
+  }
+
   // Handle group filter first (filters timelines by clients in the group)
   let groupClientIds = null;
   if (mongoFilter.group) {
@@ -919,6 +925,33 @@ const bulkImportTimelines = async (timelinesData) => {
 };
 
 /**
+ * Check if a subactivity is GST-related
+ * @param {Object} subactivity - Subactivity object
+ * @returns {boolean} - True if subactivity is GST-related
+ */
+const isGstRelatedSubactivity = (subactivity) => {
+  if (!subactivity) return false;
+  
+  // Check if subactivity name contains "GST" (case-insensitive)
+  const subactivityName = (subactivity.name || '').toLowerCase();
+  if (subactivityName.includes('gst')) {
+    return true;
+  }
+  
+  // Check if any field name contains "GST"
+  if (subactivity.fields && Array.isArray(subactivity.fields)) {
+    for (const field of subactivity.fields) {
+      const fieldName = (field.name || '').toLowerCase();
+      if (fieldName.includes('gst')) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+};
+
+/**
  * Create timelines for a client based on their activities and subactivities
  * @param {Object} client - Client document
  * @param {Array} activities - Array of client activities
@@ -959,80 +992,178 @@ export const createClientTimelines = async (client, activities) => {
 
           // If no specific subactivity is assigned, or this is the assigned one
           if (!activityItem.subactivity || isAssignedSubactivity) {
-            if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
-              
-              // Create only ONE timeline for the current period
-              const currentDueDate = calculateCurrentPeriodDueDate(subactivity.frequency, subactivity.frequencyConfig);
-              
-              // Validate the date is valid
-              if (!currentDueDate || !(currentDueDate instanceof Date) || isNaN(currentDueDate.getTime())) {
+            // Check if subactivity is GST-related
+            const isGstRelated = isGstRelatedSubactivity(subactivity);
+            const clientGstNumbers = client.gstNumbers || [];
+            const hasMultipleGst = clientGstNumbers.length > 1;
+            
+            // If GST-related and client has multiple GST numbers, create one timeline per GST
+            if (isGstRelated && hasMultipleGst) {
+              // Create one timeline for each GST number
+              for (const gstNumber of clientGstNumbers) {
+                if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
+                  const currentDueDate = calculateCurrentPeriodDueDate(subactivity.frequency, subactivity.frequencyConfig);
+                  
+                  if (!currentDueDate || !(currentDueDate instanceof Date) || isNaN(currentDueDate.getTime())) {
+                    continue;
+                  }
+                  
+                  const currentPeriod = getPeriodFromDate(currentDueDate, subactivity.frequency);
 
-                continue; // Skip this subactivity and move to the next one
+                  const timeline = new Timeline({
+                    activity: activity._id,
+                    subactivity: {
+                      _id: subactivity._id,
+                      name: subactivity.name,
+                      frequency: subactivity.frequency,
+                      frequencyConfig: subactivity.frequencyConfig,
+                      fields: subactivity.fields
+                    },
+                    client: client._id,
+                    status: 'pending',
+                    dueDate: currentDueDate,
+                    startDate: currentDueDate,
+                    endDate: currentDueDate,
+                    frequency: subactivity.frequency,
+                    frequencyConfig: subactivity.frequencyConfig,
+                    branch: client.branch,
+                    timelineType: 'recurring',
+                    financialYear: financialYear,
+                    period: currentPeriod,
+                    state: gstNumber.state, // Add state field for GST timelines
+                    fields: subactivity.fields ? subactivity.fields.map(field => ({
+                      fileName: field.name,
+                      fieldType: field.type,
+                      fieldValue: null
+                    })) : [],
+                    metadata: {
+                      gstNumber: gstNumber.gstNumber,
+                      gstState: gstNumber.state,
+                      gstUserId: gstNumber.gstUserId,
+                      gstId: gstNumber._id?.toString() || gstNumber._id
+                    }
+                  });
+                  
+                  timelinePromises.push(timeline.save());
+                } else {
+                  // Create one-time timeline for subactivities without frequency
+                  const dueDate = new Date();
+                  dueDate.setDate(dueDate.getDate() + 30);
+                  
+                  const timeline = new Timeline({
+                    activity: activity._id,
+                    subactivity: {
+                      _id: subactivity._id,
+                      name: subactivity.name,
+                      frequency: subactivity.frequency,
+                      frequencyConfig: subactivity.frequencyConfig,
+                      fields: subactivity.fields
+                    },
+                    client: client._id,
+                    status: 'pending',
+                    dueDate: dueDate,
+                    startDate: dueDate,
+                    endDate: dueDate,
+                    frequency: 'OneTime',
+                    frequencyConfig: null,
+                    branch: client.branch,
+                    timelineType: 'oneTime',
+                    financialYear: financialYear,
+                    period: getPeriodFromDate(dueDate),
+                    state: gstNumber.state, // Add state field for GST timelines
+                    fields: subactivity.fields ? subactivity.fields.map(field => ({
+                      fileName: field.name,
+                      fieldType: field.type,
+                      fieldValue: null
+                    })) : [],
+                    metadata: {
+                      gstNumber: gstNumber.gstNumber,
+                      gstState: gstNumber.state,
+                      gstUserId: gstNumber.gstUserId,
+                      gstId: gstNumber._id?.toString() || gstNumber._id
+                    }
+                  });
+                  
+                  timelinePromises.push(timeline.save());
+                }
               }
-              
-              const currentPeriod = getPeriodFromDate(currentDueDate, subactivity.frequency);
-
-              const timeline = new Timeline({
-                activity: activity._id,
-                subactivity: {
-                  _id: subactivity._id,
-                  name: subactivity.name,
-                  frequency: subactivity.frequency,
-                  frequencyConfig: subactivity.frequencyConfig,
-                  fields: subactivity.fields
-                },
-                client: client._id,
-                status: 'pending',
-                dueDate: currentDueDate,
-                startDate: currentDueDate,
-                endDate: currentDueDate,
-                frequency: subactivity.frequency,
-                frequencyConfig: subactivity.frequencyConfig,
-                branch: client.branch,
-                timelineType: 'recurring',
-                financialYear: financialYear,
-                period: currentPeriod,
-                fields: subactivity.fields ? subactivity.fields.map(field => ({
-                  fileName: field.name,
-                  fieldType: field.type,
-                  fieldValue: null // Empty value as requested
-                })) : []
-              });
-              
-              timelinePromises.push(timeline.save());
             } else {
-              // Create one-time timeline for subactivities without frequency
-              const dueDate = new Date();
-              dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
-              
-              const timeline = new Timeline({
-                activity: activity._id,
-                subactivity: {
-                  _id: subactivity._id,
-                  name: subactivity.name,
+              // Not GST-related OR client has single/no GST - create single timeline
+              if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
+                
+                // Create only ONE timeline for the current period
+                const currentDueDate = calculateCurrentPeriodDueDate(subactivity.frequency, subactivity.frequencyConfig);
+                
+                // Validate the date is valid
+                if (!currentDueDate || !(currentDueDate instanceof Date) || isNaN(currentDueDate.getTime())) {
+
+                  continue; // Skip this subactivity and move to the next one
+                }
+                
+                const currentPeriod = getPeriodFromDate(currentDueDate, subactivity.frequency);
+
+                const timeline = new Timeline({
+                  activity: activity._id,
+                  subactivity: {
+                    _id: subactivity._id,
+                    name: subactivity.name,
+                    frequency: subactivity.frequency,
+                    frequencyConfig: subactivity.frequencyConfig,
+                    fields: subactivity.fields
+                  },
+                  client: client._id,
+                  status: 'pending',
+                  dueDate: currentDueDate,
+                  startDate: currentDueDate,
+                  endDate: currentDueDate,
                   frequency: subactivity.frequency,
                   frequencyConfig: subactivity.frequencyConfig,
-                  fields: subactivity.fields
-                },
-                client: client._id,
-                status: 'pending',
-                dueDate: dueDate,
-                startDate: dueDate,
-                endDate: dueDate,
-                frequency: 'OneTime',
-                frequencyConfig: null,
-                branch: client.branch,
-                timelineType: 'oneTime',
-                financialYear: financialYear,
-                period: getPeriodFromDate(dueDate),
-                fields: subactivity.fields ? subactivity.fields.map(field => ({
-                  fileName: field.name,
-                  fieldType: field.type,
-                  fieldValue: null // Empty value as requested
-                })) : []
-              });
-              
-              timelinePromises.push(timeline.save());
+                  branch: client.branch,
+                  timelineType: 'recurring',
+                  financialYear: financialYear,
+                  period: currentPeriod,
+                  fields: subactivity.fields ? subactivity.fields.map(field => ({
+                    fileName: field.name,
+                    fieldType: field.type,
+                    fieldValue: null // Empty value as requested
+                  })) : []
+                });
+                
+                timelinePromises.push(timeline.save());
+              } else {
+                // Create one-time timeline for subactivities without frequency
+                const dueDate = new Date();
+                dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
+                
+                const timeline = new Timeline({
+                  activity: activity._id,
+                  subactivity: {
+                    _id: subactivity._id,
+                    name: subactivity.name,
+                    frequency: subactivity.frequency,
+                    frequencyConfig: subactivity.frequencyConfig,
+                    fields: subactivity.fields
+                  },
+                  client: client._id,
+                  status: 'pending',
+                  dueDate: dueDate,
+                  startDate: dueDate,
+                  endDate: dueDate,
+                  frequency: 'OneTime',
+                  frequencyConfig: null,
+                  branch: client.branch,
+                  timelineType: 'oneTime',
+                  financialYear: financialYear,
+                  period: getPeriodFromDate(dueDate),
+                  fields: subactivity.fields ? subactivity.fields.map(field => ({
+                    fileName: field.name,
+                    fieldType: field.type,
+                    fieldValue: null // Empty value as requested
+                  })) : []
+                });
+                
+                timelinePromises.push(timeline.save());
+              }
             }
           }
         }

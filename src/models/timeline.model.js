@@ -102,6 +102,12 @@ const timelineSchema = mongoose.Schema(
       ref: 'Branch',
       required: true,
     },
+    state: {
+      type: String,
+      required: false,
+      trim: true,
+      description: 'State for GST-related timelines (optional, only for GST timelines with multiple states)'
+    },
   },
   {
     timestamps: true,
@@ -129,6 +135,8 @@ timelineSchema.index({ branch: 1, status: 1 });
 timelineSchema.index({ activity: 1, status: 1 });
 timelineSchema.index({ frequency: 1, status: 1 });
 timelineSchema.index({ dueDate: 1, status: 1 });
+timelineSchema.index({ state: 1 }); // For filtering GST timelines by state
+timelineSchema.index({ client: 1, state: 1 }); // For client-specific state filtering
 // Additional indexes for dashboard performance
 timelineSchema.index({ branch: 1, frequency: 1, status: 1 }); // For frequency stats
 timelineSchema.index({ startDate: 1, branch: 1 }); // For assigned task counts
