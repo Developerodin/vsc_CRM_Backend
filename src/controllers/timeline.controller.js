@@ -33,7 +33,8 @@ const getTimelines = catchAsync(async (req, res) => {
     'startDate',
     'endDate',
     'completedAt',
-    'financialYear'
+    'financialYear',
+    'state' // For filtering GST timelines by state
   ]);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   

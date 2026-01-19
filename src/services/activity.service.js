@@ -4,11 +4,56 @@ import Activity from '../models/activity.model.js';
 import cache from '../utils/cache.js';
 
 /**
+ * Normalize frequencyConfig to ensure yearlyMonth is a string (not array)
+ * @param {Object} frequencyConfig - The frequency configuration object
+ * @returns {Object} - Normalized frequency configuration
+ */
+const normalizeFrequencyConfig = (frequencyConfig) => {
+  if (!frequencyConfig || typeof frequencyConfig !== 'object') {
+    return frequencyConfig;
+  }
+  
+  const normalized = { ...frequencyConfig };
+  
+  // Convert yearlyMonth array to string if needed (model expects string)
+  if (normalized.yearlyMonth && Array.isArray(normalized.yearlyMonth)) {
+    normalized.yearlyMonth = normalized.yearlyMonth.length > 0 ? normalized.yearlyMonth[0] : null;
+  }
+  
+  return normalized;
+};
+
+/**
+ * Normalize subactivity data, including nested frequencyConfig
+ * @param {Object} subactivity - The subactivity object
+ * @returns {Object} - Normalized subactivity
+ */
+const normalizeSubactivity = (subactivity) => {
+  if (!subactivity || typeof subactivity !== 'object') {
+    return subactivity;
+  }
+  
+  const normalized = { ...subactivity };
+  
+  // Normalize frequencyConfig if present
+  if (normalized.frequencyConfig) {
+    normalized.frequencyConfig = normalizeFrequencyConfig(normalized.frequencyConfig);
+  }
+  
+  return normalized;
+};
+
+/**
  * Create an activity
  * @param {Object} activityBody
  * @returns {Promise<Activity>}
  */
 const createActivity = async (activityBody) => {
+  // Normalize subactivities if present
+  if (activityBody.subactivities && Array.isArray(activityBody.subactivities)) {
+    activityBody.subactivities = activityBody.subactivities.map(normalizeSubactivity);
+  }
+  
   const activity = await Activity.create(activityBody);
   return activity;
 };
@@ -88,17 +133,20 @@ const updateActivityById = async (activityId, updateBody) => {
     const processedSubactivities = [];
     
     subactivities.forEach(subactivity => {
-      if (subactivity._id) {
+      // Normalize subactivity data first
+      const normalizedSubactivity = normalizeSubactivity(subactivity);
+      
+      if (normalizedSubactivity._id) {
         // This is an existing subactivity - find and update it
-        const existingSubactivity = activity.subactivities.id(subactivity._id);
+        const existingSubactivity = activity.subactivities.id(normalizedSubactivity._id);
         if (existingSubactivity) {
           // Update existing subactivity
-          Object.assign(existingSubactivity, subactivity);
+          Object.assign(existingSubactivity, normalizedSubactivity);
           processedSubactivities.push(existingSubactivity);
         }
       } else {
         // This is a new subactivity - add it
-        processedSubactivities.push(subactivity);
+        processedSubactivities.push(normalizedSubactivity);
       }
     });
     
@@ -142,9 +190,19 @@ const bulkImportActivities = async (activities) => {
     errors: [],
   };
 
+  // Normalize all activities first
+  const normalizedActivities = activities.map(activity => {
+    const normalized = { ...activity };
+    // Normalize subactivities if present
+    if (normalized.subactivities && Array.isArray(normalized.subactivities)) {
+      normalized.subactivities = normalized.subactivities.map(normalizeSubactivity);
+    }
+    return normalized;
+  });
+  
   // Separate activities for creation and update
-  const toCreate = activities.filter((activity) => !activity.id);
-  const toUpdate = activities.filter((activity) => activity.id);
+  const toCreate = normalizedActivities.filter((activity) => !activity.id);
+  const toUpdate = normalizedActivities.filter((activity) => activity.id);
 
   // Handle bulk creation
   if (toCreate.length > 0) {
@@ -228,7 +286,9 @@ const createSubactivity = async (activityId, subactivityBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
   }
   
-  activity.subactivities.push(subactivityBody);
+  // Normalize subactivity data before adding
+  const normalizedSubactivity = normalizeSubactivity(subactivityBody);
+  activity.subactivities.push(normalizedSubactivity);
   await activity.save();
   return activity;
 };
@@ -251,7 +311,9 @@ const updateSubactivity = async (activityId, subactivityId, updateBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Subactivity not found');
   }
   
-  Object.assign(subactivity, updateBody);
+  // Normalize update body before applying
+  const normalizedUpdateBody = normalizeSubactivity(updateBody);
+  Object.assign(subactivity, normalizedUpdateBody);
   await activity.save();
   return activity;
 };

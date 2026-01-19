@@ -1,4 +1,5 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import { Client, Activity, FileManager, Timeline, Task, Branch } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
@@ -330,10 +331,28 @@ const queryClients = async (filter, options, user) => {
  * @returns {Promise<Client>}
  */
 const getClientById = async (id) => {
-  const client = await Client.findById(id);
+  if (!id) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Client ID is required');
+  }
+  
+  // Convert to string for consistent handling
+  const idString = id.toString();
+  
+  // Validate ObjectId format using mongoose
+  if (!mongoose.Types.ObjectId.isValid(idString)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid client ID format');
+  }
+  
+  // Convert to ObjectId for query
+  const objectId = new mongoose.Types.ObjectId(idString);
+  
+  // Try to find the client
+  const client = await Client.findById(objectId);
+  
   if (!client) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
   }
+  
   return client;
 };
 
@@ -488,13 +507,19 @@ const updateClientStatus = async (clientId, status, user = null) => {
 /**
  * Delete client by id
  * @param {ObjectId} clientId
+ * @param {Object} user - User object with role information (optional)
  * @returns {Promise<Client>}
  */
-const deleteClientById = async (clientId) => {
+const deleteClientById = async (clientId, user = null) => {
   const client = await getClientById(clientId);
-  if (!client) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+  
+  // Validate branch access if user is provided
+  if (user && user.role) {
+    if (!hasBranchAccess(user.role, client.branch)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this client');
+    }
   }
+  
   await client.deleteOne();
   return client;
 };
@@ -876,198 +901,8 @@ const createClientSubfolder = async (clientName, branchId, clientId = null) => {
   }
 };
 
-// Helper function to create timelines for client activities
-const createClientTimelines = async (client, activities) => {
-  try {
-
-    if (!activities || activities.length === 0) {
-
-      return [];
-    }
-
-    const timelinePromises = [];
-    const createdTimelines = [];
-    
-    for (const activityItem of activities) {
-      try {
-
-        // Get the full activity document to check subactivities
-        const activity = await Activity.findById(activityItem.activity);
-        
-        if (!activity) {
-
-          continue;
-        }
-        
-        if (activity && activity.subactivities && activity.subactivities.length > 0) {
-          for (const subactivity of activity.subactivities) {
-            // Check if specific subactivity is assigned to this client
-            const isAssignedSubactivity = activityItem.subactivity && 
-              activityItem.subactivity.toString() === subactivity._id.toString();
-            
-            // If no specific subactivity is assigned, or this is the assigned one
-            if (!activityItem.subactivity || isAssignedSubactivity) {
-              if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
-                // Create recurring timeline for subactivities with frequency
-                const startDate = new Date();
-                const endDate = new Date();
-                endDate.setFullYear(endDate.getFullYear() + 1);
-                
-                // Generate period based on frequency
-                let period = null;
-                let dueDate = null;
-                const currentDate = new Date();
-                const currentYear = currentDate.getFullYear();
-                const financialYearStart = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1;
-                const financialYearEnd = financialYearStart + 1;
-                const financialYear = `${financialYearStart}-${financialYearEnd}`;
-                
-                switch (subactivity.frequency) {
-                  case 'Monthly':
-                    const monthIndex = currentDate.getMonth();
-                    const monthName = getMonthName(monthIndex);
-                    const periodYear = monthIndex >= 3 ? financialYearStart : financialYearEnd;
-                    period = `${monthName}-${periodYear}`;
-                    dueDate = new Date(periodYear, monthIndex, 1);
-                    break;
-                  case 'Quarterly':
-                    const quarter = getQuarterFromMonth(currentDate.getMonth());
-                    period = `${quarter}-${financialYear}`;
-                    dueDate = new Date(financialYearStart, getQuarterStartMonth(quarter), 1);
-                    break;
-                  case 'Yearly':
-                    period = financialYear;
-                    dueDate = new Date(financialYearStart, 3, 1); // April 1st
-                    break;
-                  default:
-                    period = financialYear;
-                    dueDate = new Date(financialYearStart, 3, 1);
-                }
-                
-                const timeline = new Timeline({
-                  activity: activity._id,
-                  subactivity: {
-                    _id: subactivity._id,
-                    name: subactivity.name,
-                    frequency: subactivity.frequency,
-                    frequencyConfig: subactivity.frequencyConfig,
-                    fields: subactivity.fields
-                  },
-                  client: client._id,
-                  status: 'pending',
-                  startDate: startDate,
-                  endDate: endDate,
-                  period: period,
-                  dueDate: dueDate,
-                  frequency: subactivity.frequency,
-                  frequencyConfig: subactivity.frequencyConfig,
-                  branch: client.branch,
-                  timelineType: 'recurring'
-                });
-                
-                const savePromise = timeline.save().then(savedTimeline => {
-
-                  createdTimelines.push(savedTimeline);
-                  return savedTimeline;
-                }).catch(error => {
-
-                  throw error;
-                });
-                timelinePromises.push(savePromise);
-              } else {
-                // Create one-time timeline for subactivities without frequency
-                const startDate = new Date();
-                const endDate = new Date();
-                endDate.setDate(endDate.getDate() + 30); // Due in 30 days
-                
-                // Generate period for one-time timeline
-                const currentDate = new Date();
-                const currentYear = currentDate.getFullYear();
-                const monthName = getMonthName(currentDate.getMonth());
-                const period = `${monthName}-${currentYear}`;
-                
-                const timeline = new Timeline({
-                  activity: activity._id,
-                  subactivity: {
-                    _id: subactivity._id,
-                    name: subactivity.name,
-                    frequency: subactivity.frequency,
-                    frequencyConfig: subactivity.frequencyConfig,
-                    fields: subactivity.fields
-                  },
-                  client: client._id,
-                  status: 'pending',
-                  startDate: startDate,
-                  endDate: endDate,
-                  period: period,
-                  dueDate: startDate,
-                  frequency: 'OneTime',
-                  frequencyConfig: null,
-                  branch: client.branch,
-                  timelineType: 'oneTime'
-                });
-                
-                const savePromise = timeline.save().then(savedTimeline => {
-
-                  createdTimelines.push(savedTimeline);
-                  return savedTimeline;
-                }).catch(error => {
-
-                  throw error;
-                });
-                timelinePromises.push(savePromise);
-              }
-            }
-          }
-        } else if (activity && (!activity.subactivities || activity.subactivities.length === 0)) {
-          // Handle legacy activities without subactivities - create one-time timeline
-          const startDate = new Date();
-          const endDate = new Date();
-          endDate.setDate(endDate.getDate() + 30); // Due in 30 days
-          
-          // Generate period for legacy activity timeline
-          const currentDate = new Date();
-          const currentYear = currentDate.getFullYear();
-          const monthName = getMonthName(currentDate.getMonth());
-          const period = `${monthName}-${currentYear}`;
-          
-          const timeline = new Timeline({
-            activity: activity._id,
-            subactivity: null,
-            client: client._id,
-            status: 'pending',
-            startDate: startDate,
-            endDate: endDate,
-            period: period,
-            dueDate: startDate,
-            frequency: 'OneTime',
-            frequencyConfig: null,
-            branch: client.branch,
-            timelineType: 'oneTime'
-          });
-          
-          timelinePromises.push(timeline.save());
-        }
-      } catch (error) {
-        // Continue with other activities even if one fails
-      }
-    }
-    
-    // Wait for all timelines to be created
-    if (timelinePromises.length > 0) {
-
-      await Promise.all(timelinePromises);
-
-    } else {
-
-    }
-    
-    return createdTimelines;
-  } catch (error) {
-
-    throw error;
-  }
-};
+// Note: createClientTimelines function removed - using createTimelinesFromService from timeline.service.js instead
+// This ensures consistent timeline creation logic including GST multiple timeline support
 
 const bulkImportClients = async (clients) => {
 
@@ -2103,8 +1938,8 @@ const reprocessExistingClients = async (filter = {}, batchSize = 50) => {
             
             // Create timelines if activities exist
             if (client.activities && client.activities.length > 0) {
-              await createClientTimelines(client, client.activities);
-              results.timelinesCreated++;
+              const timelinesCreated = await createTimelinesFromService(client, client.activities);
+              results.timelinesCreated += timelinesCreated.length;
             }
             
             results.processed++;

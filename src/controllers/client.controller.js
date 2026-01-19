@@ -60,7 +60,7 @@ const updateClientStatus = catchAsync(async (req, res) => {
 });
 
 const deleteClient = catchAsync(async (req, res) => {
-  await clientService.deleteClientById(req.params.clientId);
+  await clientService.deleteClientById(req.params.clientId, req.user);
   res.status(httpStatus.NO_CONTENT).send();
 });
 
