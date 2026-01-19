@@ -151,6 +151,19 @@ const clientSchema = mongoose.Schema(
       default: {},
       description: 'Additional flexible data storage for client information'
     },
+    category: {
+      type: String,
+      required: true,
+      enum: ['A', 'B', 'C'],
+      default: 'C',
+      description: 'Client category classification'
+    },
+    turnover: {
+      type: String,
+      required: false,
+      trim: true,
+      description: 'Annual turnover/revenue of the client'
+    },
     activities: [{
       activity: {
         type: mongoose.Schema.Types.ObjectId,
@@ -209,6 +222,8 @@ clientSchema.index({ status: 1 });
 clientSchema.index({ businessType: 1 });
 clientSchema.index({ pan: 1 });
 clientSchema.index({ district: 1 });
+clientSchema.index({ category: 1 }); // Index for category field
+clientSchema.index({ turnover: 1 }); // Index for turnover field
 clientSchema.index({ 'gstNumbers.gstNumber': 1 });
 clientSchema.index({ 'gstNumbers.state': 1 });
 clientSchema.index({ branch: 1, status: 1 }); // Compound index for branch + status queries

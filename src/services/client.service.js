@@ -78,7 +78,7 @@ const getQuarterStartMonth = (quarter) => {
 
 /**
  * Helper function to automatically detect and add compliance activities based on client data
- * This function checks for PAN, TAN, and GST numbers and automatically adds corresponding activities
+ * This function checks for PAN, TAN, GST numbers, and CIN with entity type and automatically adds corresponding activities
  * @param {Object} clientBody - Client data object
  * @param {Array} existingActivities - Existing activities array (for updates)
  * @returns {Promise<Array>} - Updated activities array with auto-detected compliance activities
@@ -97,75 +97,139 @@ const autoDetectComplianceActivities = async (clientBody, existingActivities = [
   });
 
   try {
-    // Find Direct Taxation activity
-    const directTaxationActivity = await Activity.findOne({ name: 'Direct Taxation' });
-    // Find Indirect Taxation activity
-    const indirectTaxationActivity = await Activity.findOne({ name: 'Indirect Taxation' });
-
-    if (!directTaxationActivity && !indirectTaxationActivity) {
-      // Activities don't exist yet, return existing activities
-      return activities;
-    }
-
-    // Check for PAN number - add Income Tax Return subactivity
-    if (clientBody.pan && directTaxationActivity) {
-      const incomeTaxReturnSubactivity = (directTaxationActivity.subactivities && Array.isArray(directTaxationActivity.subactivities)) 
-        ? directTaxationActivity.subactivities.find(sub => sub.name === 'Income Tax Return')
-        : null;
+    // 1. Check for PAN number - add Income Tax > Income Tax Return
+    if (clientBody.pan) {
+      const incomeTaxActivity = await Activity.findOne({ name: 'Income Tax' });
       
-      if (incomeTaxReturnSubactivity) {
-        const key = `${directTaxationActivity._id.toString()}_${incomeTaxReturnSubactivity._id.toString()}`;
-        if (!existingActivityMap.has(key)) {
-          activities.push({
-            activity: directTaxationActivity._id,
-            subactivity: incomeTaxReturnSubactivity._id,
-            assignedDate: new Date(),
-            notes: 'Auto-detected based on PAN number',
-            status: 'active'
-          });
-          existingActivityMap.set(key, true);
+      if (incomeTaxActivity) {
+        const incomeTaxReturnSubactivity = (incomeTaxActivity.subactivities && Array.isArray(incomeTaxActivity.subactivities)) 
+          ? incomeTaxActivity.subactivities.find(sub => sub.name === 'Income Tax Return')
+          : null;
+        
+        if (incomeTaxReturnSubactivity) {
+          const key = `${incomeTaxActivity._id.toString()}_${incomeTaxReturnSubactivity._id.toString()}`;
+          if (!existingActivityMap.has(key)) {
+            activities.push({
+              activity: incomeTaxActivity._id,
+              subactivity: incomeTaxReturnSubactivity._id,
+              assignedDate: new Date(),
+              notes: 'Auto-detected based on PAN number',
+              status: 'active'
+            });
+            existingActivityMap.set(key, true);
+          }
         }
       }
     }
 
-    // Check for TAN number - add TDS Return subactivity
-    if (clientBody.tanNumber && directTaxationActivity) {
-      const tdsReturnSubactivity = (directTaxationActivity.subactivities && Array.isArray(directTaxationActivity.subactivities))
-        ? directTaxationActivity.subactivities.find(sub => sub.name === 'TDS Return')
-        : null;
+    // 2. Check for TAN number - add TDS > 24Q, 26Q, 27Q, 27EQ
+    if (clientBody.tanNumber) {
+      const tdsActivity = await Activity.findOne({ name: 'TDS' });
       
-      if (tdsReturnSubactivity) {
-        const key = `${directTaxationActivity._id.toString()}_${tdsReturnSubactivity._id.toString()}`;
-        if (!existingActivityMap.has(key)) {
-          activities.push({
-            activity: directTaxationActivity._id,
-            subactivity: tdsReturnSubactivity._id,
-            assignedDate: new Date(),
-            notes: 'Auto-detected based on TAN number',
-            status: 'active'
-          });
-          existingActivityMap.set(key, true);
-        }
+      if (tdsActivity && tdsActivity.subactivities && Array.isArray(tdsActivity.subactivities)) {
+        const tdsSubactivities = ['24Q', '26Q', '27Q', '27EQ'];
+        
+        tdsSubactivities.forEach(subactivityName => {
+          const subactivity = tdsActivity.subactivities.find(sub => sub.name === subactivityName);
+          
+          if (subactivity) {
+            const key = `${tdsActivity._id.toString()}_${subactivity._id.toString()}`;
+            if (!existingActivityMap.has(key)) {
+              activities.push({
+                activity: tdsActivity._id,
+                subactivity: subactivity._id,
+                assignedDate: new Date(),
+                notes: `Auto-detected based on TAN number`,
+                status: 'active'
+              });
+              existingActivityMap.set(key, true);
+            }
+          }
+        });
       }
     }
 
-    // Check for GST numbers - add GSTR subactivity
-    if (clientBody.gstNumbers && Array.isArray(clientBody.gstNumbers) && clientBody.gstNumbers.length > 0 && indirectTaxationActivity) {
-      const gstrSubactivity = (indirectTaxationActivity.subactivities && Array.isArray(indirectTaxationActivity.subactivities))
-        ? indirectTaxationActivity.subactivities.find(sub => sub.name === 'GSTR')
-        : null;
+    // 3. Check for GST numbers - add GST > GSTR-1, GSTR-3B
+    if (clientBody.gstNumbers && Array.isArray(clientBody.gstNumbers) && clientBody.gstNumbers.length > 0) {
+      const gstActivity = await Activity.findOne({ name: 'GST' });
       
-      if (gstrSubactivity) {
-        const key = `${indirectTaxationActivity._id.toString()}_${gstrSubactivity._id.toString()}`;
-        if (!existingActivityMap.has(key)) {
-          activities.push({
-            activity: indirectTaxationActivity._id,
-            subactivity: gstrSubactivity._id,
-            assignedDate: new Date(),
-            notes: 'Auto-detected based on GST number(s)',
-            status: 'active'
+      if (gstActivity && gstActivity.subactivities && Array.isArray(gstActivity.subactivities)) {
+        const gstSubactivities = ['GSTR-1', 'GSTR-3B'];
+        
+        gstSubactivities.forEach(subactivityName => {
+          const subactivity = gstActivity.subactivities.find(sub => sub.name === subactivityName);
+          
+          if (subactivity) {
+            const key = `${gstActivity._id.toString()}_${subactivity._id.toString()}`;
+            if (!existingActivityMap.has(key)) {
+              activities.push({
+                activity: gstActivity._id,
+                subactivity: subactivity._id,
+                assignedDate: new Date(),
+                notes: `Auto-detected based on GST number(s)`,
+                status: 'active'
+              });
+              existingActivityMap.set(key, true);
+            }
+          }
+        });
+      }
+    }
+
+    // 4. Check for CIN number with entity type conditions
+    if (clientBody.cinNumber && clientBody.entityType) {
+      const entityType = clientBody.entityType.trim();
+      
+      // Check for Private Limited
+      if (entityType === 'Private Limited') {
+        const rocPvtLtdActivity = await Activity.findOne({ name: 'ROC - PVT. LTD.' });
+        
+        if (rocPvtLtdActivity && rocPvtLtdActivity.subactivities && Array.isArray(rocPvtLtdActivity.subactivities)) {
+          const rocPvtSubactivities = ['AOC-4', 'MGT-7/7A', 'DPT-3'];
+          
+          rocPvtSubactivities.forEach(subactivityName => {
+            const subactivity = rocPvtLtdActivity.subactivities.find(sub => sub.name === subactivityName);
+            
+            if (subactivity) {
+              const key = `${rocPvtLtdActivity._id.toString()}_${subactivity._id.toString()}`;
+              if (!existingActivityMap.has(key)) {
+                activities.push({
+                  activity: rocPvtLtdActivity._id,
+                  subactivity: subactivity._id,
+                  assignedDate: new Date(),
+                  notes: `Auto-detected based on CIN number and Private Limited entity type`,
+                  status: 'active'
+                });
+                existingActivityMap.set(key, true);
+              }
+            }
           });
-          existingActivityMap.set(key, true);
+        }
+      }
+      // Check for LLP
+      else if (entityType === 'LLP') {
+        const rocLlpActivity = await Activity.findOne({ name: 'ROC - LLP' });
+        
+        if (rocLlpActivity && rocLlpActivity.subactivities && Array.isArray(rocLlpActivity.subactivities)) {
+          const rocLlpSubactivities = ['FORM-8', 'FORM-11'];
+          
+          rocLlpSubactivities.forEach(subactivityName => {
+            const subactivity = rocLlpActivity.subactivities.find(sub => sub.name === subactivityName);
+            
+            if (subactivity) {
+              const key = `${rocLlpActivity._id.toString()}_${subactivity._id.toString()}`;
+              if (!existingActivityMap.has(key)) {
+                activities.push({
+                  activity: rocLlpActivity._id,
+                  subactivity: subactivity._id,
+                  assignedDate: new Date(),
+                  notes: `Auto-detected based on CIN number and LLP entity type`,
+                  status: 'active'
+                });
+                existingActivityMap.set(key, true);
+              }
+            }
+          });
         }
       }
     }
@@ -190,6 +254,13 @@ const createClient = async (clientBody, user = null) => {
     if (!hasBranchAccess(user.role, clientBody.branch)) {
       throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
     }
+  }
+
+  // Validate and set default category if not provided
+  if (!clientBody.category) {
+    clientBody.category = 'C';
+  } else if (!['A', 'B', 'C'].includes(clientBody.category)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid category. Allowed values are: A, B, C');
   }
 
   // Process GST numbers if provided
@@ -290,6 +361,15 @@ const queryClients = async (filter, options, user) => {
     // If pan filter exists, convert it to case-insensitive regex
     if (mongoFilter.pan) {
       mongoFilter.pan = { $regex: mongoFilter.pan, $options: 'i' };
+    }
+    
+    // If category filter exists, validate and apply exact match
+    if (mongoFilter.category) {
+      // Validate category value
+      if (!['A', 'B', 'C'].includes(mongoFilter.category)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid category filter. Allowed values are: A, B, C');
+      }
+      // Category is already set correctly, no need to modify
     }
   }
 
@@ -404,6 +484,13 @@ const updateClientById = async (clientId, updateBody, user = null) => {
   if (user && user.role && updateBody.branch) {
     if (!hasBranchAccess(user.role, updateBody.branch)) {
       throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+  }
+
+  // Validate category if provided
+  if (updateBody.category !== undefined) {
+    if (!['A', 'B', 'C'].includes(updateBody.category)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid category. Allowed values are: A, B, C');
     }
   }
 
@@ -949,6 +1036,18 @@ const bulkImportClients = async (clients) => {
             
             let processedClient = { ...client };
             
+            // Validate and set default category if not provided
+            if (!processedClient.category) {
+              processedClient.category = 'C';
+            } else if (!['A', 'B', 'C'].includes(processedClient.category)) {
+              results.errors.push({
+                index: i + batchIndex,
+                error: 'Invalid category. Allowed values are: A, B, C',
+                data: client
+              });
+              return null; // Skip this client
+            }
+            
             // Auto-detect and add compliance activities based on PAN, TAN, and GST numbers
             const autoDetectedActivities = await autoDetectComplianceActivities(processedClient, []);
             
@@ -1297,6 +1396,15 @@ const bulkImportClients = async (clients) => {
               }
             }
 
+            // Validate category if provided
+            if (client.category !== undefined && !['A', 'B', 'C'].includes(client.category)) {
+              results.errors.push({
+                index: i,
+                error: 'Invalid category. Allowed values are: A, B, C',
+                data: client
+              });
+            }
+
             return {
               updateOne: {
                 filter: { _id: client.id },
@@ -1324,6 +1432,10 @@ const bulkImportClients = async (clients) => {
                     iecCode: client.iecCode,
                     entityType: client.entityType,
                     metadata: client.metadata,
+                    // Update category if provided
+                    ...(client.category && { category: client.category }),
+                    // Update turnover if provided
+                    ...(client.turnover !== undefined && { turnover: client.turnover }),
                     // Update activities (includes auto-detected compliance activities)
                     ...(activities.length > 0 && { activities }),
                   },

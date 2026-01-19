@@ -29,6 +29,8 @@ const createClient = {
     iecCode: Joi.string().pattern(/^[0-9]{10}$/),
     entityType: Joi.string(),
     metadata: Joi.object(),
+    category: Joi.string().valid('A', 'B', 'C').default('C'),
+    turnover: Joi.string(),
     branch: Joi.string().custom(objectId).required(),
     sortOrder: Joi.number(),
     // Add activities with subactivity support
@@ -67,6 +69,8 @@ const getClients = {
     udyamNumber: Joi.string().allow('', null),
     iecCode: Joi.string().allow('', null),
     entityType: Joi.string().allow('', null),
+    category: Joi.string().valid('A', 'B', 'C').allow('', null),
+    turnover: Joi.string().allow('', null),
     branch: Joi.string().custom(objectId),
     search: Joi.string().allow('', null),
     sortBy: Joi.string(),
@@ -113,6 +117,8 @@ const updateClient = {
       iecCode: Joi.string().pattern(/^[0-9]{10}$/),
       entityType: Joi.string(),
       metadata: Joi.object(),
+      category: Joi.string().valid('A', 'B', 'C'),
+      turnover: Joi.string(),
       branch: Joi.string().custom(objectId),
       sortOrder: Joi.number(),
       // Add activities with subactivity support
@@ -175,6 +181,8 @@ const bulkImportClients = {
           iecCode: Joi.string().pattern(/^[0-9]{10}$/),
           entityType: Joi.string(),
           metadata: Joi.object(),
+          category: Joi.string().valid('A', 'B', 'C').default('C'),
+          turnover: Joi.string(),
           branch: Joi.string().custom(objectId).required(),
           sortOrder: Joi.number(),
           // Add activities with subactivity support
