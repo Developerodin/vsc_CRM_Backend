@@ -76,6 +76,108 @@ const getQuarterStartMonth = (quarter) => {
 };
 
 /**
+ * Helper function to automatically detect and add compliance activities based on client data
+ * This function checks for PAN, TAN, and GST numbers and automatically adds corresponding activities
+ * @param {Object} clientBody - Client data object
+ * @param {Array} existingActivities - Existing activities array (for updates)
+ * @returns {Promise<Array>} - Updated activities array with auto-detected compliance activities
+ */
+const autoDetectComplianceActivities = async (clientBody, existingActivities = []) => {
+  const activities = existingActivities.length > 0 ? [...existingActivities] : (clientBody.activities || []);
+  
+  // Create a map of existing activities to avoid duplicates
+  const existingActivityMap = new Map();
+  activities.forEach(act => {
+    const activityId = (act.activity && act.activity.toString) ? act.activity.toString() : act.activity;
+    const subactivityId = act.subactivity ? 
+      (act.subactivity._id ? act.subactivity._id.toString() : act.subactivity.toString()) : null;
+    const key = `${activityId}_${subactivityId || 'none'}`;
+    existingActivityMap.set(key, act);
+  });
+
+  try {
+    // Find Direct Taxation activity
+    const directTaxationActivity = await Activity.findOne({ name: 'Direct Taxation' });
+    // Find Indirect Taxation activity
+    const indirectTaxationActivity = await Activity.findOne({ name: 'Indirect Taxation' });
+
+    if (!directTaxationActivity && !indirectTaxationActivity) {
+      // Activities don't exist yet, return existing activities
+      return activities;
+    }
+
+    // Check for PAN number - add Income Tax Return subactivity
+    if (clientBody.pan && directTaxationActivity) {
+      const incomeTaxReturnSubactivity = (directTaxationActivity.subactivities && Array.isArray(directTaxationActivity.subactivities)) 
+        ? directTaxationActivity.subactivities.find(sub => sub.name === 'Income Tax Return')
+        : null;
+      
+      if (incomeTaxReturnSubactivity) {
+        const key = `${directTaxationActivity._id.toString()}_${incomeTaxReturnSubactivity._id.toString()}`;
+        if (!existingActivityMap.has(key)) {
+          activities.push({
+            activity: directTaxationActivity._id,
+            subactivity: incomeTaxReturnSubactivity._id,
+            assignedDate: new Date(),
+            notes: 'Auto-detected based on PAN number',
+            status: 'active'
+          });
+          existingActivityMap.set(key, true);
+        }
+      }
+    }
+
+    // Check for TAN number - add TDS Return subactivity
+    if (clientBody.tanNumber && directTaxationActivity) {
+      const tdsReturnSubactivity = (directTaxationActivity.subactivities && Array.isArray(directTaxationActivity.subactivities))
+        ? directTaxationActivity.subactivities.find(sub => sub.name === 'TDS Return')
+        : null;
+      
+      if (tdsReturnSubactivity) {
+        const key = `${directTaxationActivity._id.toString()}_${tdsReturnSubactivity._id.toString()}`;
+        if (!existingActivityMap.has(key)) {
+          activities.push({
+            activity: directTaxationActivity._id,
+            subactivity: tdsReturnSubactivity._id,
+            assignedDate: new Date(),
+            notes: 'Auto-detected based on TAN number',
+            status: 'active'
+          });
+          existingActivityMap.set(key, true);
+        }
+      }
+    }
+
+    // Check for GST numbers - add GSTR subactivity
+    if (clientBody.gstNumbers && Array.isArray(clientBody.gstNumbers) && clientBody.gstNumbers.length > 0 && indirectTaxationActivity) {
+      const gstrSubactivity = (indirectTaxationActivity.subactivities && Array.isArray(indirectTaxationActivity.subactivities))
+        ? indirectTaxationActivity.subactivities.find(sub => sub.name === 'GSTR')
+        : null;
+      
+      if (gstrSubactivity) {
+        const key = `${indirectTaxationActivity._id.toString()}_${gstrSubactivity._id.toString()}`;
+        if (!existingActivityMap.has(key)) {
+          activities.push({
+            activity: indirectTaxationActivity._id,
+            subactivity: gstrSubactivity._id,
+            assignedDate: new Date(),
+            notes: 'Auto-detected based on GST number(s)',
+            status: 'active'
+          });
+          existingActivityMap.set(key, true);
+        }
+      }
+    }
+  } catch (error) {
+    // If there's an error finding activities, just return existing activities
+    // Don't fail the entire operation
+    console.error('Error auto-detecting compliance activities:', error);
+  }
+
+  return activities;
+};
+
+/**
  * Create a client
  * @param {Object} clientBody
  * @param {Object} user - User object with role information (optional)
@@ -102,6 +204,9 @@ const createClient = async (clientBody, user = null) => {
     // Replace the gstNumbers field with processed result
     clientBody.gstNumbers = gstResult.gstNumbers;
   }
+
+  // Auto-detect and add compliance activities based on PAN, TAN, and GST numbers
+  clientBody.activities = await autoDetectComplianceActivities(clientBody, clientBody.activities || []);
   
   const client = await Client.create(clientBody);
   return client;
@@ -122,7 +227,7 @@ const queryClients = async (filter, options, user) => {
   const cacheKey = cache.generateKey('clients', { 
     filter: JSON.stringify(filter),
     options: JSON.stringify(options),
-    userId: user?._id?.toString() || 'anonymous'
+    userId: (user && user._id && user._id.toString) ? user._id.toString() : 'anonymous'
   });
   
   const cachedResult = cache.get(cacheKey);
@@ -295,6 +400,50 @@ const updateClientById = async (clientId, updateBody, user = null) => {
     
     // Replace the gstNumbers field with processed result
     updateBody.gstNumbers = gstResult.gstNumbers;
+  }
+
+  // Merge client data with update body to check for compliance fields
+  const mergedClientData = {
+    pan: updateBody.pan !== undefined ? updateBody.pan : client.pan,
+    tanNumber: updateBody.tanNumber !== undefined ? updateBody.tanNumber : client.tanNumber,
+    gstNumbers: updateBody.gstNumbers !== undefined ? updateBody.gstNumbers : client.gstNumbers
+  };
+
+  // Auto-detect and add compliance activities based on PAN, TAN, and GST numbers
+  // Use existing client activities as base, and merge with any activities in updateBody
+  const existingActivities = client.activities || [];
+  const updateActivities = updateBody.activities !== undefined ? updateBody.activities : existingActivities;
+  
+  // Auto-detect compliance activities and merge with existing/update activities
+  const autoDetectedActivities = await autoDetectComplianceActivities(mergedClientData, existingActivities);
+  
+  // Merge auto-detected activities with update activities (update activities take precedence)
+  const finalActivities = [...autoDetectedActivities];
+  
+  // Add update activities that aren't already in finalActivities
+  if (updateActivities && Array.isArray(updateActivities)) {
+    updateActivities.forEach(updateAct => {
+      const activityId = (updateAct.activity && updateAct.activity.toString) ? updateAct.activity.toString() : updateAct.activity;
+      const subactivityId = updateAct.subactivity ? 
+        (updateAct.subactivity._id ? updateAct.subactivity._id.toString() : updateAct.subactivity.toString()) : null;
+      const key = `${activityId}_${subactivityId || 'none'}`;
+      
+      const exists = finalActivities.some(act => {
+        const actId = (act.activity && act.activity.toString) ? act.activity.toString() : act.activity;
+        const actSubId = act.subactivity ? 
+          (act.subactivity._id ? act.subactivity._id.toString() : act.subactivity.toString()) : null;
+        return actId === activityId && (actSubId || 'none') === (subactivityId || 'none');
+      });
+      
+      if (!exists) {
+        finalActivities.push(updateAct);
+      }
+    });
+  }
+  
+  // Only update activities if they were explicitly provided or auto-detected new ones
+  if (updateBody.activities !== undefined || finalActivities.length !== existingActivities.length) {
+    updateBody.activities = finalActivities;
   }
   
   Object.assign(client, updateBody);
@@ -965,9 +1114,55 @@ const bulkImportClients = async (clients) => {
             
             let processedClient = { ...client };
             
-            // Process activities if provided
-            if (client.activities && Array.isArray(client.activities)) {
+            // Auto-detect and add compliance activities based on PAN, TAN, and GST numbers
+            const autoDetectedActivities = await autoDetectComplianceActivities(processedClient, []);
+            
+            // Merge auto-detected activities with existing activities
+            const existingActivities = client.activities || [];
+            const mergedActivities = [...autoDetectedActivities];
+            
+            // Add existing activities that aren't already in mergedActivities
+            existingActivities.forEach(existingAct => {
+              const activityId = (existingAct.activity && existingAct.activity.toString) ? existingAct.activity.toString() : existingAct.activity;
+              const subactivityId = existingAct.subactivity ? 
+                (existingAct.subactivity._id ? existingAct.subactivity._id.toString() : existingAct.subactivity.toString()) : null;
+              const key = `${activityId}_${subactivityId || 'none'}`;
+              
+              const exists = mergedActivities.some(act => {
+                const actId = (act.activity && act.activity.toString) ? act.activity.toString() : act.activity;
+                const actSubId = act.subactivity ? 
+                  (act.subactivity._id ? act.subactivity._id.toString() : act.subactivity.toString()) : null;
+                return actId === activityId && (actSubId || 'none') === (subactivityId || 'none');
+              });
+              
+              if (!exists) {
+                mergedActivities.push(existingAct);
+              }
+            });
+            
+            // Process activities (now includes auto-detected ones)
+            if (mergedActivities.length > 0) {
+              const result = await processActivitiesFromFrontend(mergedActivities);
+              if (!result.isValid) {
 
+                // Add validation errors to results
+                result.errors.forEach(error => {
+                  results.errors.push({
+                    index: i + batchIndex,
+                    error: error.message,
+                    data: { ...client, activityError: error }
+                  });
+                });
+              } else {
+
+                // Store processed activities in map for later use in timeline creation
+                // Use client name as key (branch might be string or ObjectId, so use name only for matching)
+                const clientKey = client.name.toLowerCase().trim();
+                processedActivitiesMap.set(clientKey, result.activities);
+              }
+              processedClient.activities = result.activities;
+            } else if (client.activities && Array.isArray(client.activities)) {
+              // Process original activities if no auto-detected ones
               const result = await processActivitiesFromFrontend(client.activities);
               if (!result.isValid) {
 
@@ -1155,9 +1350,66 @@ const bulkImportClients = async (clients) => {
       try {
         const updateOps = await Promise.all(
           batch.map(async (client) => {
-            // Process activities if provided
+            // Fetch existing client to merge data for auto-detection
+            let existingClient = null;
+            try {
+              existingClient = await Client.findById(client.id);
+            } catch (error) {
+              // If client not found, skip auto-detection
+            }
+
+            // Merge client data for auto-detection
+            const mergedClientData = {
+              pan: client.pan !== undefined ? client.pan : (existingClient && existingClient.pan ? existingClient.pan : null),
+              tanNumber: client.tanNumber !== undefined ? client.tanNumber : (existingClient && existingClient.tanNumber ? existingClient.tanNumber : null),
+              gstNumbers: client.gstNumbers !== undefined ? client.gstNumbers : (existingClient && existingClient.gstNumbers ? existingClient.gstNumbers : [])
+            };
+
+            // Auto-detect and add compliance activities
+            const existingActivities = (existingClient && existingClient.activities) ? existingClient.activities : [];
+            const autoDetectedActivities = await autoDetectComplianceActivities(mergedClientData, existingActivities);
+            
+            // Merge auto-detected activities with update activities
+            const updateActivities = client.activities && Array.isArray(client.activities) ? client.activities : [];
+            const mergedActivities = [...autoDetectedActivities];
+            
+            // Add update activities that aren't already in mergedActivities
+            updateActivities.forEach(updateAct => {
+              const activityId = (updateAct.activity && updateAct.activity.toString) ? updateAct.activity.toString() : updateAct.activity;
+              const subactivityId = updateAct.subactivity ? 
+                (updateAct.subactivity._id ? updateAct.subactivity._id.toString() : updateAct.subactivity.toString()) : null;
+              const key = `${activityId}_${subactivityId || 'none'}`;
+              
+              const exists = mergedActivities.some(act => {
+                const actId = (act.activity && act.activity.toString) ? act.activity.toString() : act.activity;
+                const actSubId = act.subactivity ? 
+                  (act.subactivity._id ? act.subactivity._id.toString() : act.subactivity.toString()) : null;
+                return actId === activityId && (actSubId || 'none') === (subactivityId || 'none');
+              });
+              
+              if (!exists) {
+                mergedActivities.push(updateAct);
+              }
+            });
+
+            // Process activities (now includes auto-detected ones)
             let activities = [];
-            if (client.activities && Array.isArray(client.activities)) {
+            if (mergedActivities.length > 0) {
+              const result = await processActivitiesFromFrontend(mergedActivities);
+              if (result.isValid) {
+                activities = result.activities;
+              } else {
+                // Add validation errors to results
+                result.errors.forEach(error => {
+                  results.errors.push({
+                    index: i,
+                    error: error.message,
+                    data: { ...client, activityError: error }
+                  });
+                });
+              }
+            } else if (client.activities && Array.isArray(client.activities)) {
+              // Process original activities if no auto-detected ones
               const result = await processActivitiesFromFrontend(client.activities);
               if (result.isValid) {
                 activities = result.activities;
@@ -1237,7 +1489,7 @@ const bulkImportClients = async (clients) => {
                     iecCode: client.iecCode,
                     entityType: client.entityType,
                     metadata: client.metadata,
-                    // Update activities if provided (now includes subactivities)
+                    // Update activities (includes auto-detected compliance activities)
                     ...(activities.length > 0 && { activities }),
                   },
                 },
