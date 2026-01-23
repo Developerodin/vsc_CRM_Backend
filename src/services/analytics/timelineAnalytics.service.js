@@ -21,6 +21,8 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
     const clientSearch = mongoFilter.clientSearch;
     const businessType = mongoFilter.businessType;
     const entityType = mongoFilter.entityType;
+    const clientCategory = mongoFilter.clientCategory;
+    const turnover = mongoFilter.turnover;
     const activitySearch = mongoFilter.activitySearch;
     const subactivitySearch = mongoFilter.subactivitySearch;
     const globalSearch = mongoFilter.search;
@@ -28,6 +30,8 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
     delete mongoFilter.clientSearch;
     delete mongoFilter.businessType;
     delete mongoFilter.entityType;
+    delete mongoFilter.clientCategory;
+    delete mongoFilter.turnover;
     delete mongoFilter.activitySearch;
     delete mongoFilter.subactivitySearch;
     delete mongoFilter.search;
@@ -152,8 +156,8 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
       }
     }
 
-    // Handle client filters (businessType, entityType, client search) by finding client IDs first
-    if (clientSearch || businessType || entityType) {
+    // Handle client filters (businessType, entityType, clientCategory, turnover, client search) by finding client IDs first
+    if (clientSearch || businessType || entityType || clientCategory || turnover) {
       const clientFilter = {};
       
       if (clientSearch) {
@@ -173,9 +177,82 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
         clientFilter.entityType = { $regex: entityType, $options: 'i' };
       }
       
-      if (Object.keys(clientFilter).length > 0) {
-        const matchingClients = await Client.find(clientFilter).select('_id').lean();
-        const clientIds = matchingClients.map(c => c._id);
+      if (clientCategory) {
+        clientFilter.category = clientCategory;
+      }
+      
+      // Handle turnover filter separately if it's a range
+      let turnoverRange = null;
+      if (turnover) {
+        // Parse turnover range (e.g., "10000 to 500000" or "10000-500000")
+        const rangeMatch = turnover.trim().match(/^(\d+(?:\.\d+)?)\s*(?:to|-)\s*(\d+(?:\.\d+)?)$/i);
+        
+        if (rangeMatch) {
+          // Store range for aggregation query
+          turnoverRange = {
+            min: parseFloat(rangeMatch[1]),
+            max: parseFloat(rangeMatch[2])
+          };
+        } else {
+          // Single value or text search - use regex
+          clientFilter.turnover = { $regex: turnover, $options: 'i' };
+        }
+      }
+      
+      // If we have a turnover range, use aggregation pipeline
+      let matchingClients = [];
+      if (turnoverRange) {
+        const pipeline = [];
+        
+        // Add match stage for other filters
+        if (Object.keys(clientFilter).length > 0) {
+          pipeline.push({ $match: clientFilter });
+        }
+        
+        // Add stage to extract numeric value from turnover and filter by range
+        // Clean turnover string (remove commas and spaces) and convert to number
+        pipeline.push({
+          $addFields: {
+            cleanedTurnover: {
+              $replaceAll: {
+                input: { $replaceAll: { input: { $ifNull: ['$turnover', ''] }, find: ',', replacement: '' } },
+                find: ' ',
+                replacement: ''
+              }
+            }
+          }
+        });
+        
+        pipeline.push({
+          $addFields: {
+            turnoverNumber: {
+              $convert: {
+                input: '$cleanedTurnover',
+                to: 'double',
+                onError: null,
+                onNull: null
+              }
+            }
+          }
+        });
+        
+        pipeline.push({
+          $match: {
+            turnover: { $ne: null, $ne: '' },
+            turnoverNumber: { $gte: turnoverRange.min, $lte: turnoverRange.max }
+          }
+        });
+        
+        pipeline.push({ $project: { _id: 1 } });
+        
+        matchingClients = await Client.aggregate(pipeline);
+      } else if (Object.keys(clientFilter).length > 0) {
+        matchingClients = await Client.find(clientFilter).select('_id').lean();
+      }
+      
+      // Extract client IDs from matching clients
+      if (matchingClients && matchingClients.length > 0) {
+        const clientIds = matchingClients.map(c => c._id || c);
         
         if (clientIds.length > 0) {
           if (mongoFilter.client) {
@@ -203,6 +280,17 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
             hasPrevPage: false
           };
         }
+      } else if (clientSearch || businessType || entityType || clientCategory || turnover) {
+        // Client filters were applied but no clients matched
+        return {
+          results: [],
+          page: parseInt(options.page) || 1,
+          limit: parseInt(options.limit) || 50,
+          totalPages: 0,
+          totalResults: 0,
+          hasNextPage: false,
+          hasPrevPage: false
+        };
       }
     }
 

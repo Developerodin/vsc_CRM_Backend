@@ -227,6 +227,8 @@ const getAllClientsTableData = catchAsync(async (req, res) => {
       'udyamNumber',
       'iecCode',
       'entityType',
+      'clientCategory',
+      'turnover',
       'branch',
       'search',
       'activity',
@@ -455,6 +457,8 @@ const getAllTimelinesTableData = catchAsync(async (req, res) => {
       'clientSearch',
       'businessType',
       'entityType',
+      'clientCategory',
+      'turnover',
       'activity',
       'activitySearch',
       'subactivity',
@@ -640,8 +644,18 @@ const getAnalyticsInfo = catchAsync(async (req, res) => {
               udyamNumber: 'Client udyamNumber filter (optional)',
               iecCode: 'Client iecCode filter (optional)',
               entityType: 'Client entityType filter (optional)',
+              clientCategory: 'Client category filter (A, B, or C) (optional)',
+              turnover: 'Client turnover/revenue filter - single value, text search, or range (e.g., "10000 to 500000" or "10000-500000") (optional)',
               branch: 'Client branch filter (optional)',
-              search: 'Search term for name, email, phone, etc. (optional)'
+              search: 'Search term for name, email, phone, etc. (optional)',
+              activity: 'Activity ID filter (optional)',
+              activitySearch: 'Search activities by name or description (optional)',
+              activityName: 'Activity name filter (optional)',
+              subactivity: 'Subactivity ID filter (optional)',
+              subactivitySearch: 'Search subactivities by name (optional)',
+              sortBy: 'Sort field and order (e.g., name:asc)',
+              limit: 'Number of results per page (optional)',
+              page: 'Page number (default: 1)'
             }
           }
         ]
@@ -658,6 +672,8 @@ const getAnalyticsInfo = catchAsync(async (req, res) => {
               clientSearch: 'Search clients by name, email, phone (optional)',
               businessType: 'Client business type filter (optional)',
               entityType: 'Client entity type filter (optional)',
+              clientCategory: 'Client category filter (A, B, or C) (optional)',
+              turnover: 'Client turnover/revenue filter - single value, text search, or range (e.g., "10000 to 500000" or "10000-500000") (optional)',
               activity: 'Activity ID filter (optional)',
               activitySearch: 'Search activities by name or description (optional)',
               subactivity: 'Subactivity ID filter (optional)',

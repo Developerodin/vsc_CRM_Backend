@@ -115,6 +115,8 @@ const getAllClientsTableData = {
     udyamNumber: Joi.string().trim().allow(''),
     iecCode: Joi.string().trim().allow(''),
     entityType: Joi.string().trim().allow(''),
+    clientCategory: Joi.string().valid('A', 'B', 'C').allow(''),
+    turnover: Joi.string().trim().allow(''),
     branch: Joi.string().custom(objectId),
     search: Joi.string().trim().allow(''),
     activity: Joi.string().custom(objectId).allow(''),
@@ -151,6 +153,8 @@ const getAllTimelinesTableData = {
     clientSearch: Joi.string().trim().allow(''),
     businessType: Joi.string().trim().allow(''),
     entityType: Joi.string().trim().allow(''),
+    clientCategory: Joi.string().valid('A', 'B', 'C').allow(''),
+    turnover: Joi.string().trim().allow(''),
     
     // Activity filters
     activity: Joi.string().custom(objectId),

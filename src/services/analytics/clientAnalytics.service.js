@@ -454,10 +454,14 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
     const subactivitySearch = mongoFilter.subactivitySearch;
     const subactivity = mongoFilter.subactivity;
     const activity = mongoFilter.activity;
+    const clientCategory = mongoFilter.clientCategory;
+    const turnover = mongoFilter.turnover;
     
     delete mongoFilter.activitySearch;
     delete mongoFilter.activityName;
     delete mongoFilter.subactivitySearch;
+    delete mongoFilter.clientCategory;
+    delete mongoFilter.turnover;
     
     // Handle activity filters by finding activity IDs first
     if (activitySearch || activityName || activity) {
@@ -586,6 +590,29 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
       }
     }
     
+    // Handle clientCategory filter
+    if (clientCategory) {
+      mongoFilter.category = clientCategory;
+    }
+    
+    // Handle turnover filter (range or single value)
+    let turnoverRange = null;
+    if (turnover) {
+      // Parse turnover range (e.g., "10000 to 500000" or "10000-500000")
+      const rangeMatch = turnover.trim().match(/^(\d+(?:\.\d+)?)\s*(?:to|-)\s*(\d+(?:\.\d+)?)$/i);
+      
+      if (rangeMatch) {
+        // Store range for aggregation query
+        turnoverRange = {
+          min: parseFloat(rangeMatch[1]),
+          max: parseFloat(rangeMatch[2])
+        };
+      } else {
+        // Single value or text search - use regex
+        mongoFilter.turnover = { $regex: turnover, $options: 'i' };
+      }
+    }
+    
     // Handle search parameter (searches across multiple fields)
     if (mongoFilter.search) {
       const searchValue = mongoFilter.search;
@@ -690,17 +717,132 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
       sortOptions = { name: 1 }; // Default sort by name ascending
     }
 
-    // First, get the clients that match the filter with pagination
-    const clients = await Client.find(mongoFilter)
-      .populate('branch', 'name address city state country pinCode')
-      .populate('activities.activity', 'name description category')
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    // Handle turnover range query with aggregation if needed
+    let clients = [];
+    let totalClients = 0;
+    
+    if (turnoverRange) {
+      try {
+        // Use aggregation pipeline for turnover range filtering
+        const pipeline = [];
+        
+        // Add match stage for all other filters (excluding turnover)
+        if (Object.keys(mongoFilter).length > 0) {
+          pipeline.push({ $match: mongoFilter });
+        }
+        
+        // Only process documents that have turnover field
+        pipeline.push({
+          $match: {
+            turnover: { $exists: true, $ne: null, $ne: '' }
+          }
+        });
+        
+        // Extract numeric value from turnover using regex (more reliable)
+        pipeline.push({
+          $addFields: {
+            turnoverMatch: {
+              $regexFind: {
+                input: '$turnover',
+                regex: '(\\d+(?:\\.\\d+)?)'
+              }
+            }
+          }
+        });
+        
+        // Convert matched number to double
+        pipeline.push({
+          $addFields: {
+            turnoverNumber: {
+              $cond: {
+                if: { 
+                  $and: [
+                    { $ne: ['$turnoverMatch', null] },
+                    { $ne: ['$turnoverMatch.match', null] }
+                  ]
+                },
+                then: {
+                  $convert: {
+                    input: '$turnoverMatch.match',
+                    to: 'double',
+                    onError: null,
+                    onNull: null
+                  }
+                },
+                else: null
+              }
+            }
+          }
+        });
+        
+        // Filter by range - only documents with valid turnoverNumber in range
+        pipeline.push({
+          $match: {
+            $and: [
+              { turnoverNumber: { $ne: null } },
+              { turnoverNumber: { $gte: turnoverRange.min } },
+              { turnoverNumber: { $lte: turnoverRange.max } }
+            ]
+          }
+        });
+        
+        // Get total count first (before pagination)
+        const countPipeline = [...pipeline, { $count: 'total' }];
+        const countResult = await Client.aggregate(countPipeline);
+        totalClients = countResult.length > 0 ? countResult[0].total : 0;
+        
+        // Add sorting, skip, and limit
+        pipeline.push({ $sort: sortOptions });
+        pipeline.push({ $skip: skip });
+        pipeline.push({ $limit: limit });
+        
+        // Project only _id to reduce data transfer
+        pipeline.push({ $project: { _id: 1 } });
+        
+        // Execute aggregation to get client IDs
+        const clientDocs = await Client.aggregate(pipeline);
+        
+        // Get client IDs
+        const clientIds = clientDocs.map(c => c._id).filter(id => id != null);
+        
+        // Fetch full documents with population
+        if (clientIds.length > 0) {
+          clients = await Client.find({ _id: { $in: clientIds } })
+            .populate('branch', 'name address city state country pinCode')
+            .populate('activities.activity', 'name description category')
+            .lean();
+          
+          // Sort clients according to sortOptions (since aggregation already sorted)
+          const clientMap = new Map(clients.map(c => [c._id.toString(), c]));
+          clients = clientIds.map(id => clientMap.get(id.toString())).filter(Boolean);
+        } else {
+          // No clients found in range - ensure clients is empty array
+          clients = [];
+        }
+      } catch (error) {
+        // If aggregation fails, fall back to regular query (less efficient but works)
+        console.error('Turnover range aggregation error:', error);
+        // Fall through to regular query below
+        turnoverRange = null;
+        if (turnover) {
+          mongoFilter.turnover = { $regex: turnover, $options: 'i' };
+        }
+      }
+    }
+    
+    if (!turnoverRange) {
+      // Regular find query
+      clients = await Client.find(mongoFilter)
+        .populate('branch', 'name address city state country pinCode')
+        .populate('activities.activity', 'name description category')
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limit)
+        .lean();
 
-    // Get total count for pagination
-    const totalClients = await Client.countDocuments(mongoFilter);
+      // Get total count for pagination
+      totalClients = await Client.countDocuments(mongoFilter);
+    }
 
     // Get all client IDs we're interested in
     const clientIds = clients.map(c => c._id);
@@ -803,6 +945,8 @@ const getAllClientsTableData = async (filter = {}, options = {}, user = null) =>
         udyamNumber: client.udyamNumber,
         iecCode: client.iecCode,
         entityType: client.entityType,
+        category: client.category,
+        turnover: client.turnover,
         sortOrder: client.sortOrder,
         createdAt: client.createdAt,
         updatedAt: client.updatedAt,
