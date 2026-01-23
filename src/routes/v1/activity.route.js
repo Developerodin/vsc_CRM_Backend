@@ -16,6 +16,10 @@ router
   .post(validate(activityValidation.bulkImportActivities), activityController.bulkImportActivities);
 
 router
+  .route('/bulk-create-timelines')
+  .post(validate(activityValidation.bulkCreateTimelines), activityController.bulkCreateTimelines);
+
+router
   .route('/:activityId')
   .get(validate(activityValidation.getActivity), activityController.getActivity)
   .patch(validate(activityValidation.updateActivity), activityController.updateActivity)

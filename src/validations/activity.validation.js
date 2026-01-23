@@ -179,6 +179,35 @@ const deleteSubactivity = {
   }),
 };
 
+const bulkCreateTimelines = {
+  body: Joi.object().keys({
+    clientIds: Joi.array()
+      .items(Joi.string().custom(objectId))
+      .min(1)
+      .max(1000)
+      .required(),
+    activityId: Joi.string().custom(objectId).required(),
+    subactivityId: Joi.string().custom(objectId).optional(),
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').default('pending'),
+    dueDate: Joi.date().optional(),
+    startDate: Joi.date().optional(),
+    endDate: Joi.date().optional(),
+    frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').default('OneTime'),
+    frequencyConfig: frequencyConfigSchema.optional(),
+    timelineType: Joi.string().valid('oneTime', 'recurring').default('oneTime'),
+    period: Joi.string().trim().optional(),
+    financialYear: Joi.string().trim().optional(),
+    referenceNumber: Joi.string().trim().optional(),
+    fields: Joi.array().items(Joi.object({
+      fileName: Joi.string().trim().optional(),
+      fieldType: Joi.string().valid('text', 'number', 'date', 'email', 'phone', 'url', 'select', 'textarea', 'checkbox', 'radio').default('text'),
+      fieldValue: Joi.any().optional(),
+    })).optional(),
+    metadata: Joi.object().optional(),
+    state: Joi.string().trim().optional(),
+  }),
+};
+
 export { 
   createActivity, 
   getActivities, 
@@ -188,5 +217,6 @@ export {
   bulkImportActivities,
   createSubactivity,
   updateSubactivity,
-  deleteSubactivity
+  deleteSubactivity,
+  bulkCreateTimelines
 };

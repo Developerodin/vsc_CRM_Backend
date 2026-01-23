@@ -66,6 +66,11 @@ const deleteSubactivity = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const bulkCreateTimelines = catchAsync(async (req, res) => {
+  const result = await activityService.bulkCreateTimelines(req.body, req.user);
+  res.status(httpStatus.CREATED).send(result);
+});
+
 export { 
   createActivity, 
   getActivities, 
@@ -75,5 +80,6 @@ export {
   bulkImportActivities,
   createSubactivity,
   updateSubactivity,
-  deleteSubactivity
+  deleteSubactivity,
+  bulkCreateTimelines
 }; 
