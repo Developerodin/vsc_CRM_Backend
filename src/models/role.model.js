@@ -59,6 +59,8 @@ const roleSchema = mongoose.Schema(
       // File Manager permissions
       getFileManager: { type: Boolean, default: false },
       manageFileManager: { type: Boolean, default: false },
+      // Email / bulk email
+      sendEmails: { type: Boolean, default: false },
     },
     // Branch access - array of branch IDs this role can access
     branchAccess: [{

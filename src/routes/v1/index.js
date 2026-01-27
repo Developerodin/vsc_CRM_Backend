@@ -22,6 +22,7 @@ import cronRoute from './cron.route.js';
 import analyticsRoute from './analytics.route.js';
 import businessMasterRoute from './businessMaster.route.js';
 import entityTypeMasterRoute from './entityTypeMaster.route.js';
+import emailTemplateRoute from './emailTemplate.route.js';
 
 const router = express.Router();
 
@@ -109,6 +110,10 @@ const defaultRoutes = [
   {
     path: '/entity-master',
     route: entityTypeMasterRoute,
+  },
+  {
+    path: '/email-templates',
+    route: emailTemplateRoute,
   },
 ];
 

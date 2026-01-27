@@ -42,6 +42,22 @@ const sendEmail = async (to, subject, text, html = null) => {
 };
 
 /**
+ * Send an email as HTML only (single part text/html). Use for template emails so clients
+ * always render HTML instead of showing raw source.
+ * @param {string} to
+ * @param {string} subject
+ * @param {string} html - HTML body
+ * @returns {Promise}
+ */
+const sendHtmlEmail = async (to, subject, html) => {
+  const msg = { from: config.email.from, to, subject, html };
+  return Promise.race([
+    transport.sendMail(msg),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Email timeout')), 10000)),
+  ]);
+};
+
+/**
  * Send an email with attachments
  * @param {string} to
  * @param {string} subject
@@ -563,6 +579,7 @@ const sendPasswordResetOtp = async (to, otp) => {
 export {
   transport,
   sendEmail,
+  sendHtmlEmail,
   sendEmailWithAttachments,
   sendEmailWithFileAttachments,
   sendResetPasswordEmail,

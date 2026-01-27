@@ -360,7 +360,15 @@ const getAvailableApiPermissions = () => {
  * @returns {boolean}
  */
 const hasPermission = (userRole, permission) => {
-  if (!userRole || !userRole.apiPermissions) {
+  if (!userRole) {
+    return false;
+  }
+  // Superadmin and Admin (case-insensitive) have all API permissions including sendEmails
+  const roleName = (userRole.name || '').toLowerCase();
+  if (roleName === 'superadmin' || roleName === 'admin') {
+    return true;
+  }
+  if (!userRole.apiPermissions) {
     return false;
   }
   return userRole.apiPermissions[permission] === true;

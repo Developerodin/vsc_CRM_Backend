@@ -19,6 +19,7 @@ import * as cronService from './cron.service.js';
 import * as analyticsService from './analytics/index.js';
 import * as businessMasterService from './businessMaster.service.js';
 import * as entityTypeMasterService from './entityTypeMaster.service.js';
+import * as emailTemplateService from './emailTemplate.service.js';
 
 export {
   teamMemberService,
@@ -38,4 +39,5 @@ export {
   analyticsService,
   businessMasterService,
   entityTypeMasterService,
+  emailTemplateService,
 };
