@@ -23,6 +23,7 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
     const entityType = mongoFilter.entityType;
     const clientCategory = mongoFilter.clientCategory;
     const turnover = mongoFilter.turnover;
+    const turnoverYear = mongoFilter.turnoverYear ? String(mongoFilter.turnoverYear).trim() : null;
     const activitySearch = mongoFilter.activitySearch;
     const subactivitySearch = mongoFilter.subactivitySearch;
     const globalSearch = mongoFilter.search;
@@ -32,6 +33,7 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
     delete mongoFilter.entityType;
     delete mongoFilter.clientCategory;
     delete mongoFilter.turnover;
+    delete mongoFilter.turnoverYear;
     delete mongoFilter.activitySearch;
     delete mongoFilter.subactivitySearch;
     delete mongoFilter.search;
@@ -194,57 +196,91 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
             max: parseFloat(rangeMatch[2])
           };
         } else {
-          // Single value or text search - use regex
-          clientFilter.turnover = { $regex: turnover, $options: 'i' };
+          // Single value or text search
+          if (turnoverYear) {
+            clientFilter.turnoverHistory = {
+              $elemMatch: { year: turnoverYear, turnover: { $regex: turnover, $options: 'i' } }
+            };
+          } else {
+            clientFilter.turnover = { $regex: turnover, $options: 'i' };
+          }
         }
       }
       
-      // If we have a turnover range, use aggregation pipeline
       let matchingClients = [];
       if (turnoverRange) {
         const pipeline = [];
-        
-        // Add match stage for other filters
         if (Object.keys(clientFilter).length > 0) {
           pipeline.push({ $match: clientFilter });
         }
-        
-        // Add stage to extract numeric value from turnover and filter by range
-        // Clean turnover string (remove commas and spaces) and convert to number
-        pipeline.push({
-          $addFields: {
-            cleanedTurnover: {
-              $replaceAll: {
-                input: { $replaceAll: { input: { $ifNull: ['$turnover', ''] }, find: ',', replacement: '' } },
-                find: ' ',
-                replacement: ''
+        if (turnoverYear) {
+          pipeline.push({
+            $addFields: {
+              yearEntry: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: { $ifNull: ['$turnoverHistory', []] },
+                      as: 't',
+                      cond: { $eq: ['$$t.year', turnoverYear] }
+                    }
+                  },
+                  0
+                ]
               }
             }
-          }
-        });
-        
-        pipeline.push({
-          $addFields: {
-            turnoverNumber: {
-              $convert: {
-                input: '$cleanedTurnover',
-                to: 'double',
-                onError: null,
-                onNull: null
+          });
+          pipeline.push({
+            $addFields: {
+              cleanedTurnover: {
+                $replaceAll: {
+                  input: { $replaceAll: { input: { $ifNull: ['$yearEntry.turnover', ''] }, find: ',', replacement: '' } },
+                  find: ' ',
+                  replacement: ''
+                }
               }
             }
-          }
-        });
-        
-        pipeline.push({
-          $match: {
-            turnover: { $ne: null, $ne: '' },
-            turnoverNumber: { $gte: turnoverRange.min, $lte: turnoverRange.max }
-          }
-        });
-        
+          });
+          pipeline.push({
+            $addFields: {
+              turnoverNumber: {
+                $convert: { input: '$cleanedTurnover', to: 'double', onError: null, onNull: null }
+              }
+            }
+          });
+          pipeline.push({
+            $match: {
+              yearEntry: { $ne: null },
+              turnoverNumber: { $gte: turnoverRange.min, $lte: turnoverRange.max }
+            }
+          });
+        } else {
+          pipeline.push({
+            $addFields: {
+              cleanedTurnover: {
+                $replaceAll: {
+                  input: { $replaceAll: { input: { $ifNull: ['$turnover', ''] }, find: ',', replacement: '' } },
+                  find: ' ',
+                  replacement: ''
+                }
+              }
+            }
+          });
+          pipeline.push({
+            $addFields: {
+              turnoverNumber: {
+                $convert: { input: '$cleanedTurnover', to: 'double', onError: null, onNull: null }
+              }
+            }
+          });
+          pipeline.push({
+            $match: {
+              turnover: { $ne: null, $ne: '' },
+              turnoverNumber: { $gte: turnoverRange.min, $lte: turnoverRange.max }
+            }
+          });
+        }
         pipeline.push({ $project: { _id: 1 } });
-        
         matchingClients = await Client.aggregate(pipeline);
       } else if (Object.keys(clientFilter).length > 0) {
         matchingClients = await Client.find(clientFilter).select('_id').lean();
