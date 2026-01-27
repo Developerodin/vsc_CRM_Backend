@@ -105,32 +105,40 @@ export const calculateNextOccurrence = (frequencyConfig, frequency, startDate = 
       
     case 'Quarterly':
       if (frequencyConfig.quarterlyMonths && frequencyConfig.quarterlyMonths.length > 0) {
-        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                            'July', 'August', 'September', 'October', 'November', 'December'];
-        const currentMonth = nextDate.getMonth();
-        const targetMonths = frequencyConfig.quarterlyMonths.map(month => monthNames.indexOf(month));
-        
-        // Find next target month
-        let monthsToAdd = 1;
-        while (monthsToAdd <= 12) {
-          const checkDate = new Date(nextDate);
-          checkDate.setMonth(checkDate.getMonth() + monthsToAdd);
-          if (targetMonths.includes(checkDate.getMonth())) {
-            nextDate.setMonth(nextDate.getMonth() + monthsToAdd);
-            break;
+        const targetMonthIndices = frequencyConfig.quarterlyMonths.map((m) => monthNames.indexOf(m)).filter((i) => i >= 0);
+        const day = Math.min(frequencyConfig.quarterlyDay || 1, 31);
+        const year = nextDate.getFullYear();
+
+        // Build due-date candidates for this year and next (covers Dec -> Jan wrap)
+        const candidates = [];
+        for (const monthIndex of targetMonthIndices) {
+          const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+          const d = new Date(year, monthIndex, Math.min(day, lastDay));
+          if (frequencyConfig.quarterlyTime) {
+            const [h, m] = frequencyConfig.quarterlyTime.includes('AM') || frequencyConfig.quarterlyTime.includes('PM')
+              ? parse12HourTime(frequencyConfig.quarterlyTime)
+              : parse24HourTime(frequencyConfig.quarterlyTime);
+            d.setHours(h, m, 0, 0);
           }
-          monthsToAdd++;
+          candidates.push(d);
         }
-        
-        if (frequencyConfig.quarterlyDay) {
-          nextDate.setDate(frequencyConfig.quarterlyDay);
+        for (const monthIndex of targetMonthIndices) {
+          const lastDay = new Date(year + 1, monthIndex + 1, 0).getDate();
+          const d = new Date(year + 1, monthIndex, Math.min(day, lastDay));
+          if (frequencyConfig.quarterlyTime) {
+            const [h, m] = frequencyConfig.quarterlyTime.includes('AM') || frequencyConfig.quarterlyTime.includes('PM')
+              ? parse12HourTime(frequencyConfig.quarterlyTime)
+              : parse24HourTime(frequencyConfig.quarterlyTime);
+            d.setHours(h, m, 0, 0);
+          }
+          candidates.push(d);
         }
-        
-        if (frequencyConfig.quarterlyTime) {
-          const [hours, minutes] = frequencyConfig.quarterlyTime.includes('AM') || frequencyConfig.quarterlyTime.includes('PM') 
-            ? parse12HourTime(frequencyConfig.quarterlyTime)
-            : parse24HourTime(frequencyConfig.quarterlyTime);
-          nextDate.setHours(hours, minutes, 0, 0);
+        candidates.sort((a, b) => a - b);
+        const next = candidates.find((d) => d >= startDate);
+        if (next) {
+          nextDate.setTime(next.getTime());
         }
       } else {
         // Default quarterly: every 3 months

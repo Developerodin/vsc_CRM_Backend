@@ -1261,25 +1261,27 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
           break;
           
         case 'Quarterly':
+          if (frequencyConfig.quarterlyMonths && frequencyConfig.quarterlyMonths.length > 0 && frequencyConfig.quarterlyDay) {
+            // Use custom quarterlyMonths (e.g. July, Jan, Oct for TDS), not calendar quarters
+            const nextFromConfig = calculateNextOccurrence(frequencyConfig, 'Quarterly', now);
+            if (nextFromConfig && !isNaN(nextFromConfig.getTime())) {
+              return nextFromConfig;
+            }
+          }
           if (frequencyConfig.quarterlyDay) {
+            // Fallback: calendar quarters when no quarterlyMonths
             const currentQuarter = Math.floor(now.getMonth() / 3);
             const quarterStartMonth = currentQuarter * 3;
             const quarterDue = new Date(now.getFullYear(), quarterStartMonth, frequencyConfig.quarterlyDay);
-            
             if (isNaN(quarterDue.getTime())) {
               throw new Error(`Invalid date for Quarterly: day ${frequencyConfig.quarterlyDay}`);
             }
-            
-            if (quarterDue > now) {
-              return quarterDue;
-            } else {
-              // Next quarter
-              const nextQuarter = new Date(now.getFullYear(), quarterStartMonth + 3, frequencyConfig.quarterlyDay);
-              if (isNaN(nextQuarter.getTime())) {
-                throw new Error(`Invalid date for Quarterly: day ${frequencyConfig.quarterlyDay}`);
-              }
-              return nextQuarter;
+            if (quarterDue > now) return quarterDue;
+            const nextQuarter = new Date(now.getFullYear(), quarterStartMonth + 3, frequencyConfig.quarterlyDay);
+            if (isNaN(nextQuarter.getTime())) {
+              throw new Error(`Invalid date for Quarterly: day ${frequencyConfig.quarterlyDay}`);
             }
+            return nextQuarter;
           }
           break;
           
