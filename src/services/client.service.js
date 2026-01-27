@@ -50,29 +50,29 @@ const parseGstDate = (dateString) => {
 };
 
 /**
- * Helper function to get quarter from month
+ * Register quarter: July=Q1, October=Q2, January=Q3, May=Q4.
  * @param {number} monthIndex - Month index (0-11)
  * @returns {string} - Quarter (Q1, Q2, Q3, Q4)
  */
 const getQuarterFromMonth = (monthIndex) => {
-  if (monthIndex >= 3 && monthIndex <= 5) return 'Q1';      // April, May, June
-  if (monthIndex >= 6 && monthIndex <= 8) return 'Q2';      // July, August, September
-  if (monthIndex >= 9 && monthIndex <= 11) return 'Q3';     // October, November, December
-  return 'Q4';                                               // January, February, March
+  if (monthIndex <= 2) return 'Q3';   // Jan–Mar
+  if (monthIndex <= 5) return 'Q4';  // Apr–Jun
+  if (monthIndex <= 8) return 'Q1';  // Jul–Sep
+  return 'Q2';                       // Oct–Dec
 };
 
 /**
- * Helper function to get quarter start month index
+ * Quarter start month index for register: Q1=July(6), Q2=Oct(9), Q3=Jan(0), Q4=May(4).
  * @param {string} quarter - Quarter (Q1, Q2, Q3, Q4)
  * @returns {number} - Month index (0-11)
  */
 const getQuarterStartMonth = (quarter) => {
   switch (quarter) {
-    case 'Q1': return 3;  // April
-    case 'Q2': return 6;  // July
-    case 'Q3': return 9;  // October
-    case 'Q4': return 0;  // January
-    default: return 3;    // April
+    case 'Q1': return 6;  // July
+    case 'Q2': return 9;  // October
+    case 'Q3': return 0;  // January
+    case 'Q4': return 4;  // May
+    default: return 6;    // July
   }
 };
 

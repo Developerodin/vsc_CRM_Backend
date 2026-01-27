@@ -1269,19 +1269,24 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
             }
           }
           if (frequencyConfig.quarterlyDay) {
-            // Fallback: calendar quarters when no quarterlyMonths
-            const currentQuarter = Math.floor(now.getMonth() / 3);
-            const quarterStartMonth = currentQuarter * 3;
-            const quarterDue = new Date(now.getFullYear(), quarterStartMonth, frequencyConfig.quarterlyDay);
-            if (isNaN(quarterDue.getTime())) {
-              throw new Error(`Invalid date for Quarterly: day ${frequencyConfig.quarterlyDay}`);
+            // Fallback: register quarters (July=Q1, Oct=Q2, Jan=Q3, May=Q4) when no quarterlyMonths
+            const registerMonths = [6, 9, 0, 4];
+            const currentYear = now.getFullYear();
+            const day = Math.min(frequencyConfig.quarterlyDay, 31);
+            const candidates = [];
+            for (const m of registerMonths) {
+              const y = m === 0 ? currentYear + 1 : currentYear;
+              const lastDay = new Date(y, m + 1, 0).getDate();
+              candidates.push(new Date(y, m, Math.min(day, lastDay)));
             }
-            if (quarterDue > now) return quarterDue;
-            const nextQuarter = new Date(now.getFullYear(), quarterStartMonth + 3, frequencyConfig.quarterlyDay);
-            if (isNaN(nextQuarter.getTime())) {
-              throw new Error(`Invalid date for Quarterly: day ${frequencyConfig.quarterlyDay}`);
+            for (const m of registerMonths) {
+              const y = m === 0 ? currentYear + 2 : currentYear + 1;
+              const lastDay = new Date(y, m + 1, 0).getDate();
+              candidates.push(new Date(y, m, Math.min(day, lastDay)));
             }
-            return nextQuarter;
+            candidates.sort((a, b) => a - b);
+            const next = candidates.find((d) => d > now);
+            return next || new Date(currentYear + 1, 6, Math.min(day, 31));
           }
           break;
           
@@ -1338,7 +1343,8 @@ const calculateCurrentPeriodDueDate = (frequency, frequencyConfig) => {
 };
 
 /**
- * Get period string from date (e.g., "April-2024", "Q1-2024")
+ * Get period string from date (e.g., "April-2024", "Q1-2024").
+ * Register quarters: July=Q1, October=Q2, January=Q3, May=Q4.
  * @param {Date} date - Date to get period for
  * @param {string} frequency - The frequency type (optional, for better period calculation)
  * @returns {String} Period string
@@ -1354,13 +1360,12 @@ const getPeriodFromDate = (date, frequency = null) => {
   
   // Return period based on frequency
   if (frequency === 'Quarterly') {
-    // Determine quarter
+    // Register: July=Q1, Oct=Q2, Jan=Q3, May=Q4. Month ranges: Jan–Mar Q3, Apr–Jun Q4, Jul–Sep Q1, Oct–Dec Q2
     let quarter;
-    if (month <= 2) quarter = 'Q1';
-    else if (month <= 5) quarter = 'Q2';
-    else if (month <= 8) quarter = 'Q3';
-    else quarter = 'Q4';
-    
+    if (month <= 2) quarter = 'Q3';      // Jan–Mar
+    else if (month <= 5) quarter = 'Q4'; // Apr–Jun (May is Q4 due month)
+    else if (month <= 8) quarter = 'Q1';  // Jul–Sep
+    else quarter = 'Q2';                  // Oct–Dec
     return `${quarter}-${year}`;
   } else if (frequency === 'Yearly') {
     // Financial year format
@@ -1522,20 +1527,18 @@ const getFrequencyPeriods = async (frequency, financialYear = null) => {
       break;
 
     case 'Quarterly':
-      // For quarterly frequency, return monthly periods (April, July, October, January)
-      // These are the key months when quarterly tasks are due
+      // Register: July=Q1, October=Q2, January=Q3, May=Q4 (quarter due months)
       const quarterlyMonths = [
-        { monthIndex: 3, monthName: 'April', year: startYear },      // April
-        { monthIndex: 6, monthName: 'July', year: startYear },       // July  
-        { monthIndex: 9, monthName: 'October', year: startYear },    // October
-        { monthIndex: 0, monthName: 'January', year: endYear }       // January (next year)
+        { monthIndex: 6, monthName: 'July', year: startYear, quarter: 'Q1' },
+        { monthIndex: 9, monthName: 'October', year: startYear, quarter: 'Q2' },
+        { monthIndex: 0, monthName: 'January', year: endYear, quarter: 'Q3' },
+        { monthIndex: 4, monthName: 'May', year: startYear, quarter: 'Q4' },
       ];
 
       for (const monthData of quarterlyMonths) {
-        const period = `${monthData.monthName}-${monthData.year}`;
+        const period = `${monthData.quarter}-${monthData.year}`;
         const startDate = new Date(monthData.year, monthData.monthIndex, 1);
-        const endDate = new Date(monthData.year, monthData.monthIndex + 1, 0); // Last day of the month
-        
+        const endDate = new Date(monthData.year, monthData.monthIndex + 1, 0);
         periods.push({
           period,
           month: monthData.monthName,
@@ -1543,9 +1546,9 @@ const getFrequencyPeriods = async (frequency, financialYear = null) => {
           monthIndex: monthData.monthIndex,
           startDate,
           endDate,
-          displayName: `${monthData.monthName} ${monthData.year}`,
+          displayName: `${monthData.monthName} ${monthData.year} (${monthData.quarter})`,
           financialYear,
-          quarter: getQuarterFromMonth(monthData.monthIndex)
+          quarter: monthData.quarter,
         });
       }
       break;
@@ -1712,15 +1715,14 @@ const getMonthName = (monthIndex) => {
 };
 
 /**
- * Helper function to get quarter from month
- * @param {number} monthIndex - Month index (0-11)
- * @returns {string} - Quarter (Q1, Q2, Q3, Q4)
+ * Get quarter from month using register mapping (July=Q1, Oct=Q2, Jan=Q3, May=Q4).
+ * Re-exported from financialYear for local use in getFrequencyDescription; use financialYear in new code.
  */
 const getQuarterFromMonth = (monthIndex) => {
-  if (monthIndex >= 3 && monthIndex <= 5) return 'Q1';      // April, May, June
-  if (monthIndex >= 6 && monthIndex <= 8) return 'Q2';      // July, August, September
-  if (monthIndex >= 9 && monthIndex <= 11) return 'Q3';     // October, November, December
-  return 'Q4';                                               // January, February, March
+  if (monthIndex <= 2) return 'Q3';   // Jan–Mar
+  if (monthIndex <= 5) return 'Q4';  // Apr–Jun
+  if (monthIndex <= 8) return 'Q1';  // Jul–Sep
+  return 'Q2';                       // Oct–Dec
 };
 
 /**
@@ -1734,7 +1736,7 @@ const getFrequencyDescription = (frequency, financialYear) => {
     case 'Monthly':
       return `Monthly periods for financial year ${financialYear} (April ${financialYear.split('-')[0]} to March ${financialYear.split('-')[1]})`;
     case 'Quarterly':
-      return `Monthly periods for quarterly frequency in financial year ${financialYear} (April, July, October, January)`;
+      return `Quarterly periods in financial year ${financialYear} (July=Q1, October=Q2, January=Q3, May=Q4)`;
     case 'Yearly':
       return `Financial year ${financialYear}`;
     default:

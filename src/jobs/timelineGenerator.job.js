@@ -15,25 +15,23 @@ import { getCurrentFinancialYear, generateTimelineDates } from '../utils/financi
 import logger from '../config/logger.js';
 
 /**
- * Get period string from date for different frequencies
+ * Get period string from date. Register quarters: July=Q1, October=Q2, January=Q3, May=Q4.
  */
 const getPeriodFromDate = (date, frequency) => {
   const month = date.getMonth();
   const year = date.getFullYear();
-  
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
-  
+
   switch (frequency) {
     case 'Monthly':
       return `${monthNames[month]}-${year}`;
     case 'Quarterly':
-      const quarter = Math.floor(month / 3) + 1;
-      return `Q${quarter}-${year}`;
+      const quarter = month <= 2 ? 'Q3' : month <= 5 ? 'Q4' : month <= 8 ? 'Q1' : 'Q2';
+      return `${quarter}-${year}`;
     case 'Yearly':
-      // For yearly, use financial year format
       const financialYearStart = month >= 3 ? year : year - 1;
       const financialYearEnd = financialYearStart + 1;
       return `${financialYearStart}-${financialYearEnd}`;
@@ -156,13 +154,22 @@ const calculateDueDate = (frequency, frequencyConfig, period) => {
       
     case 'Quarterly':
       if (frequencyConfig && frequencyConfig.quarterlyDay) {
-        const [quarter, year] = period.split('-');
-        const quarterNum = parseInt(quarter.replace('Q', ''));
-        
-        // Get the first month of the quarter
-        const quarterStartMonth = (quarterNum - 1) * 3;
-        const dueDate = new Date(parseInt(year), quarterStartMonth, frequencyConfig.quarterlyDay);
-        
+        const [quarterPart, yearStr] = period.split('-');
+        const year = parseInt(yearStr, 10);
+        const quarterMonthMap = { Q1: 6, Q2: 9, Q3: 0, Q4: 4 };
+        const quarterStartMonth = quarterMonthMap[quarterPart] ?? 6;
+        const dueDate = new Date(year, quarterStartMonth, frequencyConfig.quarterlyDay);
+        if (frequencyConfig.quarterlyTime) {
+          const timeParts = frequencyConfig.quarterlyTime.match(/(\d+):(\d+)(?:\s*(AM|PM))?/);
+          if (timeParts) {
+            let hours = parseInt(timeParts[1]);
+            const minutes = parseInt(timeParts[2]);
+            const ampm = timeParts[3];
+            if (ampm === 'PM' && hours !== 12) hours += 12;
+            if (ampm === 'AM' && hours === 12) hours = 0;
+            dueDate.setHours(hours, minutes, 0, 0);
+          }
+        }
         return dueDate;
       }
       break;

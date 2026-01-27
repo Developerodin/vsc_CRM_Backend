@@ -3,6 +3,19 @@
  */
 
 /**
+ * Register quarter mapping: July=Q1, October=Q2, January=Q3, May=Q4 (month indices 0–11).
+ * Used for timelines and register display so quarterly periods match.
+ */
+export const REGISTER_QUARTER_MONTH = { Q1: 6, Q2: 9, Q3: 0, Q4: 4 };
+export const REGISTER_MONTH_QUARTER = { 6: 'Q1', 9: 'Q2', 0: 'Q3', 4: 'Q4' };
+
+/** Get quarter (Q1–Q4) from month index using register mapping. */
+export const getQuarterFromMonthRegister = (monthIndex) => REGISTER_MONTH_QUARTER[monthIndex] ?? null;
+
+/** Get month index (0–11) for start of quarter using register mapping. */
+export const getMonthFromQuarterRegister = (quarter) => REGISTER_QUARTER_MONTH[quarter] ?? 6;
+
+/**
  * Get current financial year (April to March)
  * @returns {Object} Object containing start and end dates of current financial year
  */

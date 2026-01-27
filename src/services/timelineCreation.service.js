@@ -114,19 +114,19 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
       break;
 
     case 'Quarterly':
-      // Create timeline for each quarter in financial year
+      // Register: July=Q1, October=Q2, January=Q3, May=Q4 (quarter due months in FY Apr–Mar)
       const quarters = [
-        { name: 'Q1', months: [3, 4, 5] },    // April, May, June
-        { name: 'Q2', months: [6, 7, 8] },    // July, August, September
-        { name: 'Q3', months: [9, 10, 11] },  // October, November, December
-        { name: 'Q4', months: [0, 1, 2] }     // January, February, March
+        { name: 'Q1', monthIndex: 6, yearOffset: 0 },   // July startYear
+        { name: 'Q2', monthIndex: 9, yearOffset: 0 },   // October startYear
+        { name: 'Q3', monthIndex: 0, yearOffset: 1 },   // January endYear
+        { name: 'Q4', monthIndex: 4, yearOffset: 0 },   // May startYear
       ];
 
       for (const quarter of quarters) {
-        const period = `${quarter.name}-${financialYear}`;
-        
-        // Calculate due date based on subactivity configuration
-        let dueDate = new Date(financialYearStart, quarter.months[0], 1);
+        const dueYear = quarter.yearOffset === 1 ? financialYearEnd : financialYearStart;
+        const period = `${quarter.name}-${dueYear}`;
+
+        let dueDate = new Date(dueYear, quarter.monthIndex, 1);
         if (subactivity.frequencyConfig && subactivity.frequencyConfig.quarterlyDay) {
           dueDate.setDate(subactivity.frequencyConfig.quarterlyDay);
         }
