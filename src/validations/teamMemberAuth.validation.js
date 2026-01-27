@@ -89,7 +89,26 @@ const updateTask = {
     remarks: Joi.string().trim().max(500)
       .description('Task remarks or notes'),
     metadata: Joi.object()
-      .description('Additional task metadata')
+      .description('Additional task metadata'),
+    // Direct timeline field updates (for single timeline or all timelines)
+    referenceNumber: Joi.string().trim().optional()
+      .description('Reference number to update for timeline(s)'),
+    completedAt: Joi.date().optional()
+      .description('Completion date to update for timeline(s)'),
+    // Array format for updating specific timelines
+    timelineUpdates: Joi.array().items(
+      Joi.object().keys({
+        timelineId: Joi.string().custom(objectId).required()
+          .description('Timeline ID to update'),
+        referenceNumber: Joi.string().trim().optional()
+          .description('Reference number for the timeline'),
+        completedAt: Joi.date().optional()
+          .description('Completion date for the timeline'),
+        status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').optional()
+          .description('Status for the timeline')
+      })
+    ).optional()
+      .description('Array of timeline updates')
   })
 };
 

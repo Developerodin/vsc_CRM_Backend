@@ -1032,7 +1032,6 @@ const createClientSubfolder = async (clientName, branchId, clientId = null) => {
 // This ensures consistent timeline creation logic including GST multiple timeline support
 
 const bulkImportClients = async (clients) => {
-
   const results = {
     created: 0,
     updated: 0,
@@ -1050,7 +1049,6 @@ const bulkImportClients = async (clients) => {
 
   // Process creation in batches - allow duplicates
   if (toCreate.length > 0) {
-
     for (let i = 0; i < toCreate.length; i += BATCH_SIZE) {
       const batch = toCreate.slice(i, i + BATCH_SIZE);
 
@@ -1192,19 +1190,16 @@ const bulkImportClients = async (clients) => {
         // Filter out clients with validation errors before insertion
         const validClients = processedBatch.filter((client, batchIndex) => {
           if (!client) {
-
             return false;
           }
           const hasErrors = results.errors.some(error => error.index === i + batchIndex);
           if (hasErrors) {
-
             return false;
           }
           return true;
         });
 
         if (validClients.length === 0) {
-
           results.totalProcessed += batch.length;
           continue;
         }
@@ -1214,13 +1209,24 @@ const bulkImportClients = async (clients) => {
         // Convert branch names to ObjectIds before insertion
         const clientsWithObjectIds = await Promise.all(validClients.map(async (client) => {
           if (typeof client.branch === 'string') {
-            // Find branch by name and convert to ObjectId
-            const branch = await Branch.findOne({ name: client.branch });
-            if (!branch) {
-              throw new Error(`Branch not found: ${client.branch}`);
+            // Check if the string is a valid ObjectId
+            if (mongoose.Types.ObjectId.isValid(client.branch)) {
+              // It's already an ObjectId string, convert it to ObjectId
+              client.branch = new mongoose.Types.ObjectId(client.branch);
+              
+              // Verify the branch exists
+              const branch = await Branch.findById(client.branch);
+              if (!branch) {
+                throw new Error(`Branch not found: ${client.branch}`);
+              }
+            } else {
+              // It's a branch name, find by name and convert to ObjectId
+              const branch = await Branch.findOne({ name: client.branch });
+              if (!branch) {
+                throw new Error(`Branch not found: ${client.branch}`);
+              }
+              client.branch = branch._id;
             }
-            client.branch = branch._id;
-
           }
           return client;
         }));
@@ -1278,31 +1284,18 @@ const bulkImportClients = async (clients) => {
           );
         }
       } catch (error) {
-
-        // Log the full error for debugging
-        if (error.writeErrors && error.writeErrors.length > 0) {
-
-        } else if (error.errors) {
-
-        } else {
-
-        }
-        
         if (error.writeErrors) {
           // Handle partial failures in batch
-
           results.created += error.insertedCount || 0;
           error.writeErrors.forEach((writeError, errorIndex) => {
-
             results.errors.push({
               index: i + writeError.index,
-              error: writeError.err.errmsg || 'Creation failed',
+              error: writeError.err.errmsg || writeError.err.message || 'Creation failed',
               data: batch[writeError.index],
             });
           });
         } else {
           // If batch completely fails, add all items as errors
-
           batch.forEach((client, batchIndex) => {
             results.errors.push({
               index: i + batchIndex,
@@ -1445,6 +1438,27 @@ const bulkImportClients = async (clients) => {
               });
             }
 
+            // Convert branch to ObjectId if it's a string
+            let branchId = client.branch;
+            if (client.branch && typeof client.branch === 'string') {
+              if (mongoose.Types.ObjectId.isValid(client.branch)) {
+                // It's already an ObjectId string, convert it to ObjectId
+                branchId = new mongoose.Types.ObjectId(client.branch);
+                // Verify the branch exists
+                const branch = await Branch.findById(branchId);
+                if (!branch) {
+                  throw new Error(`Branch not found: ${client.branch}`);
+                }
+              } else {
+                // It's a branch name, find by name and convert to ObjectId
+                const branch = await Branch.findOne({ name: client.branch });
+                if (!branch) {
+                  throw new Error(`Branch not found: ${client.branch}`);
+                }
+                branchId = branch._id;
+              }
+            }
+
             return {
               updateOne: {
                 filter: { _id: client.id },
@@ -1461,7 +1475,7 @@ const bulkImportClients = async (clients) => {
                     fNo: client.fNo,
                     pan: client.pan,
                     dob: client.dob,
-                    branch: client.branch,
+                    branch: branchId,
                     sortOrder: client.sortOrder,
                     // New business fields
                     businessType: client.businessType,
@@ -1569,16 +1583,6 @@ const bulkImportClients = async (clients) => {
   
   const endTime = Date.now();
   const duration = (endTime - startTime) / 1000;
-
-  if (results.errors.length > 0) {
-
-    results.errors.forEach((error, index) => {
-
-      if (error.data && error.data.name) {
-
-      }
-    });
-  }
   
   return results;
 };
