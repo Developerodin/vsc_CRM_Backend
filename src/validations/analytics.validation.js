@@ -117,6 +117,7 @@ const getAllClientsTableData = {
     entityType: Joi.string().trim().allow(''),
     clientCategory: Joi.string().valid('A', 'B', 'C').allow(''),
     turnover: Joi.string().trim().allow(''),
+    turnoverYear: Joi.string().trim().allow('').pattern(/^\d{4}(-\d{4})?$/),
     branch: Joi.string().custom(objectId),
     search: Joi.string().trim().allow(''),
     activity: Joi.string().custom(objectId).allow(''),
@@ -155,7 +156,8 @@ const getAllTimelinesTableData = {
     entityType: Joi.string().trim().allow(''),
     clientCategory: Joi.string().valid('A', 'B', 'C').allow(''),
     turnover: Joi.string().trim().allow(''),
-    
+    turnoverYear: Joi.string().trim().allow('').pattern(/^\d{4}(-\d{4})?$/),
+
     // Activity filters
     activity: Joi.string().custom(objectId),
     activitySearch: Joi.string().trim().allow(''),
