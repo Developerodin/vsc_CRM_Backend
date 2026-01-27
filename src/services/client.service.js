@@ -279,6 +279,24 @@ const createClient = async (clientBody, user = null) => {
 
   // Auto-detect and add compliance activities based on PAN, TAN, and GST numbers
   clientBody.activities = await autoDetectComplianceActivities(clientBody, clientBody.activities || []);
+
+  // Normalize turnoverHistory (dedupe by year, trim, keep latest turnover as `turnover`)
+  if (clientBody.turnoverHistory && Array.isArray(clientBody.turnoverHistory)) {
+    const byYear = new Map();
+    clientBody.turnoverHistory.forEach((t) => {
+      const year = (t?.year || '').toString().trim();
+      const turnover = (t?.turnover || '').toString().trim();
+      if (year && turnover) byYear.set(year, { year, turnover });
+    });
+    clientBody.turnoverHistory = Array.from(byYear.values());
+    // Set legacy `turnover` to the most recent year (lexicographic works for YYYY-YYYY and YYYY)
+    const latest = clientBody.turnoverHistory
+      .slice()
+      .sort((a, b) => (b.year || '').localeCompare(a.year || ''))[0];
+    if (latest && latest.turnover) {
+      clientBody.turnover = latest.turnover;
+    }
+  }
   
   const client = await Client.create(clientBody);
   return client;
@@ -550,6 +568,28 @@ const updateClientById = async (clientId, updateBody, user = null) => {
   // Only update activities if they were explicitly provided or auto-detected new ones
   if (updateBody.activities !== undefined || finalActivities.length !== existingActivities.length) {
     updateBody.activities = finalActivities;
+  }
+
+  // Normalize turnoverHistory (dedupe by year, trim). If provided, also update legacy `turnover`.
+  if (updateBody.turnoverHistory !== undefined) {
+    if (Array.isArray(updateBody.turnoverHistory)) {
+      const byYear = new Map();
+      updateBody.turnoverHistory.forEach((t) => {
+        const year = (t?.year || '').toString().trim();
+        const turnover = (t?.turnover || '').toString().trim();
+        if (year && turnover) byYear.set(year, { year, turnover });
+      });
+      updateBody.turnoverHistory = Array.from(byYear.values());
+      const latest = updateBody.turnoverHistory
+        .slice()
+        .sort((a, b) => (b.year || '').localeCompare(a.year || ''))[0];
+      if (latest && latest.turnover) {
+        updateBody.turnover = latest.turnover;
+      }
+    } else {
+      // If client sends null/invalid, ignore instead of breaking
+      delete updateBody.turnoverHistory;
+    }
   }
   
   Object.assign(client, updateBody);
@@ -1436,6 +1476,19 @@ const bulkImportClients = async (clients) => {
                     ...(client.category && { category: client.category }),
                     // Update turnover if provided
                     ...(client.turnover !== undefined && { turnover: client.turnover }),
+                    ...(client.turnoverHistory !== undefined && Array.isArray(client.turnoverHistory) && {
+                      turnoverHistory: Array.from(
+                        new Map(
+                          client.turnoverHistory
+                            .map((t) => ({
+                              year: (t?.year || '').toString().trim(),
+                              turnover: (t?.turnover || '').toString().trim(),
+                            }))
+                            .filter((t) => t.year && t.turnover)
+                            .map((t) => [t.year, t])
+                        ).values()
+                      ),
+                    }),
                     // Update activities (includes auto-detected compliance activities)
                     ...(activities.length > 0 && { activities }),
                   },

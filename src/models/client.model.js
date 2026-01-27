@@ -164,6 +164,24 @@ const clientSchema = mongoose.Schema(
       trim: true,
       description: 'Annual turnover/revenue of the client'
     },
+    /**
+     * Year-wise turnover tracking.
+     * Example: [{ year: "2023-2024", turnover: "1.2Cr" }, { year: "2022-2023", turnover: "95L" }]
+     */
+    turnoverHistory: [{
+      year: {
+        type: String,
+        trim: true,
+        required: true,
+        description: 'Financial year or year label (e.g., "2023-2024" or "2023")'
+      },
+      turnover: {
+        type: String,
+        trim: true,
+        required: true,
+        description: 'Turnover for the given year'
+      },
+    }],
     activities: [{
       activity: {
         type: mongoose.Schema.Types.ObjectId,
@@ -224,6 +242,7 @@ clientSchema.index({ pan: 1 });
 clientSchema.index({ district: 1 });
 clientSchema.index({ category: 1 }); // Index for category field
 clientSchema.index({ turnover: 1 }); // Index for turnover field
+clientSchema.index({ 'turnoverHistory.year': 1 });
 clientSchema.index({ 'gstNumbers.gstNumber': 1 });
 clientSchema.index({ 'gstNumbers.state': 1 });
 clientSchema.index({ branch: 1, status: 1 }); // Compound index for branch + status queries

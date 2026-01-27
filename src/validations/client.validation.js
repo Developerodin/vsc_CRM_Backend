@@ -31,6 +31,12 @@ const createClient = {
     metadata: Joi.object(),
     category: Joi.string().valid('A', 'B', 'C').default('C'),
     turnover: Joi.string(),
+    turnoverHistory: Joi.array().items(
+      Joi.object({
+        year: Joi.string().trim().pattern(/^\d{4}(-\d{4})?$/).required(),
+        turnover: Joi.string().trim().min(1).required(),
+      })
+    ).optional(),
     branch: Joi.string().custom(objectId).required(),
     sortOrder: Joi.number(),
     // Add activities with subactivity support
@@ -119,6 +125,12 @@ const updateClient = {
       metadata: Joi.object(),
       category: Joi.string().valid('A', 'B', 'C'),
       turnover: Joi.string(),
+      turnoverHistory: Joi.array().items(
+        Joi.object({
+          year: Joi.string().trim().pattern(/^\d{4}(-\d{4})?$/).required(),
+          turnover: Joi.string().trim().min(1).required(),
+        })
+      ),
       branch: Joi.string().custom(objectId),
       sortOrder: Joi.number(),
       // Add activities with subactivity support
