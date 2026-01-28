@@ -1,6 +1,8 @@
 import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
 import { Client, Activity, Timeline } from '../models/index.js';
+import { getCurrentFinancialYear } from '../utils/financialYear.js';
+import { upsertRecurringTimeline } from './timelineUpsert.service.js';
 
 /**
  * Create timelines for a client based on activity subactivities
@@ -66,6 +68,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
   const financialYearStart = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1;
   const financialYearEnd = financialYearStart + 1;
   const financialYear = `${financialYearStart}-${financialYearEnd}`;
+  const { yearString: currentFYString } = getCurrentFinancialYear();
 
   // Copy fields from subactivity to timeline with empty values
   const timelineFields = subactivity.fields.map(field => ({
@@ -92,23 +95,15 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(timeParts.hours, timeParts.minutes);
         }
 
-        const timeline = await Timeline.create({
-          activity: activity._id,
-          client: client._id,
-          subactivity: {
-            _id: subactivity._id,
-            name: subactivity.name,
-            frequency: subactivity.frequency,
-            frequencyConfig: subactivity.frequencyConfig,
-            fields: subactivity.fields
-          },
+        const { timeline } = await upsertRecurringTimeline({
+          clientId: client._id,
+          activityId: activity._id,
+          branchId: client.branch,
           period,
           dueDate,
-          fields: timelineFields,
-          branch: client.branch,
-          status: 'pending'
+          subactivity,
+          financialYear: currentFYString || financialYear,
         });
-        
         timelines.push(timeline);
       }
       break;
@@ -135,23 +130,15 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(timeParts.hours, timeParts.minutes);
         }
 
-        const timeline = await Timeline.create({
-          activity: activity._id,
-          client: client._id,
-          subactivity: {
-            _id: subactivity._id,
-            name: subactivity.name,
-            frequency: subactivity.frequency,
-            frequencyConfig: subactivity.frequencyConfig,
-            fields: subactivity.fields
-          },
+        const { timeline } = await upsertRecurringTimeline({
+          clientId: client._id,
+          activityId: activity._id,
+          branchId: client.branch,
           period,
           dueDate,
-          fields: timelineFields,
-          branch: client.branch,
-          status: 'pending'
+          subactivity,
+          financialYear: currentFYString || financialYear,
         });
-        
         timelines.push(timeline);
       }
       break;
@@ -180,24 +167,18 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
         dueDate.setHours(timeParts.hours, timeParts.minutes);
       }
 
-      const timeline = await Timeline.create({
-        activity: activity._id,
-        client: client._id,
-        subactivity: {
-          _id: subactivity._id,
-          name: subactivity.name,
-          frequency: subactivity.frequency,
-          frequencyConfig: subactivity.frequencyConfig,
-          fields: subactivity.fields
-        },
-        period,
-        dueDate,
-        fields: timelineFields,
-        branch: client.branch,
-        status: 'pending'
-      });
-      
-      timelines.push(timeline);
+      {
+        const { timeline } = await upsertRecurringTimeline({
+          clientId: client._id,
+          activityId: activity._id,
+          branchId: client.branch,
+          period,
+          dueDate,
+          subactivity,
+          financialYear: currentFYString || financialYear,
+        });
+        timelines.push(timeline);
+      }
       break;
 
     case 'Daily':
@@ -213,23 +194,15 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(timeParts.hours, timeParts.minutes);
         }
 
-        const timeline = await Timeline.create({
-          activity: activity._id,
-          client: client._id,
-          subactivity: {
-            _id: subactivity._id,
-            name: subactivity.name,
-            frequency: subactivity.frequency,
-            frequencyConfig: subactivity.frequencyConfig,
-            fields: subactivity.fields
-          },
+        const { timeline } = await upsertRecurringTimeline({
+          clientId: client._id,
+          activityId: activity._id,
+          branchId: client.branch,
           period,
           dueDate,
-          fields: timelineFields,
-          branch: client.branch,
-          status: 'pending'
+          subactivity,
+          financialYear: currentFYString || financialYear,
         });
-        
         timelines.push(timeline);
       }
       break;
@@ -247,23 +220,15 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(timeParts.hours, timeParts.minutes);
         }
 
-        const timeline = await Timeline.create({
-          activity: activity._id,
-          client: client._id,
-          subactivity: {
-            _id: subactivity._id,
-            name: subactivity.name,
-            frequency: subactivity.frequency,
-            frequencyConfig: subactivity.frequencyConfig,
-            fields: subactivity.fields
-          },
+        const { timeline } = await upsertRecurringTimeline({
+          clientId: client._id,
+          activityId: activity._id,
+          branchId: client.branch,
           period,
           dueDate,
-          fields: timelineFields,
-          branch: client.branch,
-          status: 'pending'
+          subactivity,
+          financialYear: currentFYString || financialYear,
         });
-        
         timelines.push(timeline);
       }
       break;
@@ -280,23 +245,15 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(9); // Default to 9 AM
         }
 
-        const timeline = await Timeline.create({
-          activity: activity._id,
-          client: client._id,
-          subactivity: {
-            _id: subactivity._id,
-            name: subactivity.name,
-            frequency: subactivity.frequency,
-            frequencyConfig: subactivity.frequencyConfig,
-            fields: subactivity.fields
-          },
+        const { timeline } = await upsertRecurringTimeline({
+          clientId: client._id,
+          activityId: activity._id,
+          branchId: client.branch,
           period,
           dueDate,
-          fields: timelineFields,
-          branch: client.branch,
-          status: 'pending'
+          subactivity,
+          financialYear: currentFYString || financialYear,
         });
-        
         timelines.push(timeline);
       }
       break;

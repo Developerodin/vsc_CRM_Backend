@@ -26,6 +26,16 @@ const timelineSchema = mongoose.Schema(
       // Store subactivity data directly since it's an embedded document
       // This will contain: { _id, name, frequency, frequencyConfig, fields }
     },
+    /**
+     * Normalized subactivity id for indexing/deduplication.
+     * We keep `subactivity` as Mixed for backward compatibility and UI display,
+     * but use `subactivityId` for stable queries + unique index.
+     */
+    subactivityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: false,
+      index: true,
+    },
     period: {
       type: String,
       required: false,
@@ -114,11 +124,12 @@ const timelineSchema = mongoose.Schema(
   }
 );
 
-// Simple pre-save middleware to ensure status is set
+// Pre-save: ensure status + sync subactivityId for duplicate prevention
 timelineSchema.pre('save', function (next) {
-  // Ensure status is always set
-  if (!this.status) {
-    this.status = 'pending';
+  if (!this.status) this.status = 'pending';
+  // Keep subactivityId in sync so unique index (client, activity, subactivityId, period) works
+  if (this.subactivity && this.subactivity._id && !this.subactivityId) {
+    this.subactivityId = this.subactivity._id;
   }
   next();
 });
@@ -143,6 +154,26 @@ timelineSchema.index({ startDate: 1, branch: 1 }); // For assigned task counts
 timelineSchema.index({ frequency: 1, branch: 1 }); // For frequency analytics
 // Critical index for group task statistics - client lookup in aggregations
 timelineSchema.index({ client: 1 }); // Single field index for faster $in queries
+
+/**
+ * Prevent duplicate recurring timelines for the same client+activity+subactivity+period.
+ * This makes cron idempotent even if it runs twice (multiple app instances, overlap, etc).
+ *
+ * Notes:
+ * - Partial index avoids impacting old data where `period` may be missing.
+ * - We scope to `timelineType: 'recurring'` to avoid blocking one-time timelines.
+ */
+timelineSchema.index(
+  { client: 1, activity: 1, subactivityId: 1, period: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      timelineType: 'recurring',
+      period: { $type: 'string' },
+      subactivityId: { $type: 'objectId' },
+    },
+  }
+);
 
 // add plugin that converts mongoose to json
 timelineSchema.plugin(toJSON);
