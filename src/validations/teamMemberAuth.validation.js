@@ -90,26 +90,21 @@ const updateTask = {
       .description('Task remarks or notes'),
     metadata: Joi.object()
       .description('Additional task metadata'),
-    // Direct timeline field updates (for single timeline or all timelines)
-    referenceNumber: Joi.string().trim().optional()
-      .description('Reference number to update for timeline(s)'),
-    completedAt: Joi.date().optional()
-      .description('Completion date to update for timeline(s)'),
-    // Array format for updating specific timelines
+    // Update only selected timelines
     timelineUpdates: Joi.array().items(
       Joi.object().keys({
         timelineId: Joi.string().custom(objectId).required()
           .description('Timeline ID to update'),
-        referenceNumber: Joi.string().trim().optional()
+        referenceNumber: Joi.string().allow('').trim().max(255).optional()
           .description('Reference number for the timeline'),
-        completedAt: Joi.date().optional()
+        completedAt: Joi.date().allow(null).optional()
           .description('Completion date for the timeline'),
         status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').optional()
           .description('Status for the timeline')
-      })
+      }).min(2) // timelineId + at least one field to update
     ).optional()
       .description('Array of timeline updates')
-  })
+  }).min(1)
 };
 
 const getTasksOfAccessibleTeamMembers = {

@@ -416,10 +416,7 @@ const updateTask = catchAsync(async (req, res) => {
       return tl._id ? tl._id.toString() : tl.toString();
     });
 
-    // Track which timelines were explicitly updated via timelineUpdates array
-    const explicitlyUpdatedTimelineIds = new Set();
-
-    // If timelineUpdates array is provided, update specific timelines
+    // Update only selected timelines via timelineUpdates array
     if (updateData.timelineUpdates && Array.isArray(updateData.timelineUpdates)) {
       for (const timelineUpdate of updateData.timelineUpdates) {
         const { timelineId, referenceNumber, completedAt, status } = timelineUpdate;
@@ -428,8 +425,6 @@ const updateTask = catchAsync(async (req, res) => {
         if (!taskTimelineIds.includes(timelineId)) {
           throw new ApiError(httpStatus.BAD_REQUEST, `Timeline ${timelineId} does not belong to this task`);
         }
-        
-        explicitlyUpdatedTimelineIds.add(timelineId);
         
         // Prepare update data
         const timelineUpdateData = {};
@@ -448,42 +443,6 @@ const updateTask = catchAsync(async (req, res) => {
           const existing = timelineUpdateMap.get(timelineId) || {};
           timelineUpdateMap.set(timelineId, { ...existing, ...timelineUpdateData });
         }
-      }
-    }
-    
-    // If direct timeline fields are provided (referenceNumber, completedAt), update all timelines in the task
-    if (updateData.referenceNumber !== undefined || updateData.completedAt !== undefined) {
-      const directTimelineUpdateData = {};
-      if (updateData.referenceNumber !== undefined) {
-        directTimelineUpdateData.referenceNumber = updateData.referenceNumber;
-      }
-      if (updateData.completedAt !== undefined) {
-        directTimelineUpdateData.completedAt = updateData.completedAt;
-      }
-      
-      // Update all timelines in the task (merge with existing updates)
-      for (const timelineId of taskTimelineIds) {
-        const existing = timelineUpdateMap.get(timelineId) || {};
-        timelineUpdateMap.set(timelineId, { ...existing, ...directTimelineUpdateData });
-      }
-    }
-
-    // If task status is being updated to "completed", also update all timelines to "completed"
-    if (updateData.status === 'completed' && task.timeline && task.timeline.length > 0) {
-      const completedAtDate = updateData.completedAt ? new Date(updateData.completedAt) : new Date();
-      
-      for (const timelineId of taskTimelineIds) {
-        const existing = timelineUpdateMap.get(timelineId) || {};
-        
-        // Set status to completed
-        existing.status = 'completed';
-        
-        // Set completedAt if not already set
-        if (!existing.completedAt) {
-          existing.completedAt = updateData.completedAt ? new Date(updateData.completedAt) : new Date();
-        }
-        
-        timelineUpdateMap.set(timelineId, existing);
       }
     }
 

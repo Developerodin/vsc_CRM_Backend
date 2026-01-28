@@ -78,6 +78,7 @@ router
   )
   .patch(
     teamMemberAuth(),
+    validate(teamMemberAuthValidation.updateTask),
     teamMemberAuthController.updateTask
   );
 

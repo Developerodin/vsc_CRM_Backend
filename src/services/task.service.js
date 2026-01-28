@@ -398,8 +398,76 @@ const updateTaskById = async (taskId, updateBody) => {
   if (updateBody.teamMember && updateBody.teamMember !== task.teamMember.toString()) {
     // You can add additional validation here if needed
   }
-  
-  Object.assign(task, updateBody);
+
+  // Optional: patch specific timelines belonging to this task
+  // Payload example:
+  // {
+  //   status: "ongoing",
+  //   timelineUpdates: [
+  //     { timelineId: "...", status: "completed", referenceNumber: "REF-1", completedAt: "2026-01-28T00:00:00.000Z" },
+  //     { timelineId: "...", status: "ongoing" }
+  //   ]
+  // }
+  const { timelineUpdates, ...taskUpdateBody } = updateBody || {};
+
+  if (Array.isArray(timelineUpdates) && timelineUpdates.length > 0) {
+    const taskTimelineIds = Array.isArray(task.timeline) ? task.timeline.map((id) => id.toString()) : [];
+
+    // If task has no timelines, just ignore timelineUpdates (handle gracefully)
+    if (taskTimelineIds.length > 0) {
+      const invalidTimelineIds = [];
+      const bulkOps = [];
+
+      timelineUpdates.forEach((t) => {
+        const timelineId = t?.timelineId?.toString();
+        if (!timelineId) return;
+
+        // Only allow updating timelines that are attached to this task
+        if (!taskTimelineIds.includes(timelineId)) {
+          invalidTimelineIds.push(timelineId);
+          return;
+        }
+
+        const $set = {};
+
+        if (typeof t.status === 'string') {
+          $set.status = t.status;
+          // If status is completed and completedAt not provided, set it now
+          if (t.status === 'completed' && !t.completedAt) {
+            $set.completedAt = new Date();
+          }
+        }
+        if (Object.prototype.hasOwnProperty.call(t, 'referenceNumber')) {
+          $set.referenceNumber = t.referenceNumber;
+        }
+        if (Object.prototype.hasOwnProperty.call(t, 'completedAt')) {
+          $set.completedAt = t.completedAt;
+        }
+
+        if (Object.keys($set).length === 0) return;
+
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: new mongoose.Types.ObjectId(timelineId) },
+            update: { $set },
+          },
+        });
+      });
+
+      if (invalidTimelineIds.length > 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Some timelines do not belong to this task: ${invalidTimelineIds.join(', ')}`
+        );
+      }
+
+      if (bulkOps.length > 0) {
+        await Timeline.bulkWrite(bulkOps, { ordered: false });
+      }
+    }
+  }
+
+  Object.assign(task, taskUpdateBody);
   await task.save();
   return getTaskById(taskId);
 };

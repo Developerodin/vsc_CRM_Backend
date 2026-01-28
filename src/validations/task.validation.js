@@ -109,6 +109,14 @@ const updateTask = {
       remarks: Joi.string().max(1000),
       status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),
       metadata: Joi.object(),
+      timelineUpdates: Joi.array().items(
+        Joi.object().keys({
+          timelineId: Joi.string().custom(objectId).required(),
+          status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
+          referenceNumber: Joi.string().allow('').max(255),
+          completedAt: Joi.date().allow(null),
+        }).min(2) // must include timelineId + at least one field to update
+      ),
       attachments: Joi.array().items(
         Joi.object({
           fileName: Joi.string().required(),
@@ -377,6 +385,14 @@ const updateTaskOfAccessibleTeamMember = {
       remarks: Joi.string().max(1000),
       status: Joi.string().valid('pending', 'ongoing', 'completed', 'on_hold', 'cancelled', 'delayed'),
       metadata: Joi.object(),
+      timelineUpdates: Joi.array().items(
+        Joi.object().keys({
+          timelineId: Joi.string().custom(objectId).required(),
+          status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
+          referenceNumber: Joi.string().allow('').max(255),
+          completedAt: Joi.date().allow(null),
+        }).min(2)
+      ),
       attachments: Joi.array().items(
         Joi.object({
           fileName: Joi.string().required(),
