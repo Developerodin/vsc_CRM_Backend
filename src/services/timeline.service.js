@@ -569,7 +569,7 @@ const queryTimelines = async (filter, options, user) => {
     // Use strictPopulate: false to handle null references gracefully
     await Timeline.populate(allResults, [
       { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
-      { path: 'client', select: 'name email phone', strictPopulate: false }
+      { path: 'client', select: 'name email phone pan gstNumbers tanNumber cinNumber udyamNumber iecCode', strictPopulate: false }
     ]);
     
     // Process subactivity data since it's stored as embedded document
@@ -713,7 +713,7 @@ const queryTimelines = async (filter, options, user) => {
     if (result.results && result.results.length > 0) {
       await Timeline.populate(result.results, [
         { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
-        { path: 'client', select: 'name email phone', strictPopulate: false }
+        { path: 'client', select: 'name email phone pan gstNumbers tanNumber cinNumber udyamNumber iecCode', strictPopulate: false }
       ]);
       
       // Process subactivity data since it's stored as embedded document
