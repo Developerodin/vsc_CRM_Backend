@@ -6,10 +6,11 @@ import { calculateDueDate } from './dueDate.js';
 import { getPeriodFromDate } from './period.js';
 
 /**
- * Shared processor for Monthly / Quarterly / Yearly.
+ * Shared processor for Daily / Monthly / Quarterly / Yearly.
  * Important: uses atomic upsert so even if cron runs twice, it won't create duplicates.
+ * Each frequency runs only on its own cron so yearly doesn't run every day, etc.
  *
- * @param {'Monthly'|'Quarterly'|'Yearly'} frequency
+ * @param {'Daily'|'Monthly'|'Quarterly'|'Yearly'} frequency
  */
 const processRecurringTimelinesByFrequency = async (frequency) => {
   logger.info(`🔄 Processing ${frequency.toLowerCase()} timeline generation...`);
@@ -69,9 +70,15 @@ const processRecurringTimelinesByFrequency = async (frequency) => {
   return { processed: processedCount, created: createdCount };
 };
 
+const processDailyTimelines = async () => processRecurringTimelinesByFrequency('Daily');
 const processMonthlyTimelines = async () => processRecurringTimelinesByFrequency('Monthly');
 const processQuarterlyTimelines = async () => processRecurringTimelinesByFrequency('Quarterly');
 const processYearlyTimelines = async () => processRecurringTimelinesByFrequency('Yearly');
 
-export { processMonthlyTimelines, processQuarterlyTimelines, processYearlyTimelines };
+export {
+  processDailyTimelines,
+  processMonthlyTimelines,
+  processQuarterlyTimelines,
+  processYearlyTimelines,
+};
 

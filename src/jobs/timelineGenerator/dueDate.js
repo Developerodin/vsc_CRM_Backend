@@ -2,9 +2,9 @@ import { MONTH_NAMES } from './period.js';
 
 /**
  * Calculate due date based on frequency and period.
- * Supports the config fields used in the UI (monthlyDay/monthlyTime, quarterlyDay/quarterlyTime, yearlyMonth/yearlyDate).
+ * Supports the config fields used in the UI (dailyTime, monthlyDay/monthlyTime, quarterlyDay/quarterlyTime, yearlyMonth/yearlyDate).
  *
- * @param {'Monthly'|'Quarterly'|'Yearly'} frequency
+ * @param {'Daily'|'Monthly'|'Quarterly'|'Yearly'} frequency
  * @param {Object} frequencyConfig
  * @param {string} period
  * @returns {Date}
@@ -13,6 +13,23 @@ const calculateDueDate = (frequency, frequencyConfig, period) => {
   const now = new Date();
 
   switch (frequency) {
+    case 'Daily': {
+      const [y, m, d] = period.split('-').map(Number);
+      const dueDate = new Date(y, m - 1, d);
+      if (frequencyConfig?.dailyTime) {
+        const timeParts = frequencyConfig.dailyTime.match(/(\d+):(\d+)(?:\s*(AM|PM))?/);
+        if (timeParts) {
+          let hours = parseInt(timeParts[1], 10);
+          const minutes = parseInt(timeParts[2], 10);
+          const ampm = timeParts[3];
+          if (ampm === 'PM' && hours !== 12) hours += 12;
+          if (ampm === 'AM' && hours === 12) hours = 0;
+          dueDate.setHours(hours, minutes, 0, 0);
+        }
+      }
+      return dueDate;
+    }
+
     case 'Monthly': {
       if (frequencyConfig?.monthlyDay) {
         const [monthName, year] = period.split('-');

@@ -7,6 +7,7 @@
 
 export {
   generateRecurringTimelines,
+  processDailyTimelines,
   processMonthlyTimelines,
   processQuarterlyTimelines,
   processYearlyTimelines,

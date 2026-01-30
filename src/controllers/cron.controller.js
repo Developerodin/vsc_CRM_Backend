@@ -51,9 +51,27 @@ const triggerDailyReminders = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Find or remove duplicate recurring timelines (same client+activity+subactivity+period).
+ * Query: ?dryRun=true to only report, no delete.
+ * @route POST /v1/cron/remove-duplicate-timelines
+ * @access Private
+ */
+const removeDuplicateTimelines = catchAsync(async (req, res) => {
+  const dryRun = req.query.dryRun === 'true';
+  const result = dryRun
+    ? await cronService.findDuplicateTimelines()
+    : await cronService.removeDuplicateTimelines();
+  res.status(httpStatus.OK).send({
+    message: dryRun ? 'Duplicate report (no delete)' : 'Duplicate timelines removed',
+    ...result
+  });
+});
+
 export default {
   initializeCronJobs,
   stopCronJobs,
   getCronJobStatus,
-  triggerDailyReminders
+  triggerDailyReminders,
+  removeDuplicateTimelines
 };

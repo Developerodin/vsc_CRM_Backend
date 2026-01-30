@@ -29,12 +29,12 @@ class CronManager {
       this.isRunning = true;
       logger.info('✅ All cron jobs started successfully');
       
-      // Log job schedules
+      // Log job schedules (each frequency runs only when its period changes)
       logger.info('📅 Scheduled jobs:');
-      logger.info('   - Daily timeline check: 1:00 AM IST');
-      logger.info('   - Monthly timelines: 1st of month, 2:00 AM IST');
-      logger.info('   - Quarterly timelines: 1st of quarter, 3:00 AM IST');
-      logger.info('   - Yearly timelines: April 1st, 4:00 AM IST');
+      logger.info('   - Daily timelines (Daily freq only): 1:00 AM IST');
+      logger.info('   - Monthly timelines (Monthly freq only): 1st of month, 2:00 AM IST');
+      logger.info('   - Quarterly timelines (Quarterly freq only): 1st of quarter, 3:00 AM IST');
+      logger.info('   - Yearly timelines (Yearly freq only): April 1st, 4:00 AM IST');
       
     } catch (error) {
       logger.error('❌ Failed to start cron jobs:', error);

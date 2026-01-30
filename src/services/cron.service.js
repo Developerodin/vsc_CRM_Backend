@@ -1,6 +1,10 @@
 import cron from 'node-cron';
 import { Task } from '../models/index.js';
 import { sendEmail, generateDailyReminderHTML } from './email.service.js';
+import {
+  findDuplicateRecurringTimelines,
+  removeDuplicateRecurringTimelines,
+} from './timelineDedupe.service.js';
 import logger from '../config/logger.js';
 
 /**
@@ -205,9 +209,23 @@ const getCronJobStatus = () => {
   }
 };
 
+/**
+ * Find duplicate recurring timelines (dry run).
+ * @returns {{ duplicateGroups, totalWouldDelete }}
+ */
+const findDuplicateTimelines = async () => findDuplicateRecurringTimelines();
+
+/**
+ * Remove duplicate recurring timelines (keep oldest per group).
+ * @returns {{ deleted, duplicateGroups, keptPerGroup }}
+ */
+const removeDuplicateTimelines = async () => removeDuplicateRecurringTimelines();
+
 export {
   initializeCronJobs,
   stopCronJobs,
   getCronJobStatus,
-  sendDailyTaskReminders
+  sendDailyTaskReminders,
+  findDuplicateTimelines,
+  removeDuplicateTimelines
 };

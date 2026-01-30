@@ -20,14 +20,17 @@ const MONTH_NAMES = [
 
 /**
  * @param {Date} date
- * @param {'Monthly'|'Quarterly'|'Yearly'} frequency
+ * @param {'Daily'|'Monthly'|'Quarterly'|'Yearly'} frequency
  * @returns {string}
  */
 const getPeriodFromDate = (date, frequency) => {
   const month = date.getMonth();
   const year = date.getFullYear();
+  const day = date.getDate();
 
   switch (frequency) {
+    case 'Daily':
+      return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     case 'Monthly':
       return `${MONTH_NAMES[month]}-${year}`;
     case 'Quarterly': {

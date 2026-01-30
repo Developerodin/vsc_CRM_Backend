@@ -24,4 +24,8 @@ router
   .route('/trigger-reminders')
   .post(auth('manageSystem'), cronController.triggerDailyReminders);
 
+router
+  .route('/remove-duplicate-timelines')
+  .post(auth('manageSystem'), cronController.removeDuplicateTimelines);
+
 export default router;
