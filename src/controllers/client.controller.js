@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import { clientService } from '../services/index.js';
 import pick from '../utils/pick.js';
+import normalizeClientListFilter from '../utils/normalizeClientListFilter.js';
 import ApiError from '../utils/ApiError.js';
 
 const createClient = catchAsync(async (req, res) => {
@@ -10,15 +11,15 @@ const createClient = catchAsync(async (req, res) => {
 });
 
 const getClients = catchAsync(async (req, res) => {
-  const filter = pick(req.query, [
-    'name', 
-    'email', 
-    'phone', 
-    'district', 
-    'state', 
-    'country', 
-    'fNo', 
-    'pan', 
+  const rawFilter = pick(req.query, [
+    'name',
+    'email',
+    'phone',
+    'district',
+    'state',
+    'country',
+    'fNo',
+    'pan',
     'businessType',
     'gstNumbers',
     'tanNumber',
@@ -27,11 +28,16 @@ const getClients = catchAsync(async (req, res) => {
     'iecCode',
     'entityType',
     'branch',
-    'search'
+    'category',
+    'status',
+    'activity',
+    'subactivity',
+    'gstNumber',
+    'search',
   ]);
+  const filter = normalizeClientListFilter(rawFilter);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  
-  // Add branch filtering based on user's access
+
   const result = await clientService.queryClients(filter, options, req.user);
   res.send(result);
 });

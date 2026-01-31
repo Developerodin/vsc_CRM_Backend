@@ -351,44 +351,72 @@ const queryClients = async (filter, options, user) => {
   
   // Handle individual field filters (only if no global search)
   if (!mongoFilter.$or) {
-    // If name filter exists, convert it to case-insensitive regex
     if (mongoFilter.name) {
       mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
     }
-    
-    // If email filter exists, convert it to case-insensitive regex
     if (mongoFilter.email) {
       mongoFilter.email = { $regex: mongoFilter.email, $options: 'i' };
     }
-    
-    // If phone filter exists, convert it to case-insensitive regex
     if (mongoFilter.phone) {
       mongoFilter.phone = { $regex: mongoFilter.phone, $options: 'i' };
     }
-    
-    // If district filter exists, convert it to case-insensitive regex
     if (mongoFilter.district) {
       mongoFilter.district = { $regex: mongoFilter.district, $options: 'i' };
     }
-    
-    // If businessType filter exists, convert it to case-insensitive regex
     if (mongoFilter.businessType) {
       mongoFilter.businessType = { $regex: mongoFilter.businessType, $options: 'i' };
     }
-    
-    // If pan filter exists, convert it to case-insensitive regex
     if (mongoFilter.pan) {
       mongoFilter.pan = { $regex: mongoFilter.pan, $options: 'i' };
     }
-    
-    // If category filter exists, validate and apply exact match
+    if (mongoFilter.entityType) {
+      mongoFilter.entityType = { $regex: mongoFilter.entityType, $options: 'i' };
+    }
+    if (mongoFilter.state) {
+      mongoFilter.state = { $regex: mongoFilter.state, $options: 'i' };
+    }
+    if (mongoFilter.country) {
+      mongoFilter.country = { $regex: mongoFilter.country, $options: 'i' };
+    }
     if (mongoFilter.category) {
-      // Validate category value
       if (!['A', 'B', 'C'].includes(mongoFilter.category)) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid category filter. Allowed values are: A, B, C');
       }
-      // Category is already set correctly, no need to modify
     }
+  }
+
+  // Status: exact match (applies with or without global search)
+  if (mongoFilter.status) {
+    if (!['active', 'inactive'].includes(mongoFilter.status)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid status filter. Allowed values are: active, inactive');
+    }
+  }
+
+  // Activity filter: clients that have this activity assigned
+  if (mongoFilter.activity) {
+    const activityId = String(mongoFilter.activity).trim();
+    if (!mongoose.Types.ObjectId.isValid(activityId)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid activity ID');
+    }
+    mongoFilter['activities.activity'] = new mongoose.Types.ObjectId(activityId);
+    delete mongoFilter.activity;
+  }
+
+  // Subactivity filter: clients that have this subactivity assigned
+  if (mongoFilter.subactivity) {
+    const subactivityId = String(mongoFilter.subactivity).trim();
+    if (!mongoose.Types.ObjectId.isValid(subactivityId)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid subactivity ID');
+    }
+    mongoFilter['activities.subactivity'] = new mongoose.Types.ObjectId(subactivityId);
+    delete mongoFilter.subactivity;
+  }
+
+  // GST Number filter: search in gstNumbers array (single string from UI)
+  if (mongoFilter.gstNumber) {
+    const gstValue = String(mongoFilter.gstNumber).trim();
+    mongoFilter['gstNumbers.gstNumber'] = { $regex: gstValue, $options: 'i' };
+    delete mongoFilter.gstNumber;
   }
 
   // Apply branch filtering based on user's access
