@@ -149,30 +149,40 @@ const autoDetectComplianceActivities = async (clientBody, existingActivities = [
       }
     }
 
-    // 3. Check for GST numbers - add GST > GSTR-1, GSTR-3B
+    // 3. Check for GST numbers - add GST > GSTR-1, GSTR-3B (monthly). Do NOT add if client already has quarterly (GSTR-1-Q, GSTR-3B-Q).
     if (clientBody.gstNumbers && Array.isArray(clientBody.gstNumbers) && clientBody.gstNumbers.length > 0) {
       const gstActivity = await Activity.findOne({ name: 'GST' });
-      
       if (gstActivity && gstActivity.subactivities && Array.isArray(gstActivity.subactivities)) {
-        const gstSubactivities = ['GSTR-1', 'GSTR-3B'];
-        
-        gstSubactivities.forEach(subactivityName => {
-          const subactivity = gstActivity.subactivities.find(sub => sub.name === subactivityName);
-          
-          if (subactivity) {
-            const key = `${gstActivity._id.toString()}_${subactivity._id.toString()}`;
-            if (!existingActivityMap.has(key)) {
-              activities.push({
-                activity: gstActivity._id,
-                subactivity: subactivity._id,
-                assignedDate: new Date(),
-                notes: `Auto-detected based on GST number(s)`,
-                status: 'active'
-              });
-              existingActivityMap.set(key, true);
-            }
-          }
+        const quarterlyIds = new Set(
+          (gstActivity.subactivities || [])
+            .filter((s) => (s.name || '').trim() === 'GSTR-1-Q' || (s.name || '').trim() === 'GSTR-3B-Q')
+            .map((s) => s._id.toString())
+        );
+        const hasGstQuarterly = activities.some((act) => {
+          const actId = (act.activity && act.activity.toString) ? act.activity.toString() : act.activity;
+          if (actId !== gstActivity._id.toString()) return false;
+          const subId = act.subactivity?._id ? act.subactivity._id.toString() : (act.subactivity ? act.subactivity.toString() : null);
+          return subId && quarterlyIds.has(subId);
         });
+        if (!hasGstQuarterly) {
+          const gstSubactivities = ['GSTR-1', 'GSTR-3B'];
+          gstSubactivities.forEach(subactivityName => {
+            const subactivity = gstActivity.subactivities.find(sub => sub.name === subactivityName);
+            if (subactivity) {
+              const key = `${gstActivity._id.toString()}_${subactivity._id.toString()}`;
+              if (!existingActivityMap.has(key)) {
+                activities.push({
+                  activity: gstActivity._id,
+                  subactivity: subactivity._id,
+                  assignedDate: new Date(),
+                  notes: 'Auto-detected based on GST number(s)',
+                  status: 'active'
+                });
+                existingActivityMap.set(key, true);
+              }
+            }
+          });
+        }
       }
     }
 
