@@ -6,6 +6,71 @@ import Activity from '../../models/activity.model.js';
 import TeamMember from '../../models/teamMember.model.js';
 import Branch from '../../models/branch.model.js';
 import { hasBranchAccess, getUserBranchIds } from '../role.service.js';
+import { getCurrentFinancialYear } from '../../utils/financialYear.js';
+
+/**
+ * Build per-activity timeline counts (completed, pending, ongoing, delayed) from timeline list
+ * @param {Array} timelineList - timelines with activity populated
+ * @returns {Array} [{ activityId, activityName, total, completed, pending, ongoing, delayed }]
+ */
+const buildTimelineByActivitySummary = (timelineList) => {
+  const byActivity = new Map();
+  const PENDING_STATUSES = ['pending', 'ongoing', 'delayed'];
+  (timelineList || []).forEach((t) => {
+    const aid = t.activity?._id?.toString() || t.activity?.toString();
+    const name = t.activity?.name || 'Unknown';
+    if (!aid) return;
+    if (!byActivity.has(aid)) {
+      byActivity.set(aid, { activityId: aid, activityName: name, total: 0, completed: 0, pending: 0, ongoing: 0, delayed: 0 });
+    }
+    const row = byActivity.get(aid);
+    row.total += 1;
+    if (t.status === 'completed') row.completed += 1;
+    else if (t.status === 'ongoing') row.ongoing += 1;
+    else if (t.status === 'delayed') row.delayed += 1;
+    else row.pending += 1;
+  });
+  return Array.from(byActivity.values());
+};
+
+/**
+ * Build timeline history by financial year from raw timelines
+ * @param {Array} allTimelines - lean timelines with activity, status, financialYear
+ * @returns {Array} [{ financialYear, total, completed, pending, byActivity: [...] }]
+ */
+const buildTimelineHistoryByYear = (allTimelines) => {
+  const byYear = new Map();
+  (allTimelines || []).forEach((t) => {
+    const fy = t.financialYear || 'No FY';
+    if (!byYear.has(fy)) {
+      byYear.set(fy, { financialYear: fy, total: 0, completed: 0, pending: 0, ongoing: 0, delayed: 0, byActivity: new Map() });
+    }
+    const row = byYear.get(fy);
+    row.total += 1;
+    if (t.status === 'completed') row.completed += 1;
+    else if (t.status === 'ongoing') row.ongoing += 1;
+    else if (t.status === 'delayed') row.delayed += 1;
+    else row.pending += 1;
+    const aid = t.activity?._id?.toString() || t.activity?.toString();
+    const name = t.activity?.name || 'Unknown';
+    if (aid) {
+      if (!row.byActivity.has(aid)) row.byActivity.set(aid, { activityId: aid, activityName: name, total: 0, completed: 0, pending: 0 });
+      const ar = row.byActivity.get(aid);
+      ar.total += 1;
+      if (t.status === 'completed') ar.completed += 1;
+      else ar.pending += 1;
+    }
+  });
+  return Array.from(byYear.values()).map((y) => ({
+    financialYear: y.financialYear,
+    total: y.total,
+    completed: y.completed,
+    pending: y.pending,
+    ongoing: y.ongoing,
+    delayed: y.delayed,
+    byActivity: Array.from(y.byActivity.values())
+  })).sort((a, b) => (b.financialYear || '').localeCompare(a.financialYear || ''));
+};
 
 /**
  * Get comprehensive client details overview
@@ -16,20 +81,32 @@ import { hasBranchAccess, getUserBranchIds } from '../role.service.js';
  */
 const getClientDetailsOverview = async (clientId, filters = {}, options = {}) => {
   try {
-    // Get client basic information
+    // Get client with category, turnover, turnoverHistory, activities
     const client = await Client.findById(clientId)
       .populate('branch', 'name address city state country pinCode')
-      .populate('activities.activity', 'name description category');
+      .populate('activities.activity', 'name')
+      .lean();
 
     if (!client) {
       throw new Error('Client not found');
     }
 
-    // Get all timelines for this client
-    const timelines = await Timeline.find({ client: clientId })
-      .populate('activity', 'name description category')
+    const { yearString: currentFY } = getCurrentFinancialYear();
+    const filterFY = filters.financialYear ? String(filters.financialYear).trim() : null;
+
+    // Get all timelines for this client (optionally filtered by financialYear)
+    const timelineMatch = { client: clientId };
+    if (filterFY) timelineMatch.financialYear = filterFY;
+    const timelines = await Timeline.find(timelineMatch)
+      .populate('activity', 'name')
       .populate('branch', 'name address city state country pinCode')
       .sort({ startDate: -1 });
+
+    // All timelines for this client (for history by year and all-time summary)
+    const allTimelinesRaw = await Timeline.find({ client: clientId })
+      .select('activity status financialYear')
+      .populate('activity', 'name')
+      .lean();
 
     // Get all tasks related to this client's timelines
     const timelineIds = timelines.map(timeline => timeline._id);
@@ -287,6 +364,11 @@ const getClientDetailsOverview = async (clientId, filters = {}, options = {}) =>
         attachments: task.attachments || []
       }));
 
+    const timelineByActivitySummary = buildTimelineByActivitySummary(timelines);
+    const timelineHistoryByYear = buildTimelineHistoryByYear(allTimelinesRaw);
+    const currentFYTimelines = (allTimelinesRaw || []).filter((t) => t.financialYear === currentFY);
+    const timelineByActivityCurrentFY = buildTimelineByActivitySummary(currentFYTimelines);
+
     return {
       client: {
         _id: client._id,
@@ -302,12 +384,13 @@ const getClientDetailsOverview = async (clientId, filters = {}, options = {}) =>
         pan: client.pan,
         dob: client.dob,
         businessType: client.businessType,
-        gstNumber: client.gstNumber,
+        gstNumbers: client.gstNumbers || [],
         tanNumber: client.tanNumber,
         cinNumber: client.cinNumber,
         udyamNumber: client.udyamNumber,
         iecCode: client.iecCode,
         entityType: client.entityType,
+        category: client.category,
         turnover: client.turnover,
         turnoverHistory: client.turnoverHistory || [],
         branch: client.branch ? {
@@ -411,7 +494,12 @@ const getClientDetailsOverview = async (clientId, filters = {}, options = {}) =>
       },
       timelines: {
         total: timelines.length,
+        currentFY,
+        financialYearFilter: filterFY || null,
         summary: timelineSummary,
+        byActivitySummary: timelineByActivitySummary,
+        byActivityCurrentFY: timelineByActivityCurrentFY,
+        historyByYear: timelineHistoryByYear,
         byStatus: timelines.reduce((acc, timeline) => {
           const status = timeline.status || 'pending';
           if (!acc[status]) {

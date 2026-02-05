@@ -109,6 +109,9 @@ const getGroupAnalytics = {
   params: Joi.object().keys({
     groupId: Joi.string().custom(objectId).required(),
   }),
+  query: Joi.object().keys({
+    fy: Joi.string().trim().pattern(/^\d{4}-\d{4}$/).optional(), // e.g. 2026-2027
+  }),
 };
 
 export default {

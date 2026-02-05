@@ -179,11 +179,12 @@ const getClientDetailsOverview = catchAsync(async (req, res) => {
     // Extract filters from query parameters
     const filters = pick(req.query, [
       'activitySearch',
-      'startDate', 
+      'startDate',
       'endDate',
       'priority',
       'status',
-      'teamMemberId'
+      'teamMemberId',
+      'financialYear'
     ]);
     
     // Extract options from query parameters

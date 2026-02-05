@@ -71,7 +71,7 @@ const getAllGroupsAnalytics = catchAsync(async (req, res) => {
 });
 
 const getGroupAnalytics = catchAsync(async (req, res) => {
-  const result = await groupService.getGroupAnalytics(req.params.groupId, req.user);
+  const result = await groupService.getGroupAnalytics(req.params.groupId, req.user, { fy: req.query.fy });
   res.status(httpStatus.OK).send(result);
 });
 

@@ -2,6 +2,8 @@ import httpStatus from 'http-status';
 import { Group, Client, Task, Timeline } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
+import { getGroupAnalyticsExtended } from './groupAnalytics.service.js';
+import { getCurrentFinancialYear } from '../utils/financialYear.js';
 
 /**
  * Validate if all client IDs exist
@@ -1063,13 +1065,21 @@ const getAllGroupsAnalytics = async (filter = {}, user = null) => {
  * Get detailed analytics for a specific group
  * @param {ObjectId} groupId - Group ID
  * @param {Object} user - User object with role information
+ * @param {Object} options - Optional: { fy } financial year e.g. "2026-2027"
  * @returns {Promise<Object>} - Detailed group analytics
  */
-const getGroupAnalytics = async (groupId, user = null) => {
+const getGroupAnalytics = async (groupId, user = null, options = {}) => {
   try {
+    const fy = options.fy && options.fy.trim() ? options.fy.trim() : null;
+    const currentFY = fy || getCurrentFinancialYear().yearString;
+
     const group = await Group.findById(groupId)
       .populate('branch', '_id name')
-      .populate('clients', '_id name email phone branch')
+      .populate({
+        path: 'clients',
+        select: '_id name email phone branch category turnover turnoverHistory activities',
+        populate: { path: 'activities.activity', select: '_id name' }
+      })
       .lean();
 
     if (!group) {
@@ -1085,6 +1095,12 @@ const getGroupAnalytics = async (groupId, user = null) => {
     }
 
     const clientIds = (group.clients || []).map(c => c._id || c);
+
+    // When fy is not passed: include all timelines (no year filter). When fy passed: filter by that FY only.
+    const timelineMatch = { client: { $in: clientIds } };
+    if (fy) {
+      timelineMatch.financialYear = fy;
+    }
 
     if (clientIds.length === 0) {
       return {
@@ -1131,18 +1147,17 @@ const getGroupAnalytics = async (groupId, user = null) => {
             Quarterly: 0,
             Yearly: 0
           }
-        }
+        },
+        currentFY,
+        groupTurnoverSummary: { currentFY, turnoverByClient: [], clientsWithTurnover: 0 },
+        activityWiseTimelineAnalytics: { currentFY, byActivity: [] }
       };
     }
 
     // Optimized: Start from Timeline instead of Task to avoid expensive $unwind
     const [taskStatusCounts, taskPriorityCounts, taskTotal] = await Promise.all([
       Timeline.aggregate([
-        {
-          $match: {
-            client: { $in: clientIds }
-          }
-        },
+        { $match: timelineMatch },
         {
           $lookup: {
             from: 'tasks',
@@ -1173,11 +1188,7 @@ const getGroupAnalytics = async (groupId, user = null) => {
         }
       ]),
       Timeline.aggregate([
-        {
-          $match: {
-            client: { $in: clientIds }
-          }
-        },
+        { $match: timelineMatch },
         {
           $lookup: {
             from: 'tasks',
@@ -1208,11 +1219,7 @@ const getGroupAnalytics = async (groupId, user = null) => {
         }
       ]),
       Timeline.aggregate([
-        {
-          $match: {
-            client: { $in: clientIds }
-          }
-        },
+        { $match: timelineMatch },
         {
           $lookup: {
             from: 'tasks',
@@ -1241,11 +1248,7 @@ const getGroupAnalytics = async (groupId, user = null) => {
     // Get timeline analytics - status and frequency breakdown
     const [timelineStatusCounts, timelineFrequencyCounts, timelineTotal] = await Promise.all([
       Timeline.aggregate([
-        {
-          $match: {
-            client: { $in: clientIds }
-          }
-        },
+        { $match: timelineMatch },
         {
           $group: {
             _id: '$status',
@@ -1254,11 +1257,7 @@ const getGroupAnalytics = async (groupId, user = null) => {
         }
       ]),
       Timeline.aggregate([
-        {
-          $match: {
-            client: { $in: clientIds }
-          }
-        },
+        { $match: timelineMatch },
         {
           $group: {
             _id: '$frequency',
@@ -1266,7 +1265,7 @@ const getGroupAnalytics = async (groupId, user = null) => {
           }
         }
       ]),
-      Timeline.countDocuments({ client: { $in: clientIds } })
+      Timeline.countDocuments(timelineMatch)
     ]);
 
     // Process task analytics
@@ -1337,11 +1336,7 @@ const getGroupAnalytics = async (groupId, user = null) => {
     // Optimized: Get client-level statistics efficiently
     const [clientTaskCounts, clientTimelineCounts] = await Promise.all([
       Timeline.aggregate([
-        {
-          $match: {
-            client: { $in: clientIds }
-          }
-        },
+        { $match: timelineMatch },
         {
           $lookup: {
             from: 'tasks',
@@ -1371,11 +1366,7 @@ const getGroupAnalytics = async (groupId, user = null) => {
         }
       ]),
       Timeline.aggregate([
-        {
-          $match: {
-            client: { $in: clientIds }
-          }
-        },
+        { $match: timelineMatch },
         {
           $group: {
             _id: '$client',
@@ -1395,15 +1386,13 @@ const getGroupAnalytics = async (groupId, user = null) => {
       timelineCountMap.set(stat._id.toString(), stat.count);
     });
 
-    // Map client stats to client details
-    const clientsWithStats = group.clients.map(client => {
-      const clientId = (client._id || client).toString();
-      return {
-        ...client,
-        taskCount: taskCountMap.get(clientId) || 0,
-        timelineCount: timelineCountMap.get(clientId) || 0
-      };
-    });
+    const extended = await getGroupAnalyticsExtended(
+      group,
+      clientIds,
+      taskCountMap,
+      timelineCountMap,
+      fy
+    );
 
     return {
       group: {
@@ -1412,9 +1401,12 @@ const getGroupAnalytics = async (groupId, user = null) => {
         branch: group.branch,
         numberOfClients: group.numberOfClients || clientIds.length
       },
-      clients: clientsWithStats,
+      clients: extended.clientsEnriched,
       taskAnalytics: processedTaskAnalytics,
-      timelineAnalytics: processedTimelineAnalytics
+      timelineAnalytics: processedTimelineAnalytics,
+      currentFY: extended.currentFY,
+      groupTurnoverSummary: extended.groupTurnoverSummary,
+      activityWiseTimelineAnalytics: extended.activityWiseTimelineAnalytics
     };
   } catch (error) {
     if (error instanceof ApiError) {

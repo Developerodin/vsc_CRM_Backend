@@ -4,6 +4,13 @@ import Activity from '../models/activity.model.js';
 import Timeline from '../models/timeline.model.js';
 import Client from '../models/client.model.js';
 import cache from '../utils/cache.js';
+import { createClientTimelines } from './timeline.service.js';
+
+/** GST quarterly subactivity names and their monthly counterparts to remove when adding quarterly. */
+const GST_QUARTERLY_TO_MONTHLY = {
+  'GSTR-1-Q': 'GSTR-1',
+  'GSTR-3B-Q': 'GSTR-3B',
+};
 
 /**
  * Normalize frequencyConfig to ensure yearlyMonth is a string (not array)
@@ -378,142 +385,165 @@ const deleteSubactivity = async (activityId, subactivityId) => {
 };
 
 /**
- * Bulk create timelines for multiple clients
- * @param {Object} bulkData
- * @param {Array<ObjectId>} bulkData.clientIds - Array of client IDs (1 to 1000)
- * @param {ObjectId} bulkData.activityId - Activity ID
- * @param {ObjectId} bulkData.subactivityId - Subactivity ID (optional)
- * @param {Object} bulkData.timelineData - Timeline data (status, dueDate, etc.)
- * @param {Object} user - User object for branch access validation
- * @returns {Promise<Object>} - Result with created count and any errors
+ * When adding GST quarterly (GSTR-1-Q / GSTR-3B-Q), return the monthly subactivity id to remove.
+ * @param {Object} activity - Activity doc with subactivities
+ * @param {Object} subactivity - Subactivity being added (quarterly)
+ * @returns {ObjectId|null} - Monthly counterpart subactivity id, or null
+ */
+const getMonthlyCounterpartForGstQuarterly = (activity, subactivity) => {
+  const name = (subactivity?.name || '').trim();
+  const monthlyName = GST_QUARTERLY_TO_MONTHLY[name];
+  if (!monthlyName || (activity?.name || '').trim() !== 'GST') return null;
+  const monthly = activity.subactivities?.find((s) => (s.name || '').trim() === monthlyName);
+  return monthly?._id || null;
+};
+
+/**
+ * Bulk create timelines for multiple clients. When subactivityId is provided, adds the
+ * activity+subactivity to each client and creates timelines (recurring when applicable).
+ * For GST + GSTR-1-Q or GSTR-3B-Q: removes the monthly counterpart (GSTR-1 / GSTR-3B)
+ * from clients and deletes their timelines, then adds quarterly and creates timelines.
  */
 const bulkCreateTimelines = async (bulkData, user = null) => {
   const { clientIds, activityId, subactivityId, ...timelineData } = bulkData;
-  
-  // Validate activity exists
+
   const activity = await Activity.findById(activityId);
   if (!activity) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Activity not found');
   }
-  
-  // Validate subactivity if provided and get dueDate from it
+
   let subactivity = null;
-  let subactivityDueDate = null;
   if (subactivityId) {
     subactivity = activity.subactivities.id(subactivityId);
     if (!subactivity) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Subactivity not found');
     }
-    // Get dueDate from subactivity if available
-    subactivityDueDate = subactivity.dueDate;
   }
-  
-  // Validate all clients exist and get their branches
-  const clients = await Client.find({ _id: { $in: clientIds } }).select('_id branch');
-  
+
+  const clients = await Client.find({ _id: { $in: clientIds } }).select('_id branch activities gstNumbers');
   if (clients.length !== clientIds.length) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'One or more client IDs are invalid');
   }
-  
-  // Create a map of clientId to branch for easy lookup
-  const clientBranchMap = {};
-  clients.forEach(client => {
-    clientBranchMap[client._id.toString()] = client.branch;
-  });
-  
-  // Validate branch access if user is provided (check against client branches)
+
   if (user && user.userType === 'teamMember') {
     const teamMemberBranchId = user.branch ? user.branch.toString() : null;
-    // Check if any client belongs to a different branch
-    const hasUnauthorizedBranch = clients.some(client => {
-      const clientBranchId = client.branch ? client.branch.toString() : null;
-      return clientBranchId !== teamMemberBranchId;
-    });
-    
+    const hasUnauthorizedBranch = clients.some((c) => (c.branch ? c.branch.toString() : null) !== teamMemberBranchId);
     if (hasUnauthorizedBranch) {
       throw new ApiError(httpStatus.FORBIDDEN, 'Access denied: one or more clients belong to branches you do not have access to');
     }
   }
-  
-  const results = {
-    created: 0,
-    failed: 0,
-    errors: [],
-  };
-  
-  // Determine the dueDate to use: explicit dueDate > subactivity dueDate > null
-  const effectiveDueDate = timelineData.dueDate || subactivityDueDate;
-  
-  // Prepare timeline documents for bulk insert
-  const timelinesToCreate = clientIds.map(clientId => {
-    const clientIdStr = clientId.toString();
-    const clientBranch = clientBranchMap[clientIdStr];
-    
-    if (!clientBranch) {
-      throw new ApiError(httpStatus.BAD_REQUEST, `Client ${clientId} does not have a branch assigned`);
-    }
-    
-    const timelineDoc = {
-      client: clientId,
-      activity: activityId,
-      branch: clientBranch,
-      status: timelineData.status || 'pending',
-      frequency: timelineData.frequency || 'OneTime',
-      timelineType: timelineData.timelineType || 'oneTime',
-    };
-    
-    // Add subactivity data if provided
-    if (subactivity) {
-      timelineDoc.subactivity = {
-        _id: subactivity._id,
-        name: subactivity.name,
-        dueDate: subactivity.dueDate,
-        frequency: subactivity.frequency,
-        frequencyConfig: subactivity.frequencyConfig,
-        fields: subactivity.fields,
+
+  const results = { created: 0, failed: 0, errors: [] };
+
+  if (!subactivityId || !subactivity) {
+    // No subactivity: legacy path – bulk insert simple timelines only (no client.activities update)
+    const clientBranchMap = Object.fromEntries(clients.map((c) => [c._id.toString(), c.branch]));
+    const timelinesToCreate = clientIds.map((clientId) => {
+      const branch = clientBranchMap[clientId.toString()];
+      if (!branch) throw new ApiError(httpStatus.BAD_REQUEST, `Client ${clientId} does not have a branch`);
+      return {
+        client: clientId,
+        activity: activityId,
+        branch,
+        status: timelineData.status || 'pending',
+        frequency: timelineData.frequency || 'OneTime',
+        timelineType: timelineData.timelineType || 'oneTime',
+        ...(timelineData.dueDate && { dueDate: timelineData.dueDate }),
+        ...(timelineData.startDate && { startDate: timelineData.startDate }),
+        ...(timelineData.endDate && { endDate: timelineData.endDate }),
+        ...(timelineData.period && { period: timelineData.period }),
+        ...(timelineData.financialYear && { financialYear: timelineData.financialYear }),
       };
-    }
-    
-    // Add dueDate (from explicit param or subactivity)
-    if (effectiveDueDate) timelineDoc.dueDate = effectiveDueDate;
-    
-    // Add other optional fields
-    if (timelineData.startDate) timelineDoc.startDate = timelineData.startDate;
-    if (timelineData.endDate) timelineDoc.endDate = timelineData.endDate;
-    if (timelineData.period) timelineDoc.period = timelineData.period;
-    if (timelineData.financialYear) timelineDoc.financialYear = timelineData.financialYear;
-    if (timelineData.referenceNumber) timelineDoc.referenceNumber = timelineData.referenceNumber;
-    if (timelineData.frequencyConfig) timelineDoc.frequencyConfig = normalizeFrequencyConfig(timelineData.frequencyConfig);
-    if (timelineData.fields) timelineDoc.fields = timelineData.fields;
-    if (timelineData.metadata) timelineDoc.metadata = timelineData.metadata;
-    if (timelineData.state) timelineDoc.state = timelineData.state;
-    
-    return timelineDoc;
-  });
-  
-  // Bulk insert timelines
-  try {
-    const createdTimelines = await Timeline.insertMany(timelinesToCreate, {
-      ordered: false, // Continue processing even if some fail
-      rawResult: true,
     });
-    results.created = createdTimelines.insertedCount || timelinesToCreate.length;
-  } catch (error) {
-    if (error.writeErrors) {
-      // Handle partial failures
-      results.created = (error.insertedDocs && error.insertedDocs.length) || 0;
-      results.failed = error.writeErrors.length;
-      error.writeErrors.forEach((writeError) => {
-        results.errors.push({
-          clientId: clientIds[writeError.index],
-          error: writeError.err.errmsg || 'Timeline creation failed',
-        });
+    try {
+      const inserted = await Timeline.insertMany(timelinesToCreate, { ordered: false, rawResult: true });
+      results.created = inserted.insertedCount || timelinesToCreate.length;
+    } catch (err) {
+      if (err.writeErrors) {
+        results.created = (err.insertedDocs && err.insertedDocs.length) || 0;
+        results.failed = err.writeErrors.length;
+        err.writeErrors.forEach((e) => results.errors.push({ clientId: clientIds[e.index], error: e.err?.errmsg || 'Timeline creation failed' }));
+      } else throw err;
+    }
+    return results;
+  }
+
+  // Subactivity provided: add to client.activities and create proper recurring timelines
+  const activityIdStr = activityId.toString();
+  const monthlyCounterpartId = getMonthlyCounterpartForGstQuarterly(activity, subactivity);
+
+  const newActivityEntry = {
+    activity: activityId,
+    subactivity: {
+      _id: subactivity._id,
+      name: subactivity.name,
+      frequency: subactivity.frequency,
+      frequencyConfig: subactivity.frequencyConfig,
+      fields: subactivity.fields || [],
+    },
+    assignedDate: new Date(),
+    status: 'active',
+    notes: timelineData.notes || '',
+  };
+
+  for (const client of clients) {
+    const cidStr = client._id.toString();
+    try {
+      const isMonthlyGst = (a) => {
+        if ((a.activity?._id ?? a.activity)?.toString() !== activityIdStr) return false;
+        const subId = a.subactivity?._id ?? a.subactivity;
+        const subIdStr = subId ? subId.toString() : null;
+        const subName = (a.subactivity?.name ?? '').trim();
+        return monthlyCounterpartId && (subIdStr === monthlyCounterpartId.toString() || subName === (GST_QUARTERLY_TO_MONTHLY[subactivity.name?.trim()] || ''));
+      };
+      const alreadyHasSubactivity = (client.activities || []).some((a) => {
+        const subId = a.subactivity?._id ?? a.subactivity;
+        return subId && subId.toString() === subactivityId.toString();
       });
-    } else {
-      throw error;
+
+      if (monthlyCounterpartId) {
+        const before = (client.activities || []).length;
+        client.activities = (client.activities || []).filter((a) => !isMonthlyGst(a));
+        if (client.activities.length < before) await client.save();
+      }
+
+      if (monthlyCounterpartId) {
+        const monthlyName = GST_QUARTERLY_TO_MONTHLY[subactivity.name?.trim()] || '';
+        await Timeline.deleteMany({
+          client: client._id,
+          activity: activityId,
+          $or: [
+            { subactivityId: monthlyCounterpartId },
+            { 'subactivity._id': monthlyCounterpartId },
+            ...(monthlyName ? [{ 'subactivity.name': monthlyName }] : []),
+          ],
+        });
+      }
+
+      const didAdd = !alreadyHasSubactivity;
+      if (didAdd) {
+        client.activities = client.activities || [];
+        client.activities.push(newActivityEntry);
+        await client.save();
+      }
+
+      if (didAdd) {
+        const fullClient = await Client.findById(client._id).select('_id branch activities gstNumbers').lean();
+        if (fullClient) {
+          const entryForTimeline = (fullClient.activities || []).find((a) => {
+            const subId = a.subactivity?._id ?? a.subactivity;
+            return subId && subId.toString() === subactivityId.toString();
+          }) || newActivityEntry;
+          const created = await createClientTimelines(fullClient, [entryForTimeline]);
+          results.created += Array.isArray(created) ? created.length : 0;
+        }
+      }
+    } catch (err) {
+      results.failed += 1;
+      results.errors.push({ clientId: client._id, error: err.message || 'Failed' });
     }
   }
-  
+
   return results;
 };
 

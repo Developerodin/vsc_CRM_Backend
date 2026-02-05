@@ -47,20 +47,20 @@ const run = async () => {
     const monthlyIdSet = new Set(monthlyIds.map((id) => id.toString()));
     const quarterlyIdSet = new Set(quarterlyIds.map((id) => id.toString()));
 
-    // Clients that have GST with at least one of GSTR-1-Q or GSTR-3B-Q
+    // Clients that have GST with at least one of GSTR-1-Q or GSTR-3B-Q (any status)
     const clients = await Client.find({
-      status: 'active',
       'activities.activity': gstActivity._id,
     }).populate('activities.activity');
 
     const clientIdsToUpdate = [];
     for (const client of clients) {
       const hasQuarterly = client.activities.some((a) => {
-        if ((a.activity?._id || a.activity)?.toString() !== gstId) return false;
-        const subId = a.subactivity?._id || a.subactivity;
+        const actId = (a.activity?._id || a.activity)?.toString();
+        if (actId !== gstId) return false;
+        const subId = a.subactivity?._id ?? a.subactivity;
         const subIdStr = subId ? subId.toString() : null;
-        const subName = (a.subactivity?.name || '').trim();
-        return subIdStr && quarterlyIdSet.has(subIdStr) || QUARTERLY_NAMES.includes(subName);
+        const subName = (a.subactivity?.name ?? '').trim();
+        return (subIdStr && quarterlyIdSet.has(subIdStr)) || QUARTERLY_NAMES.includes(subName);
       });
       if (hasQuarterly) clientIdsToUpdate.push(client._id);
     }
@@ -73,22 +73,23 @@ const run = async () => {
       return;
     }
 
-    // 1. Remove GSTR-1 / GSTR-3B from those clients' activities
+    // 1. Remove GSTR-1 / GSTR-3B from those clients' activities (when quarterly is present)
+    const isMonthlyGst = (a) => {
+      const actId = (a.activity?._id ?? a.activity)?.toString();
+      if (actId !== gstId) return false;
+      const subId = a.subactivity?._id ?? a.subactivity;
+      const subIdStr = subId ? subId.toString() : null;
+      const subName = (a.subactivity?.name ?? '').trim();
+      return monthlyIdSet.has(subIdStr) || MONTHLY_NAMES.includes(subName);
+    };
+
     let clientsUpdated = 0;
     if (!dryRun) {
       for (const clientId of clientIdsToUpdate) {
         const client = await Client.findById(clientId);
         if (!client) continue;
         const before = client.activities.length;
-        client.activities = client.activities.filter((a) => {
-          const actId = (a.activity?._id || a.activity)?.toString();
-          if (actId !== gstId) return true;
-          const subId = a.subactivity?._id || a.subactivity;
-          const subIdStr = subId ? subId.toString() : null;
-          const subName = (a.subactivity?.name || '').trim();
-          if (monthlyIdSet.has(subIdStr) || MONTHLY_NAMES.includes(subName)) return false;
-          return true;
-        });
+        client.activities = client.activities.filter((a) => !isMonthlyGst(a));
         if (client.activities.length < before) {
           await client.save();
           clientsUpdated++;
@@ -99,12 +100,13 @@ const run = async () => {
       console.log(`   Would remove GSTR-1/GSTR-3B from activities for ${clientIdsToUpdate.length} client(s).\n`);
     }
 
-    // 2. Delete timelines: client in list, activity = GST, subactivity = GSTR-1 or GSTR-3B
+    // 2. Delete timelines: client in list, activity = GST, subactivity = GSTR-1 or GSTR-3B (monthly)
     const timelineFilter = {
       client: { $in: clientIdsToUpdate },
       activity: gstActivity._id,
       $or: [
         { subactivityId: { $in: monthlyIds } },
+        { 'subactivity._id': { $in: monthlyIds } },
         { 'subactivity.name': { $in: MONTHLY_NAMES } },
       ],
     };

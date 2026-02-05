@@ -90,6 +90,10 @@ const getClientDetailsOverview = {
     teamMemberId: Joi.string().custom(objectId)
       .description('Filter tasks by assigned team member ID'),
     
+    // Financial year filter (e.g. 2024-2025) – limits timelines to that FY
+    financialYear: Joi.string().trim().allow('')
+      .description('Filter timelines by financial year'),
+    
     // Pagination options
     limit: Joi.number().integer().min(1).max(100).optional()
       .description('Number of recent activities to return (1-100). If not provided, returns all results.'),

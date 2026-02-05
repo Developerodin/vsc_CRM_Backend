@@ -147,14 +147,26 @@ const queryTimelines = async (filter, options, user) => {
 
   // Handle period filter
   if (mongoFilter.period) {
+    let periodValue = mongoFilter.period.trim();
+    // Normalize YYYY-MM (e.g. 2026-02) to stored format (e.g. February-2026)
+    const yyyyMmMatch = periodValue.match(/^(\d{4})-(\d{2})$/);
+    if (yyyyMmMatch) {
+      const [, year, monthNum] = yyyyMmMatch;
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      const monthIndex = parseInt(monthNum, 10) - 1;
+      if (monthIndex >= 0 && monthIndex <= 11) {
+        periodValue = `${monthNames[monthIndex]}-${year}`;
+      }
+    }
     // Support exact match or partial match
-    if (mongoFilter.period.includes('*') || mongoFilter.period.includes('%')) {
-      // Wildcard search - convert * or % to regex
-      const regexPattern = mongoFilter.period.replace(/[*%]/g, '.*');
+    if (periodValue.includes('*') || periodValue.includes('%')) {
+      const regexPattern = periodValue.replace(/[*%]/g, '.*');
       mongoFilter.period = { $regex: regexPattern, $options: 'i' };
     } else {
-      // Exact match
-      mongoFilter.period = { $regex: mongoFilter.period, $options: 'i' };
+      mongoFilter.period = { $regex: periodValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
     }
   }
 
