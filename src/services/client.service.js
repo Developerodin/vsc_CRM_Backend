@@ -564,47 +564,32 @@ const updateClientById = async (clientId, updateBody, user = null) => {
     updateBody.gstNumbers = gstResult.gstNumbers;
   }
 
-  // Merge client data with update body to check for compliance fields
+  // Merge client data with update body to check for compliance fields (for auto-detect when activities not provided)
   const mergedClientData = {
     pan: updateBody.pan !== undefined ? updateBody.pan : client.pan,
     tanNumber: updateBody.tanNumber !== undefined ? updateBody.tanNumber : client.tanNumber,
-    gstNumbers: updateBody.gstNumbers !== undefined ? updateBody.gstNumbers : client.gstNumbers
+    gstNumbers: updateBody.gstNumbers !== undefined ? updateBody.gstNumbers : client.gstNumbers,
+    cinNumber: updateBody.cinNumber !== undefined ? updateBody.cinNumber : client.cinNumber,
+    entityType: updateBody.entityType !== undefined ? updateBody.entityType : client.entityType
   };
 
-  // Auto-detect and add compliance activities based on PAN, TAN, and GST numbers
-  // Use existing client activities as base, and merge with any activities in updateBody
   const existingActivities = client.activities || [];
-  const updateActivities = updateBody.activities !== undefined ? updateBody.activities : existingActivities;
-  
-  // Auto-detect compliance activities and merge with existing/update activities
-  const autoDetectedActivities = await autoDetectComplianceActivities(mergedClientData, existingActivities);
-  
-  // Merge auto-detected activities with update activities (update activities take precedence)
-  const finalActivities = [...autoDetectedActivities];
-  
-  // Add update activities that aren't already in finalActivities
-  if (updateActivities && Array.isArray(updateActivities)) {
-    updateActivities.forEach(updateAct => {
-      const activityId = (updateAct.activity && updateAct.activity.toString) ? updateAct.activity.toString() : updateAct.activity;
-      const subactivityId = updateAct.subactivity ? 
-        (updateAct.subactivity._id ? updateAct.subactivity._id.toString() : updateAct.subactivity.toString()) : null;
-      const key = `${activityId}_${subactivityId || 'none'}`;
-      
-      const exists = finalActivities.some(act => {
-        const actId = (act.activity && act.activity.toString) ? act.activity.toString() : act.activity;
-        const actSubId = act.subactivity ? 
-          (act.subactivity._id ? act.subactivity._id.toString() : act.subactivity.toString()) : null;
-        return actId === activityId && (actSubId || 'none') === (subactivityId || 'none');
-      });
-      
-      if (!exists) {
-        finalActivities.push(updateAct);
-      }
-    });
+  const activitiesExplicitlyProvided = updateBody.activities !== undefined;
+
+  let finalActivities;
+
+  if (activitiesExplicitlyProvided) {
+    // User sent activities list: use it as source of truth. Do not re-add PAN/CIN/etc
+    // activities that the user removed — otherwise we keep re-creating timelines for them.
+    finalActivities = Array.isArray(updateBody.activities) ? [...updateBody.activities] : [];
+  } else {
+    // No activities in update: keep existing and add any new auto-detected from PAN/TAN/GST/CIN
+    const autoDetectedActivities = await autoDetectComplianceActivities(mergedClientData, existingActivities);
+    finalActivities = [...autoDetectedActivities];
   }
-  
-  // Only update activities if they were explicitly provided or auto-detected new ones
-  if (updateBody.activities !== undefined || finalActivities.length !== existingActivities.length) {
+
+  // Only update activities if they were explicitly provided or we have a different set
+  if (activitiesExplicitlyProvided || finalActivities.length !== existingActivities.length) {
     updateBody.activities = finalActivities;
   }
 
