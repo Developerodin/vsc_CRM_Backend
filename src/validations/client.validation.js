@@ -320,6 +320,16 @@ const getGstNumbers = {
   }),
 };
 
+/** Year report: timelines, status, pendings, turnover for a financial year. */
+const getClientReport = {
+  params: Joi.object().keys({
+    clientId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    year: Joi.string().trim().pattern(/^\d{4}(-\d{4})?$/).optional(), // e.g. "2024" or "2024-2025"
+  }),
+};
+
 export default {
   createClient,
   getClients,
@@ -338,4 +348,5 @@ export default {
   removeGstNumber,
   updateGstNumber,
   getGstNumbers,
+  getClientReport,
 }; 

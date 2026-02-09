@@ -43,4 +43,9 @@ router
   .route('/:groupId/clients/:clientId')
   .delete(auth('manageGroups'), validate(groupValidation.removeClientFromGroup), groupController.removeClientFromGroup);
 
+// Year report: per-client timelines, status, pendings, turnover for all clients in group
+router
+  .route('/:groupId/report')
+  .get(auth('getGroups'), validate(groupValidation.getGroupReport), groupController.getGroupReport);
+
 export default router; 

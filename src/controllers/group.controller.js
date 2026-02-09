@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import { groupService } from '../services/index.js';
+import * as groupReportService from '../services/groupReport.service.js';
 import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
 
@@ -75,6 +76,16 @@ const getGroupAnalytics = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+/** Year report: per-client timelines, status, pendings, turnover for all clients in group. */
+const getGroupReport = catchAsync(async (req, res) => {
+  const result = await groupReportService.getGroupYearReport(
+    req.params.groupId,
+    req.query.year,
+    req.user
+  );
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createGroup,
   getGroups,
@@ -88,4 +99,5 @@ export {
   getGroupTaskStatistics,
   getAllGroupsAnalytics,
   getGroupAnalytics,
+  getGroupReport,
 }; 

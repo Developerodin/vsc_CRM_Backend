@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import { clientService } from '../services/index.js';
+import * as clientReportService from '../services/clientReport.service.js';
 import pick from '../utils/pick.js';
 import normalizeClientListFilter from '../utils/normalizeClientListFilter.js';
 import ApiError from '../utils/ApiError.js';
@@ -138,6 +139,16 @@ const getGstNumbers = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+/** Year report: timelines, activity/subactivity, status, pendings, turnover for client. */
+const getClientReport = catchAsync(async (req, res) => {
+  const result = await clientReportService.getClientYearReport(
+    req.params.clientId,
+    req.query.year,
+    req.user
+  );
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createClient,
   getClients,
@@ -156,4 +167,5 @@ export {
   removeGstNumber,
   updateGstNumber,
   getGstNumbers,
+  getClientReport,
 }; 

@@ -58,4 +58,9 @@ router
   .patch(auth('manageClients'), validate(clientValidation.updateGstNumber), clientController.updateGstNumber)
   .delete(auth('manageClients'), validate(clientValidation.removeGstNumber), clientController.removeGstNumber);
 
+// Year report: timelines, activity/subactivity, status, pendings, turnover
+router
+  .route('/:clientId/report')
+  .get(auth('getClients'), validate(clientValidation.getClientReport), clientController.getClientReport);
+
 export default router; 

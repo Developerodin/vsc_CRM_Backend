@@ -114,6 +114,16 @@ const getGroupAnalytics = {
   }),
 };
 
+/** Year report: per-client timelines, status, pendings, turnover for a financial year. */
+const getGroupReport = {
+  params: Joi.object().keys({
+    groupId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    year: Joi.string().trim().pattern(/^\d{4}(-\d{4})?$/).optional(), // e.g. "2024" or "2024-2025"
+  }),
+};
+
 export default {
   createGroup,
   getGroups,
@@ -126,4 +136,5 @@ export default {
   getGroupTaskStatistics,
   getAllGroupsAnalytics,
   getGroupAnalytics,
+  getGroupReport,
 }; 
