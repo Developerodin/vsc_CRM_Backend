@@ -1,13 +1,13 @@
 /**
  * Group year report: per-client reports (timelines, status, pendings, turnover) for all clients in the group.
- * Includes previous-year Auditing timelines per client when present.
+ * Includes next-year Auditing timelines per client when present (audit for requested FY done in following FY).
  */
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { Group, Timeline, Activity } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess } from './role.service.js';
-import { normalizeFinancialYear, getPreviousFinancialYear } from './clientReport.service.js';
+import { normalizeFinancialYear, getNextFinancialYear } from './clientReport.service.js';
 
 const PENDING_STATUSES = ['pending', 'ongoing', 'delayed'];
 const AUDITING_ACTIVITY_NAME = 'Auditing';
@@ -93,7 +93,7 @@ const getGroupYearReport = async (groupId, year, user = null) => {
   }
 
   const objectIds = clientIds.map((id) => new mongoose.Types.ObjectId(id));
-  const prevFy = getPreviousFinancialYear(fy);
+  const nextFy = getNextFinancialYear(fy);
 
   const [timelines, auditingActivity] = await Promise.all([
     Timeline.find({
@@ -110,7 +110,7 @@ const getGroupYearReport = async (groupId, year, user = null) => {
   if (auditingActivity) {
     auditingTimelines = await Timeline.find({
       client: { $in: objectIds },
-      financialYear: prevFy,
+      financialYear: nextFy,
       activity: auditingActivity._id,
     })
       .populate('activity', 'name')
@@ -185,11 +185,11 @@ const getGroupYearReport = async (groupId, year, user = null) => {
       statusSummary,
       pendings,
     };
-    const prevAuditing = auditingByClient.get(clientId);
-    if (prevAuditing && prevAuditing.length > 0) {
-      clientReport.auditingPreviousYear = {
-        financialYear: prevFy,
-        timelines: prevAuditing.map(formatTimelineItem),
+    const nextAuditing = auditingByClient.get(clientId);
+    if (nextAuditing && nextAuditing.length > 0) {
+      clientReport.auditingNextYear = {
+        financialYear: nextFy,
+        timelines: nextAuditing.map(formatTimelineItem),
       };
     }
     return clientReport;

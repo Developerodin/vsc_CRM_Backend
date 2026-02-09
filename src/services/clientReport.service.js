@@ -1,6 +1,6 @@
 /**
  * Client year report: timelines (activity/subactivity), status, pendings, turnover for a given FY.
- * Includes previous-year Auditing timelines when present (audit for a FY often done next year).
+ * Includes next-year Auditing timelines when present (audit for requested FY is done in the following FY).
  */
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
@@ -13,13 +13,13 @@ const PENDING_STATUSES = ['pending', 'ongoing', 'delayed'];
 const AUDITING_ACTIVITY_NAME = 'Auditing';
 
 /**
- * Get previous financial year string. e.g. "2024-2025" -> "2023-2024"
+ * Get next financial year string. e.g. "2024-2025" -> "2025-2026" (audit for a FY is done in next FY).
  * @param {string} fy - e.g. "2024-2025"
  * @returns {string}
  */
-const getPreviousFinancialYear = (fy) => {
-  const [start] = fy.split('-').map(Number);
-  return `${start - 1}-${start}`;
+const getNextFinancialYear = (fy) => {
+  const [start, end] = fy.split('-').map(Number);
+  return `${end}-${end + 1}`;
 };
 
 /**
@@ -72,20 +72,20 @@ const getClientYearReport = async (clientId, year, user = null) => {
     Activity.findOne({ name: AUDITING_ACTIVITY_NAME }).select('_id').lean(),
   ]);
 
-  const prevFy = getPreviousFinancialYear(fy);
-  let auditingPreviousYear = null;
+  const nextFy = getNextFinancialYear(fy);
+  let auditingNextYear = null;
   if (auditingActivity) {
     const auditingTimelines = await Timeline.find({
       client: new mongoose.Types.ObjectId(clientId),
-      financialYear: prevFy,
+      financialYear: nextFy,
       activity: auditingActivity._id,
     })
       .populate('activity', 'name')
       .sort({ dueDate: 1, period: 1 })
       .lean();
     if (auditingTimelines.length > 0) {
-      auditingPreviousYear = {
-        financialYear: prevFy,
+      auditingNextYear = {
+        financialYear: nextFy,
         timelines: auditingTimelines.map((t) => ({
           _id: t._id,
           activity: t.activity
@@ -166,8 +166,8 @@ const getClientYearReport = async (clientId, year, user = null) => {
     },
     pendings,
   };
-  if (auditingPreviousYear) result.auditingPreviousYear = auditingPreviousYear;
+  if (auditingNextYear) result.auditingNextYear = auditingNextYear;
   return result;
 };
 
-export { getClientYearReport, normalizeFinancialYear, getPreviousFinancialYear };
+export { getClientYearReport, normalizeFinancialYear, getNextFinancialYear };
