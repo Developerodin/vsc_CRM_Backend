@@ -1031,6 +1031,7 @@ export const createClientTimelines = async (client, activities) => {
                       frequencyConfig: subactivity.frequencyConfig,
                       fields: subactivity.fields
                     },
+                    subactivityId: subactivity._id,
                     client: client._id,
                     status: 'pending',
                     dueDate: currentDueDate,
@@ -1071,6 +1072,7 @@ export const createClientTimelines = async (client, activities) => {
                       frequencyConfig: subactivity.frequencyConfig,
                       fields: subactivity.fields
                     },
+                    subactivityId: subactivity._id,
                     client: client._id,
                     status: 'pending',
                     dueDate: dueDate,
@@ -1123,6 +1125,7 @@ export const createClientTimelines = async (client, activities) => {
                     frequencyConfig: subactivity.frequencyConfig,
                     fields: subactivity.fields
                   },
+                  subactivityId: subactivity._id,
                   client: client._id,
                   status: 'pending',
                   dueDate: currentDueDate,
@@ -1156,6 +1159,7 @@ export const createClientTimelines = async (client, activities) => {
                     frequencyConfig: subactivity.frequencyConfig,
                     fields: subactivity.fields
                   },
+                  subactivityId: subactivity._id,
                   client: client._id,
                   status: 'pending',
                   dueDate: dueDate,

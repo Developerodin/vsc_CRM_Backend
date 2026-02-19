@@ -164,7 +164,7 @@ timelineSchema.index({ client: 1 }); // Single field index for faster $in querie
  * - We scope to `timelineType: 'recurring'` to avoid blocking one-time timelines.
  */
 timelineSchema.index(
-  { client: 1, activity: 1, subactivityId: 1, period: 1 },
+  { client: 1, activity: 1, subactivityId: 1, period: 1, state: 1 },
   {
     unique: true,
     partialFilterExpression: {
@@ -172,6 +172,7 @@ timelineSchema.index(
       period: { $type: 'string' },
       subactivityId: { $type: 'objectId' },
     },
+    name: 'unique_recurring_timeline_per_state',
   }
 );
 

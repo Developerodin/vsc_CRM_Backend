@@ -30,6 +30,8 @@ const upsertRecurringTimeline = async ({
   dueDate,
   subactivity,
   financialYear,
+  state = null,
+  metadata = {},
 }) => {
   const subactivityId = subactivity?._id ? new mongoose.Types.ObjectId(subactivity._id) : null;
   if (!subactivityId) {
@@ -46,6 +48,13 @@ const upsertRecurringTimeline = async ({
     period,
     timelineType: 'recurring',
   };
+
+  // Scope filter by state so GST timelines are per state and not deduped away
+  if (state) {
+    filter.state = state;
+  } else {
+    filter.$or = [{ state: { $exists: false } }, { state: null }];
+  }
 
   const timelineData = {
     activity: new mongoose.Types.ObjectId(activityId),
@@ -76,6 +85,8 @@ const upsertRecurringTimeline = async ({
     frequency: subactivity.frequency,
     frequencyConfig: subactivity.frequencyConfig,
     timelineType: 'recurring',
+    state: state || undefined,
+    metadata: metadata || {},
   };
 
   // Use rawResult so we can reliably detect "created vs existing"

@@ -28,6 +28,8 @@ const removeDuplicateRecurringTimelines = async () => {
         activity: '$activity',
         subactivityId: { $ifNull: ['$subactivityId', '$subactivity._id'] },
         period: { $trim: { input: '$period' } },
+        state: { $ifNull: ['$state', '$metadata.gstState'] },
+        gstId: { $ifNull: ['$metadata.gstId', '$metadata.gstNumber'] },
       },
       ids: { $push: '$_id' },
       keepId: { $first: '$_id' },
@@ -40,7 +42,16 @@ const removeDuplicateRecurringTimelines = async () => {
     sortStage,
     groupStage,
     { $match: { count: { $gt: 1 } } },
-    { $project: { ids: 1, keepId: 1, count: 1, subactivityId: '$_id.subactivityId' } },
+    {
+      $project: {
+        ids: 1,
+        keepId: 1,
+        count: 1,
+        subactivityId: '$_id.subactivityId',
+        state: '$_id.state',
+        gstId: '$_id.gstId',
+      },
+    },
   ];
 
   const duplicateGroups = await Timeline.aggregate(pipeline);
@@ -97,6 +108,8 @@ const findDuplicateRecurringTimelines = async () => {
         activity: '$activity',
         subactivityId: { $ifNull: ['$subactivityId', '$subactivity._id'] },
         period: { $trim: { input: '$period' } },
+        state: { $ifNull: ['$state', '$metadata.gstState'] },
+        gstId: { $ifNull: ['$metadata.gstId', '$metadata.gstNumber'] },
       },
       count: { $sum: 1 },
     },

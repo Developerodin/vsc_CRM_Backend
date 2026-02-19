@@ -5,6 +5,18 @@ import { upsertRecurringTimeline } from '../../services/timelineUpsert.service.j
 import { calculateDueDate } from './dueDate.js';
 import { getPeriodFromDate } from './period.js';
 
+const isGstRelatedSubactivity = (subactivity) => {
+  if (!subactivity) return false;
+  const name = (subactivity.name || '').toLowerCase();
+  if (name.includes('gst')) return true;
+
+  if (Array.isArray(subactivity.fields)) {
+    return subactivity.fields.some((field) => (field.name || '').toLowerCase().includes('gst'));
+  }
+
+  return false;
+};
+
 /**
  * Shared processor for Daily / Monthly / Quarterly / Yearly.
  * Important: uses atomic upsert so even if cron runs twice, it won't create duplicates.
@@ -44,6 +56,39 @@ const processRecurringTimelinesByFrequency = async (frequency) => {
         }
 
         processedCount++;
+
+        const isGstSubactivity = isGstRelatedSubactivity(subactivity);
+        const clientGstNumbers = Array.isArray(client.gstNumbers) ? client.gstNumbers : [];
+
+        if (isGstSubactivity && clientGstNumbers.length > 0) {
+          for (const gstNumber of clientGstNumbers) {
+            const dueDate = calculateDueDate(frequency, subactivity.frequencyConfig, currentPeriod);
+            const { created } = await upsertRecurringTimeline({
+              clientId: client._id,
+              activityId: activity._id,
+              branchId: client.branch,
+              period: currentPeriod,
+              dueDate,
+              subactivity,
+              financialYear,
+              state: gstNumber.state,
+              metadata: {
+                gstNumber: gstNumber.gstNumber,
+                gstState: gstNumber.state,
+                gstUserId: gstNumber.gstUserId,
+                gstId: gstNumber._id?.toString() || gstNumber._id,
+              },
+            });
+
+            if (created) {
+              createdCount++;
+              logger.info(
+                `Created GST timeline for ${client.name} - ${activity.name} - ${subactivity.name} - ${gstNumber.state} - ${currentPeriod}`
+              );
+            }
+          }
+          continue;
+        }
 
         const dueDate = calculateDueDate(frequency, subactivity.frequencyConfig, currentPeriod);
         const { created } = await upsertRecurringTimeline({
