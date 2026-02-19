@@ -108,12 +108,13 @@ const getClientYearReport = async (clientId, year, user = null) => {
     }
   }
 
-  const statusSummary = { pending: 0, completed: 0, delayed: 0, ongoing: 0 };
+  const statusSummary = { pending: 0, completed: 0, delayed: 0, ongoing: 0, notApplicable: 0 };
   const pendings = [];
 
   const timelineList = timelines.map((t) => {
     const status = t.status || 'pending';
-    statusSummary[status] = (statusSummary[status] || 0) + 1;
+    if (status === 'not applicable') statusSummary.notApplicable += 1;
+    else statusSummary[status] = (statusSummary[status] || 0) + 1;
 
     const item = {
       _id: t._id,
@@ -162,6 +163,7 @@ const getClientYearReport = async (clientId, year, user = null) => {
       completed: statusSummary.completed,
       delayed: statusSummary.delayed,
       ongoing: statusSummary.ongoing,
+      notApplicable: statusSummary.notApplicable,
       total: timelineList.length,
     },
     pendings,

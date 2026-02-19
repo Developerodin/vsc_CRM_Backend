@@ -99,7 +99,7 @@ const updateTask = {
           .description('Reference number for the timeline'),
         completedAt: Joi.date().allow(null).optional()
           .description('Completion date for the timeline'),
-        status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').optional()
+        status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable').optional()
           .description('Status for the timeline')
       }).min(2) // timelineId + at least one field to update
     ).optional()

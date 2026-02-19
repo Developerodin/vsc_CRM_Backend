@@ -16,7 +16,7 @@ const timelineSchema = mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'completed', 'delayed', 'ongoing'],
+      enum: ['pending', 'completed', 'delayed', 'ongoing', 'not applicable'],
       required: true,
       default: 'pending',
     },

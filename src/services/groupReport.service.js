@@ -18,11 +18,12 @@ const AUDITING_ACTIVITY_NAME = 'Auditing';
  * @returns {{ statusSummary: Object, pendings: Array, timelineList: Array }}
  */
 const buildTimelineReport = (timelines) => {
-  const statusSummary = { pending: 0, completed: 0, delayed: 0, ongoing: 0 };
+  const statusSummary = { pending: 0, completed: 0, delayed: 0, ongoing: 0, notApplicable: 0 };
   const pendings = [];
   const timelineList = timelines.map((t) => {
     const status = t.status || 'pending';
-    statusSummary[status] = (statusSummary[status] || 0) + 1;
+    if (status === 'not applicable') statusSummary.notApplicable += 1;
+    else statusSummary[status] = (statusSummary[status] || 0) + 1;
     const item = {
       _id: t._id,
       activity: t.activity

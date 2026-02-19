@@ -1666,7 +1666,8 @@ export const getFrequencyStatusStats = async (params, user) => {
           pending: 0,
           completed: 0,
           delayed: 0,
-          ongoing: 0
+          ongoing: 0,
+          notApplicable: 0
         }
       },
       filters: { branchId, startDate, endDate, frequency, status }
@@ -1681,10 +1682,11 @@ export const getFrequencyStatusStats = async (params, user) => {
       pending: 0,
       completed: 0,
       delayed: 0,
-      ongoing: 0
+      ongoing: 0,
+      notApplicable: 0
     }
   };
-  
+
   // Process the aggregated data
   aggregatedData.frequencyBreakdown.forEach(item => {
     // Count by frequency

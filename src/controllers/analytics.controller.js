@@ -681,7 +681,7 @@ const getAnalyticsInfo = catchAsync(async (req, res) => {
               activitySearch: 'Search activities by name or description (optional)',
               subactivity: 'Subactivity ID filter (optional)',
               subactivitySearch: 'Search subactivities by name (optional)',
-              status: 'Timeline status filter (pending, completed, delayed, ongoing)',
+              status: 'Timeline status filter (pending, completed, delayed, ongoing, not applicable)',
               frequency: 'Frequency filter (None, OneTime, Hourly, Daily, Weekly, Monthly, Quarterly, Yearly)',
               timelineType: 'Timeline type filter (oneTime, recurring)',
               period: 'Period filter (optional)',

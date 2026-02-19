@@ -21,13 +21,14 @@ const buildTimelineByActivitySummary = (timelineList) => {
     const name = t.activity?.name || 'Unknown';
     if (!aid) return;
     if (!byActivity.has(aid)) {
-      byActivity.set(aid, { activityId: aid, activityName: name, total: 0, completed: 0, pending: 0, ongoing: 0, delayed: 0 });
+      byActivity.set(aid, { activityId: aid, activityName: name, total: 0, completed: 0, pending: 0, ongoing: 0, delayed: 0, notApplicable: 0 });
     }
     const row = byActivity.get(aid);
     row.total += 1;
     if (t.status === 'completed') row.completed += 1;
     else if (t.status === 'ongoing') row.ongoing += 1;
     else if (t.status === 'delayed') row.delayed += 1;
+    else if (t.status === 'not applicable') row.notApplicable += 1;
     else row.pending += 1;
   });
   return Array.from(byActivity.values());
@@ -43,21 +44,23 @@ const buildTimelineHistoryByYear = (allTimelines) => {
   (allTimelines || []).forEach((t) => {
     const fy = t.financialYear || 'No FY';
     if (!byYear.has(fy)) {
-      byYear.set(fy, { financialYear: fy, total: 0, completed: 0, pending: 0, ongoing: 0, delayed: 0, byActivity: new Map() });
+      byYear.set(fy, { financialYear: fy, total: 0, completed: 0, pending: 0, ongoing: 0, delayed: 0, notApplicable: 0, byActivity: new Map() });
     }
     const row = byYear.get(fy);
     row.total += 1;
     if (t.status === 'completed') row.completed += 1;
     else if (t.status === 'ongoing') row.ongoing += 1;
     else if (t.status === 'delayed') row.delayed += 1;
+    else if (t.status === 'not applicable') row.notApplicable += 1;
     else row.pending += 1;
     const aid = t.activity?._id?.toString() || t.activity?.toString();
     const name = t.activity?.name || 'Unknown';
     if (aid) {
-      if (!row.byActivity.has(aid)) row.byActivity.set(aid, { activityId: aid, activityName: name, total: 0, completed: 0, pending: 0 });
+      if (!row.byActivity.has(aid)) row.byActivity.set(aid, { activityId: aid, activityName: name, total: 0, completed: 0, pending: 0, notApplicable: 0 });
       const ar = row.byActivity.get(aid);
       ar.total += 1;
       if (t.status === 'completed') ar.completed += 1;
+      else if (t.status === 'not applicable') ar.notApplicable += 1;
       else ar.pending += 1;
     }
   });
@@ -68,6 +71,7 @@ const buildTimelineHistoryByYear = (allTimelines) => {
     pending: y.pending,
     ongoing: y.ongoing,
     delayed: y.delayed,
+    notApplicable: y.notApplicable,
     byActivity: Array.from(y.byActivity.values())
   })).sort((a, b) => (b.financialYear || '').localeCompare(a.financialYear || ''));
 };

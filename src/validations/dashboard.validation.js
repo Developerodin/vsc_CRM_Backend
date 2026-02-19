@@ -50,7 +50,7 @@ const getTimelineStatusByFrequency = {
     startDate: Joi.date().iso().optional().allow(''),
     endDate: Joi.date().iso().optional().allow(''),
     frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().allow(''),
-    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').optional().allow(''),
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable').optional().allow(''),
   }),
 };
 

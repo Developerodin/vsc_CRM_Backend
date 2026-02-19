@@ -112,7 +112,7 @@ const updateTask = {
       timelineUpdates: Joi.array().items(
         Joi.object().keys({
           timelineId: Joi.string().custom(objectId).required(),
-          status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
+          status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable'),
           referenceNumber: Joi.string().allow('').max(255),
           completedAt: Joi.date().allow(null),
         }).min(2) // must include timelineId + at least one field to update
@@ -388,7 +388,7 @@ const updateTaskOfAccessibleTeamMember = {
       timelineUpdates: Joi.array().items(
         Joi.object().keys({
           timelineId: Joi.string().custom(objectId).required(),
-          status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
+          status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable'),
           referenceNumber: Joi.string().allow('').max(255),
           completedAt: Joi.date().allow(null),
         }).min(2)

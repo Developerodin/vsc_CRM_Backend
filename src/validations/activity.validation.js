@@ -188,7 +188,7 @@ const bulkCreateTimelines = {
       .required(),
     activityId: Joi.string().custom(objectId).required(),
     subactivityId: Joi.string().custom(objectId).optional(),
-    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').default('pending'),
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable').default('pending'),
     dueDate: Joi.date().optional(),
     startDate: Joi.date().optional(),
     endDate: Joi.date().optional(),

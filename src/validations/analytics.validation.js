@@ -171,7 +171,7 @@ const getAllTimelinesTableData = {
     subactivitySearch: Joi.string().trim().allow(''),
     
     // Timeline filters
-    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable'),
     frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
     timelineType: Joi.string().valid('oneTime', 'recurring'),
     period: Joi.string().trim().allow(''),

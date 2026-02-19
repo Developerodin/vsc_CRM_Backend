@@ -51,7 +51,7 @@ const createTimeline = {
       Joi.string().custom(objectId),
       Joi.array().items(Joi.string().custom(objectId)).min(1).max(1)
     ).required(),
-    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').required(),
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable').required(),
     subactivity: Joi.string().custom(objectId).optional(),
     period: Joi.string().trim().optional(),
     dueDate: Joi.date().optional(),
@@ -83,7 +83,7 @@ const getTimelines = {
       Joi.string().custom(objectId),
       Joi.string().trim()
     ),
-    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
+    status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable'),
     search: Joi.string(),
     branch: Joi.string().custom(objectId),
     group: Joi.alternatives().try(
@@ -123,7 +123,7 @@ const updateTimeline = {
     .keys({
       activity: Joi.string().custom(objectId),
       client: Joi.string().custom(objectId),
-      status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing'),
+      status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable'),
       subactivity: Joi.string().custom(objectId),
       period: Joi.string().trim(),
       dueDate: Joi.date(),
@@ -160,7 +160,7 @@ const bulkImportTimelines = {
       Joi.object().keys({
         activity: Joi.string().custom(objectId).required(),
         client: Joi.string().custom(objectId).required(),
-        status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').required(),
+        status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable').required(),
         subactivity: Joi.string().custom(objectId).optional(),
         period: Joi.string().trim().optional(),
         dueDate: Joi.date().optional(),
@@ -190,7 +190,7 @@ const bulkImportTimelineFields = {
             fieldValue: Joi.any().required(),
           })
         ).optional(),
-        status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing').optional(),
+        status: Joi.string().valid('pending', 'completed', 'delayed', 'ongoing', 'not applicable').optional(),
         completedAt: Joi.date().optional(),
       })
     ).min(1).required(),

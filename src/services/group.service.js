@@ -803,7 +803,8 @@ const getAllGroupsAnalytics = async (filter = {}, user = null) => {
             pending: 0,
             ongoing: 0,
             completed: 0,
-            delayed: 0
+            delayed: 0,
+            'not applicable': 0
           }
         }
       };
@@ -833,7 +834,8 @@ const getAllGroupsAnalytics = async (filter = {}, user = null) => {
         pending: 0,
         ongoing: 0,
         completed: 0,
-        delayed: 0
+        delayed: 0,
+        'not applicable': 0
       }
     };
 
@@ -1014,7 +1016,8 @@ const getAllGroupsAnalytics = async (filter = {}, user = null) => {
         pending: 0,
         ongoing: 0,
         completed: 0,
-        delayed: 0
+        delayed: 0,
+        'not applicable': 0
       };
 
       // Aggregate statistics for all clients in this group
@@ -1307,7 +1310,8 @@ const getGroupAnalytics = async (groupId, user = null, options = {}) => {
         pending: 0,
         ongoing: 0,
         completed: 0,
-        delayed: 0
+        delayed: 0,
+        'not applicable': 0
       },
       frequencyBreakdown: {
         None: 0,
