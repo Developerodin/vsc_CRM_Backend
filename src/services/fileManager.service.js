@@ -777,6 +777,80 @@ const getFolderTree = async (userId, rootFolderId = null) => {
  * @param {Object} fileData
  * @returns {Promise<FileManager>}
  */
+/**
+ * Ensure the Clients root folder and a client subfolder exist; create if missing.
+ * @param {Object} client - Client document
+ * @param {ObjectId} createdBy - User/branch id for folder createdBy
+ * @returns {Promise<FileManager>} The client folder document
+ */
+const ensureClientFolderExists = async (client, createdBy) => {
+  const clientId = client._id;
+  const clientName = client.name || `Client ${clientId}`;
+
+  let clientFolder = await FileManager.findOne({
+    type: 'folder',
+    'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
+    isDeleted: false,
+  });
+  if (clientFolder) return clientFolder;
+
+  // Get or create Clients root folder
+  let clientsRoot = await FileManager.findOne({
+    type: 'folder',
+    'folder.name': 'Clients',
+    'folder.isRoot': true,
+    isDeleted: false,
+  });
+  if (!clientsRoot) {
+    clientsRoot = await FileManager.create({
+      type: 'folder',
+      folder: {
+        name: 'Clients',
+        description: 'Parent folder for all client subfolders',
+        parentFolder: null,
+        createdBy,
+        isRoot: true,
+        path: '/Clients',
+      },
+    });
+  }
+
+  // Find or create client subfolder
+  const existingByName = await FileManager.findOne({
+    type: 'folder',
+    'folder.name': clientName,
+    'folder.parentFolder': clientsRoot._id,
+    isDeleted: false,
+  });
+
+  if (!existingByName) {
+    clientFolder = await FileManager.create({
+      type: 'folder',
+      folder: {
+        name: clientName,
+        description: `Folder for client: ${clientName}`,
+        parentFolder: clientsRoot._id,
+        createdBy,
+        isRoot: false,
+        path: `/Clients/${clientName}`,
+        metadata: { clientId, clientName },
+      },
+    });
+  } else {
+    if (!existingByName.folder.metadata?.clientId) {
+      existingByName.folder.metadata = {
+        ...(existingByName.folder.metadata || {}),
+        clientId,
+        clientName,
+      };
+      await existingByName.save();
+    }
+    clientFolder = existingByName;
+  }
+
+  return clientFolder;
+};
+
 const uploadFileToClientFolder = async (clientId, fileData) => {
   // First, verify the client exists
   const client = await Client.findById(clientId);
@@ -784,16 +858,8 @@ const uploadFileToClientFolder = async (clientId, fileData) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
   }
 
-  // Find the client's folder
-  const clientFolder = await FileManager.findOne({
-    type: 'folder',
-    'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
-    isDeleted: false,
-  });
-
-  if (!clientFolder) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Client folder not found. Please ensure client folder was created properly.');
-  }
+  // Find or create the client's folder
+  const clientFolder = await ensureClientFolderExists(client, fileData.uploadedBy);
 
   // Check if file name already exists in the client folder
   const isNameTaken = await FileManager.isFileNameTaken(fileData.fileName, clientFolder._id);

@@ -835,8 +835,22 @@ const updateTimelineById = async (timelineId, updateBody, user = null) => {
   if (updateBody.client) {
     await validateClient(updateBody.client);
   }
-  
+
+  // When completedAt or referenceNumber is explicitly null, unset the field instead of storing null
+  const shouldUnsetCompletedAt = Object.prototype.hasOwnProperty.call(updateBody, 'completedAt') && updateBody.completedAt === null;
+  const shouldUnsetReferenceNumber = Object.prototype.hasOwnProperty.call(updateBody, 'referenceNumber') && updateBody.referenceNumber === null;
+  if (shouldUnsetCompletedAt) delete updateBody.completedAt;
+  if (shouldUnsetReferenceNumber) delete updateBody.referenceNumber;
+
   Object.assign(timeline, updateBody);
+  if (shouldUnsetCompletedAt) {
+    timeline.completedAt = undefined;
+    timeline.markModified('completedAt');
+  }
+  if (shouldUnsetReferenceNumber) {
+    timeline.referenceNumber = undefined;
+    timeline.markModified('referenceNumber');
+  }
   await timeline.save();
   return timeline.populate([
     { path: 'activity', select: 'name' },

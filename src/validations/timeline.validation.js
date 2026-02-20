@@ -129,12 +129,12 @@ const updateTimeline = {
       dueDate: Joi.date(),
       startDate: Joi.date(),
       endDate: Joi.date(),
-      completedAt: Joi.date(),
+      completedAt: Joi.date().allow(null).optional(),
       frequency: Joi.string().valid('None', 'OneTime', 'Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'),
       frequencyConfig: frequencyConfigSchema,
       timelineType: Joi.string().valid('oneTime', 'recurring'),
       financialYear: Joi.string().trim(),
-      referenceNumber: Joi.string().trim(),
+      referenceNumber: Joi.string().trim().allow(null).optional(),
       fields: Joi.array().items(
         Joi.object({
           fileName: Joi.string().trim().required(),
