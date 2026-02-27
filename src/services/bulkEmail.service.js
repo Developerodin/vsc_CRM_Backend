@@ -2,9 +2,18 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { Client, EmailTemplate } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
+import config from '../config/config.js';
+import { wrapWithDefaultLayout, getLogoAttachment } from '../utils/emailLayout.js';
 import { getUserBranchIds, hasBranchAccess } from './role.service.js';
 import * as emailTemplateService from './emailTemplate.service.js';
 import * as emailService from './email.service.js';
+
+/** Resolve fromEmail (e.g. info@vsc.co.in) to SMTP account key (e.g. 'info') from config. */
+const getFromAccountForEmail = (fromEmail) => {
+  if (!fromEmail || !config.email.smtpAccounts) return null;
+  const entry = Object.entries(config.email.smtpAccounts).find(([, acc]) => acc.from === fromEmail);
+  return entry ? entry[0] : null;
+};
 
 /**
  * Resolve clients for bulk email: either by clientIds or all (optionally filtered by branch)
@@ -46,13 +55,14 @@ const primaryEmail = (client) => (client.email && client.email.trim() ? client.e
 /**
  * Send bulk emails using a template to selected or all clients
  * @param {string} templateId
- * @param {{ clientIds?: string[], branchId?: string }} options - clientIds OR branchId for "all in branch"; both omitted = all accessible
+ * @param {{ clientIds?: string[], branchId?: string, fromEmail?: string }} options - clientIds OR branchId; fromEmail = send from that SMTP (info@vsc.co.in, audit@vsc.co.in, etc.)
  * @param {Object} user
  * @returns {{ sent: number, failed: number, skipped: number, errors: Array<{ clientId: string, email: string, error: string }> }}
  */
 const sendBulkWithTemplate = async (templateId, options, user) => {
   const template = await emailTemplateService.getTemplateById(templateId, user);
   const clients = await getEligibleClients(user, options);
+  const fromAccount = getFromAccountForEmail(options.fromEmail);
 
   const result = { sent: 0, failed: 0, skipped: 0, errors: [] };
 
@@ -64,7 +74,12 @@ const sendBulkWithTemplate = async (templateId, options, user) => {
     }
     try {
       const { subject, text } = emailTemplateService.renderForClient(template, client);
-      await emailService.sendEmail(to, subject, text, null);
+      const { html } = emailTemplateService.renderForClientHtml(template, client);
+      const wrappedHtml = wrapWithDefaultLayout(html, { useCid: true });
+      const logoAttach = getLogoAttachment();
+      const attachments = logoAttach ? [logoAttach] : [];
+      const sendOptions = fromAccount ? { fromAccount } : {};
+      await emailService.sendEmailWithAttachments(to, subject, text, wrappedHtml, attachments, sendOptions);
       result.sent += 1;
     } catch (err) {
       result.failed += 1;

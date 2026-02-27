@@ -2,17 +2,40 @@ import nodemailer from 'nodemailer';
 import config from '../config/config.js';
 import logger from '../config/logger.js';
 
-const transport = nodemailer.createTransport({
+const defaultTransport = nodemailer.createTransport({
   ...config.email.smtp,
-  pool: true, // Use connection pooling
-  maxConnections: 5, // Limit concurrent connections
-  maxMessages: 100, // Limit messages per connection
-  rateDelta: 1000, // Rate limiting
-  rateLimit: 5 // Max 5 emails per second
+  pool: true,
+  maxConnections: 5,
+  maxMessages: 100,
+  rateDelta: 1000,
+  rateLimit: 5,
 });
+
+/** Transports for named SMTP accounts (audit, gst, incometax, roc, info). Lazy-created. */
+const accountTransports = {};
+function getTransport(forAccount) {
+  if (!forAccount) return defaultTransport;
+  if (accountTransports[forAccount]) return accountTransports[forAccount];
+  const account = config.email.smtpAccounts?.[forAccount];
+  if (!account) return defaultTransport;
+  accountTransports[forAccount] = nodemailer.createTransport(account.smtp);
+  return accountTransports[forAccount];
+}
+
+/** Resolve 'from' address: use account's from if fromAccount set, else default. */
+function getFrom(fromAccount) {
+  if (fromAccount && config.email.smtpAccounts?.[fromAccount]) {
+    return config.email.smtpAccounts[fromAccount].from;
+  }
+  return config.email.from;
+}
+
+// Backward compatibility
+const transport = defaultTransport;
+
 /* istanbul ignore next */
 if (config.env !== 'test') {
-  transport
+  defaultTransport
     .verify()
     .then(() => logger.info('Connected to email server'))
     .catch(() => logger.warn('Unable to connect to email server. Make sure you have configured the SMTP options in .env'));
@@ -23,36 +46,35 @@ if (config.env !== 'test') {
  * @param {string} to
  * @param {string} subject
  * @param {string} text
- * @param {string} html - Optional HTML content
+ * @param {string} [html] - Optional HTML content
+ * @param {{ fromAccount?: string }} [options] - fromAccount: 'audit' | 'gst' | 'incometax' | 'roc' | 'info'
  * @returns {Promise}
  */
-const sendEmail = async (to, subject, text, html = null) => {
-  const msg = { from: config.email.from, to, subject, text };
-  if (html) {
-    msg.html = html;
-  }
-  
-  // Add timeout to prevent hanging
+const sendEmail = async (to, subject, text, html = null, options = {}) => {
+  const fromAccount = options.fromAccount;
+  const msg = { from: getFrom(fromAccount), to, subject, text };
+  if (html) msg.html = html;
+  const tr = getTransport(fromAccount);
   return Promise.race([
-    transport.sendMail(msg),
-    new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Email timeout')), 10000) // 10 second timeout
-    )
+    tr.sendMail(msg),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Email timeout')), 10000)),
   ]);
 };
 
 /**
- * Send an email as HTML only (single part text/html). Use for template emails so clients
- * always render HTML instead of showing raw source.
+ * Send an email as HTML only.
  * @param {string} to
  * @param {string} subject
  * @param {string} html - HTML body
+ * @param {{ fromAccount?: string }} [options] - fromAccount: 'audit' | 'gst' | 'incometax' | 'roc' | 'info'
  * @returns {Promise}
  */
-const sendHtmlEmail = async (to, subject, html) => {
-  const msg = { from: config.email.from, to, subject, html };
+const sendHtmlEmail = async (to, subject, html, options = {}) => {
+  const fromAccount = options.fromAccount;
+  const msg = { from: getFrom(fromAccount), to, subject, html };
+  const tr = getTransport(fromAccount);
   return Promise.race([
-    transport.sendMail(msg),
+    tr.sendMail(msg),
     new Promise((_, reject) => setTimeout(() => reject(new Error('Email timeout')), 10000)),
   ]);
 };
@@ -62,19 +84,17 @@ const sendHtmlEmail = async (to, subject, html) => {
  * @param {string} to
  * @param {string} subject
  * @param {string} text
- * @param {string} html - Optional HTML content
- * @param {Array} attachments - Optional array of attachment objects
+ * @param {string} [html]
+ * @param {Array} [attachments]
+ * @param {{ fromAccount?: string }} [options] - fromAccount: 'audit' | 'gst' | 'incometax' | 'roc' | 'info'
  * @returns {Promise}
  */
-const sendEmailWithAttachments = async (to, subject, text, html = null, attachments = []) => {
-  const msg = { from: config.email.from, to, subject, text };
-  if (html) {
-    msg.html = html;
-  }
-  if (attachments && attachments.length > 0) {
-    msg.attachments = attachments;
-  }
-  await transport.sendMail(msg);
+const sendEmailWithAttachments = async (to, subject, text, html = null, attachments = [], options = {}) => {
+  const fromAccount = options.fromAccount;
+  const msg = { from: getFrom(fromAccount), to, subject, text };
+  if (html) msg.html = html;
+  if (attachments?.length) msg.attachments = attachments;
+  await getTransport(fromAccount).sendMail(msg);
 };
 
 /**
@@ -121,6 +141,16 @@ const processAttachments = async (attachments) => {
 
   for (const attachment of attachments) {
     try {
+      // Inline attachment already in Nodemailer form (Buffer + cid) – pass through
+      if (attachment.cid && Buffer.isBuffer(attachment.content)) {
+        processedAttachments.push({
+          filename: attachment.filename || 'inline.png',
+          content: attachment.content,
+          cid: attachment.cid,
+        });
+        continue;
+      }
+
       let content;
       let filename = attachment.filename;
       let contentType = attachment.contentType;
@@ -179,25 +209,20 @@ const processAttachments = async (attachments) => {
  * @param {string} to
  * @param {string} subject
  * @param {string} text
- * @param {string} html - Optional HTML content
- * @param {Array} attachments - Array of attachment objects with url, s3Key, or content
+ * @param {string} [html]
+ * @param {Array} [attachments]
+ * @param {{ fromAccount?: string }} [options] - fromAccount: 'audit' | 'gst' | 'incometax' | 'roc' | 'info'
  * @returns {Promise}
  */
-const sendEmailWithFileAttachments = async (to, subject, text, html = null, attachments = []) => {
-  const msg = { from: config.email.from, to, subject, text };
-  if (html) {
-    msg.html = html;
-  }
-
-  // Process attachments (download from URLs/S3 if needed)
-  if (attachments && attachments.length > 0) {
+const sendEmailWithFileAttachments = async (to, subject, text, html = null, attachments = [], options = {}) => {
+  const fromAccount = options.fromAccount;
+  const msg = { from: getFrom(fromAccount), to, subject, text };
+  if (html) msg.html = html;
+  if (attachments?.length) {
     const processedAttachments = await processAttachments(attachments);
-    if (processedAttachments.length > 0) {
-      msg.attachments = processedAttachments;
-    }
+    if (processedAttachments.length) msg.attachments = processedAttachments;
   }
-
-  await transport.sendMail(msg);
+  await getTransport(fromAccount).sendMail(msg);
 };
 
 /**

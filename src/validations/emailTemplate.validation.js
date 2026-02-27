@@ -47,12 +47,15 @@ const deleteTemplate = {
   }),
 };
 
+const ALLOWED_FROM_EMAILS = ['info@vsc.co.in', 'audit@vsc.co.in', 'incometax@vsc.co.in', 'roc@vsc.co.in', 'gst@vsc.co.in'];
+
 const sendBulkToClients = {
   body: Joi.object()
     .keys({
       templateId: Joi.string().required().custom(objectId),
       clientIds: Joi.array().items(Joi.string().custom(objectId)).min(1).optional(),
       branchId: Joi.string().custom(objectId).optional(),
+      fromEmail: Joi.string().valid(...ALLOWED_FROM_EMAILS).optional(),
     })
     .custom((value) => {
       if (value.clientIds && value.clientIds.length && value.branchId) {

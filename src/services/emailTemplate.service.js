@@ -127,6 +127,22 @@ const renderForClient = (template, client) => {
   return { subject, text };
 };
 
+/**
+ * Render template as HTML for a single client (for use with default header/footer layout).
+ * Uses bodyHtml with placeholders; if missing, uses bodyText with newlines → <br>.
+ * @param {Object} template - { subject, bodyText, bodyHtml? }
+ * @param {Object} client - client plain object
+ * @returns {{ subject: string, html: string }}
+ */
+const renderForClientHtml = (template, client) => {
+  const subject = applyPlaceholders(template.subject, client);
+  const rawHtml = template.bodyHtml && template.bodyHtml.trim()
+    ? template.bodyHtml
+    : (template.bodyText || '').replace(/\n/g, '<br>\n');
+  const html = applyPlaceholders(rawHtml, client);
+  return { subject, html };
+};
+
 export {
   createTemplate,
   queryTemplates,
@@ -134,6 +150,7 @@ export {
   updateTemplate,
   deleteTemplate,
   renderForClient,
+  renderForClientHtml,
   applyPlaceholders,
   PLACEHOLDER_MAP,
 };

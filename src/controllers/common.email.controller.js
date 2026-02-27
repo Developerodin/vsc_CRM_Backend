@@ -2,6 +2,12 @@ import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import { emailService } from '../services/index.js';
 import ApiError from '../utils/ApiError.js';
+import { wrapWithDefaultLayout, getLogoAttachment } from '../utils/emailLayout.js';
+
+const layoutAttachments = () => {
+  const logo = getLogoAttachment();
+  return logo ? [logo] : [];
+};
 
 /**
  * Send custom email
@@ -21,10 +27,12 @@ const sendCustomEmail = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid email format');
   }
 
-  // Generate HTML content
-  const htmlContent = emailService.generateCustomEmailHTML(text, description);
-
-  await emailService.sendEmail(to, subject, text, htmlContent);
+  const htmlContent = wrapWithDefaultLayout(
+    emailService.generateCustomEmailHTML(text, description),
+    { useCid: true }
+  );
+  const attachments = layoutAttachments();
+  await emailService.sendEmailWithAttachments(to, subject, text, htmlContent, attachments);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -73,16 +81,18 @@ const sendTaskAssignmentEmail = catchAsync(async (req, res) => {
   
   textContent += `\nPlease review and complete this task as soon as possible.\n\nBest regards,\nYour Team`;
 
-  // Generate HTML content
-  const htmlContent = emailService.generateTaskAssignmentHTML({
-    taskTitle,
-    taskDescription,
-    assignedBy,
-    dueDate,
-    priority
-  });
-
-  await emailService.sendEmail(to, subject, textContent, htmlContent);
+  const htmlContent = wrapWithDefaultLayout(
+    emailService.generateTaskAssignmentHTML({
+      taskTitle,
+      taskDescription,
+      assignedBy,
+      dueDate,
+      priority
+    }),
+    { useCid: true }
+  );
+  const attachments = layoutAttachments();
+  await emailService.sendEmailWithAttachments(to, subject, textContent, htmlContent, attachments);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -127,14 +137,16 @@ const sendNotificationEmail = catchAsync(async (req, res) => {
   
   textContent += `\nThank you,\nYour Team`;
 
-  // Generate HTML content
-  const htmlContent = emailService.generateNotificationHTML({
-    notificationType,
-    message,
-    details
-  });
-
-  await emailService.sendEmail(to, subject, textContent, htmlContent);
+  const htmlContent = wrapWithDefaultLayout(
+    emailService.generateNotificationHTML({
+      notificationType,
+      message,
+      details
+    }),
+    { useCid: true }
+  );
+  const attachments = layoutAttachments();
+  await emailService.sendEmailWithAttachments(to, subject, textContent, htmlContent, attachments);
 
   res.status(httpStatus.OK).send({
     success: true,
@@ -171,11 +183,14 @@ const sendBulkEmails = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.BAD_REQUEST, `Invalid email formats: ${invalidEmails.join(', ')}`);
   }
 
-  // Generate HTML content
-  const htmlContent = emailService.generateCustomEmailHTML(text, description);
-
-  // Send emails to all recipients
-  const emailPromises = emails.map(email => emailService.sendEmail(email, subject, text, htmlContent));
+  const htmlContent = wrapWithDefaultLayout(
+    emailService.generateCustomEmailHTML(text, description),
+    { useCid: true }
+  );
+  const attachments = layoutAttachments();
+  const emailPromises = emails.map(email =>
+    emailService.sendEmailWithAttachments(email, subject, text, htmlContent, attachments)
+  );
   await Promise.all(emailPromises);
 
   res.status(httpStatus.OK).send({
@@ -222,10 +237,12 @@ const sendEmailWithAttachments = catchAsync(async (req, res) => {
     }
   }
 
-  // Generate HTML content
-  const htmlContent = emailService.generateCustomEmailHTML(text, description);
-
-  await emailService.sendEmailWithFileAttachments(to, subject, text, htmlContent, attachments);
+  const htmlContent = wrapWithDefaultLayout(
+    emailService.generateCustomEmailHTML(text, description),
+    { useCid: true }
+  );
+  const allAttachments = [...layoutAttachments(), ...(attachments || [])];
+  await emailService.sendEmailWithFileAttachments(to, subject, text, htmlContent, allAttachments);
 
   res.status(httpStatus.OK).send({
     success: true,

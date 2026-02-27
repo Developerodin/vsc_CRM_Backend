@@ -51,6 +51,27 @@ if (error) {
   throw new Error(`Config validation error: ${error.message}`);
 }
 
+/** Build map of named SMTP accounts from env (SMTP_<NAME>_USERNAME, SMTP_<NAME>_PASSWORD). Uses default host/port. */
+function buildSmtpAccounts(envVars) {
+  const accounts = {};
+  const names = ['audit', 'gst', 'incometax', 'roc', 'info'];
+  for (const name of names) {
+    const user = process.env[`SMTP_${name.toUpperCase()}_USERNAME`];
+    const pass = process.env[`SMTP_${name.toUpperCase()}_PASSWORD`];
+    if (user && pass) {
+      accounts[name] = {
+        smtp: {
+          host: envVars.SMTP_HOST,
+          port: envVars.SMTP_PORT,
+          auth: { user, pass },
+        },
+        from: user,
+      };
+    }
+  }
+  return accounts;
+}
+
 const config = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
@@ -80,6 +101,8 @@ const config = {
       },
     },
     from: envVars.EMAIL_FROM,
+    // Multiple SMTP accounts (audit, gst, incometax, roc, info). Use in email.service via fromAccount key.
+    smtpAccounts: buildSmtpAccounts(envVars),
   },
   aws: {
     accessKeyId: envVars.AWS_ACCESS_KEY_ID,

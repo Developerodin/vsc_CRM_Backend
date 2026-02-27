@@ -32,7 +32,7 @@ const deleteTemplate = catchAsync(async (req, res) => {
 });
 
 const sendBulkToClients = catchAsync(async (req, res) => {
-  const { templateId, clientIds, branchId } = req.body;
+  const { templateId, clientIds, branchId, fromEmail } = req.body;
   if (!templateId) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'templateId is required');
   }
@@ -42,6 +42,7 @@ const sendBulkToClients = catchAsync(async (req, res) => {
   } else if (branchId) {
     options.branchId = branchId;
   }
+  if (fromEmail) options.fromEmail = fromEmail;
   const result = await bulkEmailService.sendBulkWithTemplate(templateId, options, req.user);
   res.status(httpStatus.OK).send({
     success: true,
