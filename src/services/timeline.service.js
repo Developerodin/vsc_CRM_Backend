@@ -1073,10 +1073,7 @@ export const createClientTimelines = async (client, activities) => {
                   
                   timelinePromises.push(timeline.save());
                 } else {
-                  // Create one-time timeline for subactivities without frequency
-                  const dueDate = new Date();
-                  dueDate.setDate(dueDate.getDate() + 30);
-                  
+                  // OneTime: no dueDate/startDate/endDate; period = 'OneTime'
                   const timeline = new Timeline({
                     activity: activity._id,
                     subactivity: {
@@ -1089,16 +1086,13 @@ export const createClientTimelines = async (client, activities) => {
                     subactivityId: subactivity._id,
                     client: client._id,
                     status: 'pending',
-                    dueDate: dueDate,
-                    startDate: dueDate,
-                    endDate: dueDate,
                     frequency: 'OneTime',
                     frequencyConfig: null,
                     branch: client.branch,
                     timelineType: 'oneTime',
                     financialYear: financialYear,
-                    period: getPeriodFromDate(dueDate),
-                    state: gstNumber.state, // Add state field for GST timelines
+                    period: 'OneTime',
+                    state: gstNumber.state,
                     fields: subactivity.fields ? subactivity.fields.map(field => ({
                       fileName: field.name,
                       fieldType: field.type,
@@ -1111,7 +1105,6 @@ export const createClientTimelines = async (client, activities) => {
                       gstId: gstNumber._id?.toString() || gstNumber._id
                     }
                   });
-                  
                   timelinePromises.push(timeline.save());
                 }
               }
@@ -1160,10 +1153,7 @@ export const createClientTimelines = async (client, activities) => {
                 
                 timelinePromises.push(timeline.save());
               } else {
-                // Create one-time timeline for subactivities without frequency
-                const dueDate = new Date();
-                dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
-                
+                // OneTime: no dueDate/startDate/endDate; period = 'OneTime'
                 const timeline = new Timeline({
                   activity: activity._id,
                   subactivity: {
@@ -1176,49 +1166,38 @@ export const createClientTimelines = async (client, activities) => {
                   subactivityId: subactivity._id,
                   client: client._id,
                   status: 'pending',
-                  dueDate: dueDate,
-                  startDate: dueDate,
-                  endDate: dueDate,
                   frequency: 'OneTime',
                   frequencyConfig: null,
                   branch: client.branch,
                   timelineType: 'oneTime',
                   financialYear: financialYear,
-                  period: getPeriodFromDate(dueDate),
+                  period: 'OneTime',
                   fields: subactivity.fields ? subactivity.fields.map(field => ({
                     fileName: field.name,
                     fieldType: field.type,
-                    fieldValue: null // Empty value as requested
+                    fieldValue: null
                   })) : []
                 });
-                
                 timelinePromises.push(timeline.save());
               }
             }
           }
         }
       } else {
-        // Handle legacy activities without subactivities - create one-time timeline
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
-        
+        // Legacy activities without subactivities: OneTime, no dueDate
         const timeline = new Timeline({
           activity: activity._id,
           subactivity: null,
           client: client._id,
           status: 'pending',
-          dueDate: dueDate,
-          startDate: dueDate,
-          endDate: dueDate,
           frequency: 'OneTime',
           frequencyConfig: null,
           branch: client.branch,
           timelineType: 'oneTime',
           financialYear: financialYear,
-          period: getPeriodFromDate(dueDate),
-          fields: [] // No fields for legacy activities
+          period: 'OneTime',
+          fields: []
         });
-        
         timelinePromises.push(timeline.save());
       }
     } catch (error) {

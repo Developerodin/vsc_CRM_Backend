@@ -40,11 +40,12 @@ const timelineSchema = mongoose.Schema(
       type: String,
       required: false,
       trim: true,
-      // Examples: "April-2024", "May-2024", "Q1-2024", "Q2-2024", "2024-2025"
+      // Recurring: "April-2024", "Q1-2024", "2024-2025". OneTime: "OneTime" (no date meaning).
     },
     dueDate: {
       type: Date,
       required: false,
+      // Not used for OneTime; only for recurring timelines.
     },
     startDate: {
       type: Date,
@@ -124,12 +125,20 @@ const timelineSchema = mongoose.Schema(
   }
 );
 
-// Pre-save: ensure status + sync subactivityId for duplicate prevention
+// Pre-save: ensure status + sync subactivityId + OneTime semantics (no dueDate/period dates)
 timelineSchema.pre('save', function (next) {
   if (!this.status) this.status = 'pending';
   // Keep subactivityId in sync so unique index (client, activity, subactivityId, period) works
   if (this.subactivity && this.subactivity._id && !this.subactivityId) {
     this.subactivityId = this.subactivity._id;
+  }
+  // OneTime activities: period = 'OneTime' only, no dueDate/startDate/endDate
+  const isOneTime = this.frequency === 'OneTime' || this.timelineType === 'oneTime';
+  if (isOneTime) {
+    this.period = 'OneTime';
+    this.dueDate = undefined;
+    this.startDate = undefined;
+    this.endDate = undefined;
   }
   next();
 });
