@@ -8,12 +8,16 @@ const createTemplate = {
     bodyText: Joi.string().required().trim().min(1),
     bodyHtml: Joi.string().trim().allow('').optional(),
     branch: Joi.string().custom(objectId).optional().allow(null),
+    activity: Joi.string().custom(objectId).optional().allow(null),
+    subactivity: Joi.string().custom(objectId).optional().allow(null),
   }),
 };
 
 const queryTemplates = {
   query: Joi.object().keys({
     branch: Joi.string().custom(objectId).optional(),
+    activity: Joi.string().custom(objectId).optional(),
+    subactivity: Joi.string().custom(objectId).optional(),
     sortBy: Joi.string().optional(),
     limit: Joi.number().integer().optional(),
     page: Joi.number().integer().optional(),
@@ -37,6 +41,8 @@ const updateTemplate = {
       bodyText: Joi.string().trim().min(1),
       bodyHtml: Joi.string().trim().allow(''),
       branch: Joi.string().custom(objectId).allow(null),
+      activity: Joi.string().custom(objectId).allow(null),
+      subactivity: Joi.string().custom(objectId).allow(null),
     })
     .min(1),
 };

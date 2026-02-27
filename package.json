@@ -29,7 +29,8 @@
     "migrate:gst": "node scripts/migrate-gst-to-array.js",
     "test:gst": "node scripts/test-gst-functionality.js",
     "test:gst-update": "node scripts/test-gst-update-logic.js",
-    "migrate:quarterly-periods": "node scripts/migrate-quarterly-timeline-periods.js"
+    "migrate:quarterly-periods": "node scripts/migrate-quarterly-timeline-periods.js",
+    "seed:email-templates": "node src/scripts/seedActivitySubactivityEmailTemplates.js"
   },
   "keywords": [
     "node",

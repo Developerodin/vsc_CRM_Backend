@@ -10,8 +10,12 @@ const createTemplate = catchAsync(async (req, res) => {
 });
 
 const queryTemplates = catchAsync(async (req, res) => {
-  const filter = req.query.branch ? { branch: req.query.branch } : {};
-  const options = { sortBy: req.query.sortBy || 'createdAt:desc', limit: req.query.limit, page: req.query.page };
+  const { branch, activity, subactivity, sortBy, limit, page } = req.query;
+  const filter = {};
+  if (branch) filter.branch = branch;
+  if (activity) filter.activity = activity;
+  if (subactivity) filter.subactivity = subactivity;
+  const options = { sortBy: sortBy || 'createdAt:desc', limit, page };
   const result = await emailTemplateService.queryTemplates(filter, options, req.user);
   res.status(httpStatus.OK).send({ success: true, ...result });
 });

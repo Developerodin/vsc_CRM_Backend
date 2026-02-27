@@ -1,7 +1,6 @@
 import httpStatus from 'http-status';
 import { EmailTemplate } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
-import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
 /** Placeholders supported in templates (keys) → client field or fallback */
 const PLACEHOLDER_MAP = {
@@ -37,9 +36,6 @@ const applyPlaceholders = (str, client) => {
  * Create email template
  */
 const createTemplate = async (body, user) => {
-  if (body.branch && !hasBranchAccess(user.role, body.branch)) {
-    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
-  }
   const template = await EmailTemplate.create({
     ...body,
     createdBy: user._id,
@@ -48,33 +44,21 @@ const createTemplate = async (body, user) => {
 };
 
 /**
- * Query templates with pagination and branch filter
+ * Query templates with pagination. No branch filtering – all templates allowed for all.
  */
 const queryTemplates = async (filter, options, user) => {
   const mongoFilter = { ...filter };
-  if (mongoFilter.branch) {
-    if (!hasBranchAccess(user.role, mongoFilter.branch)) {
-      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
-    }
-  } else {
-    const allowedBranchIds = getUserBranchIds(user.role);
-    if (allowedBranchIds !== null && allowedBranchIds.length > 0) {
-      mongoFilter.$or = [{ branch: { $in: allowedBranchIds } }, { branch: null }];
-    }
-  }
+  delete mongoFilter.branch;
   const result = await EmailTemplate.paginate(mongoFilter, options);
   return result;
 };
 
 /**
- * Get template by id; enforce branch access
+ * Get template by id. No branch restriction – all templates allowed for all.
  */
 const getTemplateById = async (id, user) => {
   const template = await EmailTemplate.findById(id);
   if (!template) throw new ApiError(httpStatus.NOT_FOUND, 'Template not found');
-  if (template.branch && !hasBranchAccess(user.role, template.branch)) {
-    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this template');
-  }
   return template;
 };
 
@@ -83,9 +67,6 @@ const getTemplateById = async (id, user) => {
  */
 const updateTemplate = async (id, body, user) => {
   const template = await getTemplateById(id, user);
-  if (body.branch !== undefined && body.branch && !hasBranchAccess(user.role, body.branch)) {
-    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
-  }
   Object.assign(template, body);
   await template.save();
   return template;
