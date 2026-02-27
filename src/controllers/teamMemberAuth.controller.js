@@ -2,7 +2,7 @@ import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import ApiError from '../utils/ApiError.js';
 import { generateTeamMemberAuthTokens } from '../services/token.service.js';
-import { sendEmail } from '../services/email.service.js';
+import { sendEmail, getOTPEmailContent } from '../services/email.service.js';
 import { TeamMember, Task, Timeline } from '../models/index.js';
 import taskService from '../services/task.service.js';
 import { timelineService } from '../services/index.js';
@@ -30,15 +30,9 @@ const generateOTP = catchAsync(async (req, res) => {
     // In production, you might want to add OTP fields to the TeamMember model
     // For now, we'll use a simple approach
     
-    // Send OTP via email
-    const emailSubject = '🔐 Team Member Login OTP';
-    const emailBody = `Hello ${teamMember.name},\n\nYour login OTP is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nIf you didn't request this OTP, please ignore this email.\n\nBest regards,\nYour Team Management System`;
-    
-    await sendEmail(
-      teamMember.email,
-      emailSubject,
-      emailBody
-    );
+    // Send OTP via email (header, highlighted OTP, footer)
+    const { subject, text, html } = getOTPEmailContent(teamMember.name || 'Team Member', otp, 'team');
+    await sendEmail(teamMember.email, subject, text, html);
 
     logger.info(`OTP sent to team member: ${teamMember.email}`);
 

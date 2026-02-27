@@ -584,14 +584,80 @@ If you did not create an account, then ignore this email.`;
 };
 
 /**
+ * Generate OTP email HTML with header, highlighted OTP, and footer (for team member or client login).
+ * @param {string} recipientName - e.g. "John" or "Client"
+ * @param {string} otp - 6-digit OTP
+ * @param {'team'|'client'} type - "team" for team member login, "client" for client login
+ * @returns {{ html: string, text: string, subject: string }}
+ */
+const getOTPEmailContent = (recipientName, otp, type = 'team') => {
+  const isTeam = type === 'team';
+  const subject = isTeam ? '🔐 Team Member Login OTP' : '🔐 Client Login OTP';
+  const title = isTeam ? 'Team Member Login OTP' : 'Client Login OTP';
+  const intro = isTeam
+    ? `Hello ${recipientName}, use the OTP below to sign in to the Team Member Portal.`
+    : `Hello ${recipientName || 'there'}, use the OTP below to sign in to the Client Portal.`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${title}</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 28px; text-align: center; border-radius: 10px 10px 0 0; }
+        .header h1 { margin: 0; font-size: 22px; }
+        .header p { margin: 8px 0 0; opacity: 0.95; font-size: 14px; }
+        .content { background: #f9f9f9; padding: 28px; border-radius: 0 0 10px 10px; }
+        .intro { margin-bottom: 24px; color: #2c3e50; }
+        .otp-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px; border-radius: 12px; text-align: center; margin: 24px 0; box-shadow: 0 4px 14px rgba(102, 126, 234, 0.4); }
+        .otp-label { font-size: 14px; opacity: 0.95; margin-bottom: 8px; }
+        .otp-value { font-size: 32px; font-weight: bold; letter-spacing: 8px; font-family: 'Courier New', monospace; }
+        .validity { color: #666; font-size: 14px; margin-top: 20px; }
+        .footer { text-align: center; margin-top: 24px; color: #666; font-size: 12px; padding-top: 16px; border-top: 1px solid #eee; }
+        .footer-note { margin-top: 8px; color: #999; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🔐 ${title}</h1>
+          <p>One-time password for secure login</p>
+        </div>
+        <div class="content">
+          <div class="intro">${intro}</div>
+          <div class="otp-box">
+            <div class="otp-label">Your OTP</div>
+            <div class="otp-value">${otp}</div>
+          </div>
+          <div class="validity">This OTP is valid for <strong>10 minutes</strong>. Do not share it with anyone.</div>
+          <div class="validity">If you didn't request this OTP, please ignore this email.</div>
+        </div>
+        <div class="footer">
+          <p>This is an automated message from your CRM.</p>
+          <p class="footer-note">VINOD SINGHAL & CO. LLP</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `Hello ${recipientName || 'there'},\n\nYour login OTP is: ${otp}\n\nThis OTP is valid for 10 minutes. Do not share it with anyone.\n\nIf you didn't request this OTP, please ignore this email.\n\nBest regards,\nYour Team`;
+
+  return { html, text, subject };
+};
+
+/**
  * Send email OTP
  * @param {string} to
  * @param {string} otp
  * @returns {Promise}
  */
 const sendEmailOtp = async (to, otp) => {
-  const subject = 'Your Verification OTP';
-  const text = `Your OTP for email verification is: ${otp}\nThis OTP is valid for 10 minutes.`;
+  const { subject, text } = getOTPEmailContent('User', otp, 'team');
   await sendEmail(to, subject, text);
 };
 
@@ -611,6 +677,7 @@ export {
   sendVerificationEmail,
   sendEmailOtp,
   sendPasswordResetOtp,
+  getOTPEmailContent,
   generateCustomEmailHTML,
   generateTaskAssignmentHTML,
   generateDailyReminderHTML,

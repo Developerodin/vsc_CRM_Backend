@@ -48,6 +48,14 @@ const getClient = catchAsync(async (req, res) => {
   if (!client) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
   }
+  // Team members can only access clients in their branch
+  if (req.user?.userType === 'teamMember' && req.user.branch) {
+    const userBranchId = (req.user.branch && req.user.branch._id) || req.user.branch;
+    const clientBranchId = (client.branch && client.branch._id) || client.branch;
+    if (String(userBranchId) !== String(clientBranchId)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this client');
+    }
+  }
   res.send(client);
 });
 

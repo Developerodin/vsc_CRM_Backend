@@ -108,17 +108,15 @@ const auth = (...requiredRights) => async (req, res, next) => {
             // Team member authenticated
             req.user = teamMember;
             
-            // For team members, we allow access to getTimelines without role check
-            // They'll be filtered by branch in the service layer
-            if (requiredRights.length > 0 && requiredRights.includes('getTimelines')) {
-              // Allow team members to access timelines (filtered by branch)
+            // Team members are allowed these permissions; access is filtered by branch in the service layer
+            const teamMemberAllowedPermissions = ['getTimelines', 'getClients'];
+            const hasAllowedPermission = requiredRights.length > 0 && requiredRights.every((r) => teamMemberAllowedPermissions.includes(r));
+            if (hasAllowedPermission) {
               return next();
             }
-            
-            // For other permissions, team members need roles (which they don't have)
-            // So we reject for now, but you can extend this logic
+
             const requiredPermission = requiredRights.join(' or ');
-            return next(new ApiError(httpStatus.FORBIDDEN, `Team members can only access timelines. Required permission: ${requiredPermission}`));
+            return next(new ApiError(httpStatus.FORBIDDEN, `Team members can only access timelines and clients. Required permission: ${requiredPermission}`));
           }
         } catch (teamMemberError) {
           // Team member auth also failed, return original error

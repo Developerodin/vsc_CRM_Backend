@@ -430,7 +430,14 @@ const queryClients = async (filter, options, user) => {
   }
 
   // Apply branch filtering based on user's access
-  if (user && user.role) {
+  if (user?.userType === 'teamMember' && user.branch) {
+    // Team members see only clients in their branch
+    const branchId = user.branch._id || user.branch;
+    if (mongoFilter.branch && String(mongoFilter.branch) !== String(branchId)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+    mongoFilter.branch = branchId;
+  } else if (user && user.role) {
     // If specific branch is requested in filter
     if (mongoFilter.branch) {
       // Check if user has access to this specific branch
@@ -440,7 +447,7 @@ const queryClients = async (filter, options, user) => {
     } else {
       // Get user's allowed branch IDs
       const allowedBranchIds = getUserBranchIds(user.role);
-      
+
       if (allowedBranchIds === null) {
         // User has access to all branches, no filtering needed
       } else if (allowedBranchIds.length > 0) {

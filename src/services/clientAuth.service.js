@@ -7,6 +7,7 @@ import Token from '../models/token.model.js';
 import ApiError from '../utils/ApiError.js';
 import { tokenTypes } from '../config/tokens.js';
 import { emailService } from './index.js';
+import { getOTPEmailContent } from './email.service.js';
 
 /**
  * Generate OTP for client login
@@ -47,19 +48,9 @@ const generateClientOTP = async (pan) => {
     blacklisted: false,
   });
 
-  // Send OTP via email
-  const subject = 'Client Login OTP';
-  const text = `Your login OTP is: ${otp}. This OTP will expire in 10 minutes.`;
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Client Login OTP</h2>
-      <p>Your login OTP is: <strong style="font-size: 24px; color: #007bff;">${otp}</strong></p>
-      <p>This OTP will expire in 10 minutes.</p>
-      <p>If you didn't request this OTP, please ignore this email.</p>
-    </div>
-  `;
-
-  await emailService.sendEmail(client.email, subject, text, htmlContent);
+  // Send OTP via email (header, highlighted OTP, footer)
+  const { subject, text, html } = getOTPEmailContent(client.name || 'Client', otp, 'client');
+  await emailService.sendEmail(client.email, subject, text, html);
 
   return { 
     message: 'OTP sent successfully',
