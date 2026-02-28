@@ -30,14 +30,16 @@ const taskSchema = mongoose.Schema(
       required: true,
     },
     
-    // Optional fields
+    // Optional fields (default: null so they always appear in GET response)
     assignedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
+      default: null,
     },
     assignedByTeamMember: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'TeamMember',
+      default: null,
     },
     timeline: [{
       type: mongoose.Schema.Types.ObjectId,
@@ -164,34 +166,44 @@ taskSchema.statics.getDelayedTasks = function() {
     .populate('assignedByTeamMember', 'name email');
 };
 
+/**
+ * Start of today in UTC (midnight). Used so "end date = today" is not marked delayed
+ * until the next calendar day (end date stored as midnight UTC).
+ */
+function getStartOfTodayUTC() {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
 // Static method to automatically update delayed status for all tasks
 taskSchema.statics.updateDelayedStatus = function() {
-  const now = new Date();
-  
-  // Update tasks that are past end date to delayed
+  const startOfTodayUTC = getStartOfTodayUTC();
+
+  // Delayed only when end date's calendar day is before today (end date stored as midnight UTC)
   const updateToDelayed = this.updateMany(
     {
-      endDate: { $lt: now },
+      endDate: { $lt: startOfTodayUTC },
       status: { $nin: ['completed', 'cancelled', 'delayed'] }
     },
     { status: 'delayed' }
   );
-  
-  // Update delayed tasks that now have future end dates back to pending
+
+  // Revert to pending when end date is today or in the future
   const updateToPending = this.updateMany(
     {
-      endDate: { $gt: now },
+      endDate: { $gte: startOfTodayUTC },
       status: 'delayed'
     },
     { status: 'pending' }
   );
-  
+
   return Promise.all([updateToDelayed, updateToPending]);
 };
 
 // Static method to check and update task statuses based on current time
 taskSchema.statics.checkAndUpdateAllTaskStatuses = async function() {
-  const now = new Date();
+  const startOfTodayUTC = getStartOfTodayUTC();
   console.log(`[${new Date().toISOString()}] Checking and updating task statuses...`);
   
   try {
@@ -206,16 +218,16 @@ taskSchema.statics.checkAndUpdateAllTaskStatuses = async function() {
     for (const task of activeTasks) {
       let statusChanged = false;
       
-      // Check if task should be delayed
-      if (task.endDate < now && task.status !== 'delayed') {
+      // Delayed only when end date's calendar day is before today
+      if (task.endDate < startOfTodayUTC && task.status !== 'delayed') {
         task.status = 'delayed';
         statusChanged = true;
         delayedCount++;
         console.log(`Task ${task._id} marked as delayed (end date: ${task.endDate})`);
       }
       
-      // Check if delayed task should be pending again
-      if (task.endDate > now && task.status === 'delayed') {
+      // Revert to pending when end date is today or in the future
+      if (task.endDate >= startOfTodayUTC && task.status === 'delayed') {
         task.status = 'pending';
         statusChanged = true;
         pendingCount++;
@@ -235,6 +247,13 @@ taskSchema.statics.checkAndUpdateAllTaskStatuses = async function() {
     console.error('Error updating task statuses:', error);
     throw error;
   }
+};
+
+// Ensure assignedBy/assignedByTeamMember always appear in JSON (null if unset)
+taskSchema.options.toJSON = taskSchema.options.toJSON || {};
+taskSchema.options.toJSON.transform = function ensureAssignerKeys(doc, ret, options) {
+  ret.assignedBy = ret.assignedBy ?? null;
+  ret.assignedByTeamMember = ret.assignedByTeamMember ?? null;
 };
 
 // add plugin that converts mongoose to json

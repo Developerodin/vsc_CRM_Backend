@@ -8,9 +8,21 @@ import taskService from '../services/task.service.js';
  * Create a task
  * @route POST /v1/tasks
  * @access Private
+ * Sets assigner from logged-in user when not provided: User -> assignedBy, Team member -> assignedByTeamMember.
  */
 const createTask = catchAsync(async (req, res) => {
-  const task = await taskService.createTask(req.body);
+  const body = { ...req.body };
+  const assignerProvided = body.assignedBy != null && body.assignedBy !== '';
+  const assignerTeamMemberProvided = body.assignedByTeamMember != null && body.assignedByTeamMember !== '';
+  if (!assignerProvided && !assignerTeamMemberProvided) {
+    if (req.user?.userType === 'teamMember') {
+      body.assignedByTeamMember = req.user.id ?? null;
+      body.assignedBy = null;
+    } else {
+      body.assignedBy = req.user?.id ?? req.user?._id?.toString() ?? null;
+    }
+  }
+  const task = await taskService.createTask(body);
   res.status(httpStatus.CREATED).send(task);
 });
 
@@ -22,7 +34,7 @@ const createTask = catchAsync(async (req, res) => {
 const getTasks = catchAsync(async (req, res) => {
   const filter = pick(req.query, [
     'teamMember', 'assignedBy', 'timeline', 'branch', 'status', 'priority',
-    'startDate', 'endDate', 'startDateRange', 'endDateRange', 'today'
+    'startDate', 'endDate', 'startDateRange', 'endDateRange', 'today', 'group'
   ]);
   
   // Filter out empty strings and convert them to undefined

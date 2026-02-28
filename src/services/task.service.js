@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { Task, TeamMember, Timeline } from '../models/index.js';
+import { Task, TeamMember, Timeline, Group } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
 
@@ -150,6 +150,19 @@ const getTaskByIdMinimal = async (id) => {
 const queryTasks = async (filter, options) => {
   // Create a new filter object to avoid modifying the original
   const mongoFilter = { ...filter };
+
+  // Group filter: tasks that have at least one timeline whose client is in this group
+  if (mongoFilter.group && mongoose.Types.ObjectId.isValid(mongoFilter.group)) {
+    const group = await Group.findById(mongoFilter.group).select('clients').lean();
+    const clientIds = group?.clients?.length ? group.clients : [];
+    let timelineIds = [];
+    if (clientIds.length > 0) {
+      const timelines = await Timeline.find({ client: { $in: clientIds } }).select('_id').lean();
+      timelineIds = timelines.map((t) => t._id);
+    }
+    mongoFilter.timeline = { $in: timelineIds };
+    delete mongoFilter.group;
+  }
   
   // Handle global search across multiple fields
   if (mongoFilter.search && mongoFilter.search.trim() !== '') {
