@@ -374,11 +374,19 @@ const generateDailyReminderHTML = (reminderData) => {
   // Team member login portal
   const teamMemberLoginUrl = 'http://crm.vsc.co.in/team-member-login/';
   
+  // Resolve assigner display: assignedBy (User) or assignedByTeamMember
+  const getAssignerDisplay = (t) => {
+    const assigner = t.assignedBy || t.assignedByTeamMember;
+    if (!assigner) return 'System';
+    return assigner.email ? `${assigner.name} (${assigner.email})` : assigner.name;
+  };
+
   // Generate task list HTML
   const taskListHTML = tasks.map((task, index) => {
     const dueDate = task.endDate ? new Date(task.endDate).toLocaleDateString() : 'Not specified';
     const priority = task.priority ? task.priority.toUpperCase() : 'MEDIUM';
     const remarks = task.remarks || 'No description provided';
+    const assignedByDisplay = getAssignerDisplay(task);
     
     const priorityColors = {
       LOW: '#4caf50',
@@ -399,6 +407,7 @@ const generateDailyReminderHTML = (reminderData) => {
             <span class="priority-badge" style="background: ${priorityColor};">Priority: ${priority}</span>
             <span class="due-date">📅 Due: ${dueDate}</span>
             ${task.branch?.name ? `<span class="branch">🏢 ${task.branch.name}</span>` : ''}
+            <span class="assigned-by">👤 Assigned by: ${assignedByDisplay}</span>
           </div>
         </div>
       </div>
@@ -429,7 +438,7 @@ const generateDailyReminderHTML = (reminderData) => {
         .task-title { font-weight: bold; color: #2c3e50; margin-bottom: 8px; font-size: 16px; word-break: break-word; }
         .task-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; word-break: break-word; }
         .priority-badge { padding: 4px 12px; border-radius: 15px; color: white; font-size: 12px; font-weight: bold; }
-        .due-date, .branch { background: #e3f2fd; padding: 4px 8px; border-radius: 12px; font-size: 12px; color: #1976d2; word-break: break-word; }
+        .due-date, .branch, .assigned-by { background: #e3f2fd; padding: 4px 8px; border-radius: 12px; font-size: 12px; color: #1976d2; word-break: break-word; }
         .cta-section { text-align: center; margin: 25px 0; }
         .cta-button { display: inline-block; background: #4caf50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px; transition: background-color 0.3s ease; }
         .cta-button:hover { background: #45a049; }

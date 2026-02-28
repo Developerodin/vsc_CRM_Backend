@@ -31,10 +31,16 @@ const processEmailQueue = async () => {
 };
 
 /**
+ * Resolve assigner for display: User (assignedBy) or TeamMember (assignedByTeamMember)
+ */
+const getTaskAssigner = (task) => task?.assignedBy || task?.assignedByTeamMember || null;
+
+/**
  * Add email to queue for background processing
  */
 const queueTaskAssignmentEmail = (task, teamMember, assignedBy) => {
-  emailQueue.push({ task, teamMember, assignedBy });
+  const assigner = assignedBy ?? getTaskAssigner(task);
+  emailQueue.push({ task, teamMember, assignedBy: assigner });
   
   // Process queue asynchronously
   setImmediate(() => processEmailQueue());
@@ -52,11 +58,15 @@ const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
     if (!teamMember || !teamMember.email) {
       return;
     }
+    const assigner = assignedBy ?? getTaskAssigner(task);
+    const assignedByDisplay = assigner
+      ? (assigner.email ? `${assigner.name} (${assigner.email})` : assigner.name)
+      : 'System';
 
     const taskData = {
       taskTitle: `Task: ${task.remarks || 'New Task Assigned'}`,
       taskDescription: task.remarks || 'A new task has been assigned to you',
-      assignedBy: assignedBy ? assignedBy.name : 'System',
+      assignedBy: assignedByDisplay,
       dueDate: task.endDate ? task.endDate.toLocaleDateString() : null,
       priority: task.priority || 'medium',
       taskId: task._id ? task._id.toString() : null
@@ -97,7 +107,7 @@ const createTask = async (taskBody) => {
 
     // Queue email notification for background processing
     if (populatedTask.teamMember && populatedTask.teamMember.email) {
-      queueTaskAssignmentEmail(populatedTask, populatedTask.teamMember, populatedTask.assignedBy);
+      queueTaskAssignmentEmail(populatedTask, populatedTask.teamMember, getTaskAssigner(populatedTask));
     }
 
     return populatedTask;
@@ -748,12 +758,13 @@ const bulkCreateTasks = async (tasks) => {
     })
     .populate('teamMember', 'name email phone')
     .populate('assignedBy', 'name email')
+    .populate('assignedByTeamMember', 'name email phone')
     .populate('branch', 'name location');
 
     // Queue emails for background processing
     populatedTasks.forEach(task => {
       if (task.teamMember && task.teamMember.email) {
-        queueTaskAssignmentEmail(task, task.teamMember, task.assignedBy);
+        queueTaskAssignmentEmail(task, task.teamMember, getTaskAssigner(task));
       }
     });
 

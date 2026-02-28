@@ -25,6 +25,7 @@ const sendDailyTaskReminders = async () => {
     const pendingTasks = await Task.find({ status: 'pending' })
       .populate('teamMember', 'name email phone')
       .populate('assignedBy', 'name email')
+      .populate('assignedByTeamMember', 'name email phone')
       .populate('timeline', 'activity client status')
       .populate('branch', 'name location')
       .lean();
@@ -83,15 +84,22 @@ const sendDailyTaskReminders = async () => {
         const html = generateDailyReminderHTML(reminderData);
 
         // Create simplified text version for email body
+        const getAssignerDisplay = (t) => {
+          const assigner = t.assignedBy || t.assignedByTeamMember;
+          if (!assigner) return 'System';
+          return assigner.email ? `${assigner.name} (${assigner.email})` : assigner.name;
+        };
         const taskList = tasks.map((task, index) => {
           const dueDate = task.endDate ? new Date(task.endDate).toLocaleDateString() : 'Not specified';
           const priority = task.priority ? task.priority.toUpperCase() : 'MEDIUM';
           const remarks = task.remarks || 'No description provided';
+          const assignedByDisplay = getAssignerDisplay(task);
           
           return `${index + 1}. ${remarks}
    Priority: ${priority}
    Due Date: ${dueDate}
-   Branch: ${task.branch?.name || 'Not specified'}`;
+   Branch: ${task.branch?.name || 'Not specified'}
+   Assigned by: ${assignedByDisplay}`;
         }).join('\n\n');
 
         const emailBody = `Hello ${teamMember.name}! 👋
