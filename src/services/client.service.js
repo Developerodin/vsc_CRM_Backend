@@ -890,18 +890,19 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
         const existingGst = existingGstNumbers.find(gst => gst._id && gst._id.toString() === gstRow._id);
         if (existingGst) {
 
-          // Check if updating state would conflict with other GST numbers in the same request
-          const stateConflict = gstNumbers.find(gst => gst.state === gstRow.state && gst._id !== gstRow._id);
-          if (stateConflict) {
-
+          // Multiple GST rows per state are allowed; only block duplicate GSTIN strings in this payload
+          const dupGst = gstNumbers.find(
+            g => g.gstNumber === gstRow.gstNumber.trim() && String(g._id) !== String(gstRow._id)
+          );
+          if (dupGst) {
             errors.push({
-              type: 'DUPLICATE_STATE',
-              message: `GST number already exists for state: ${gstRow.state}`,
+              type: 'DUPLICATE_GST_NUMBER',
+              message: `Duplicate GST number in request: ${gstRow.gstNumber}`,
               data: gstRow
             });
             continue;
           }
-          
+
           // Add the updated GST number
           gstNumbers.push({
             _id: gstRow._id,
@@ -921,25 +922,13 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
         }
       } else {
 
-        // Check if state already exists in this update request
-        const stateConflict = gstNumbers.find(gst => gst.state === gstRow.state);
-        if (stateConflict) {
-
+        const trimmedGst = gstRow.gstNumber.trim();
+        const dupInPayload = gstNumbers.find(g => g.gstNumber === trimmedGst);
+        const dupExisting = existingGstNumbers.find(g => g.gstNumber === trimmedGst);
+        if (dupInPayload || dupExisting) {
           errors.push({
-            type: 'DUPLICATE_STATE',
-            message: `GST number already exists for state: ${gstRow.state}`,
-            data: gstRow
-          });
-          continue;
-        }
-        
-        // Check if state already exists in existing data
-        const existingStateConflict = existingGstNumbers.find(gst => gst.state === gstRow.state);
-        if (existingStateConflict) {
-
-          errors.push({
-            type: 'DUPLICATE_STATE',
-            message: `GST number already exists for state: ${gstRow.state}`,
+            type: 'DUPLICATE_GST_NUMBER',
+            message: `Duplicate GST number: ${trimmedGst}`,
             data: gstRow
           });
           continue;
@@ -2182,13 +2171,9 @@ const addGstNumber = async (clientId, gstData) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Missing required fields: state, gstNumber, dateOfRegistration, and gstUserId are required');
   }
 
-  // Check if GST number already exists for this state
-  const existingGst = client.gstNumbers.find(
-    gst => gst.state === gstData.state
-  );
-  
-  if (existingGst) {
-    throw new ApiError(httpStatus.CONFLICT, 'GST number already exists for this state');
+  const trimmedGst = gstData.gstNumber.trim();
+  if (client.gstNumbers.some(gst => gst.gstNumber === trimmedGst)) {
+    throw new ApiError(httpStatus.CONFLICT, 'This GST number is already registered for the client');
   }
 
   // Add new GST number
@@ -2248,22 +2233,22 @@ const updateGstNumber = async (clientId, gstId, updateData) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'GST number not found');
   }
 
-  // Check if updating state would conflict with existing GST
-  if (updateData.state && updateData.state !== client.gstNumbers[gstIndex].state) {
-    const existingGst = client.gstNumbers.find(
-      gst => gst.state === updateData.state && gst._id.toString() !== gstId
-    );
-    
-    if (existingGst) {
-      throw new ApiError(httpStatus.CONFLICT, 'GST number already exists for this state');
-    }
-  }
-
   // Update GST data with proper type conversion
   if (updateData.state) updateData.state = updateData.state.trim();
   if (updateData.gstNumber) updateData.gstNumber = updateData.gstNumber.trim();
   if (updateData.dateOfRegistration) updateData.dateOfRegistration = parseGstDate(updateData.dateOfRegistration);
   if (updateData.gstUserId) updateData.gstUserId = updateData.gstUserId.trim();
+
+  const nextGstNumber =
+    updateData.gstNumber !== undefined ? updateData.gstNumber : client.gstNumbers[gstIndex].gstNumber;
+  if (
+    nextGstNumber &&
+    client.gstNumbers.some(
+      (gst, i) => i !== gstIndex && gst.gstNumber === nextGstNumber
+    )
+  ) {
+    throw new ApiError(httpStatus.CONFLICT, 'This GST number is already registered for the client');
+  }
 
   Object.assign(client.gstNumbers[gstIndex], updateData);
   await client.save();
