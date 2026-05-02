@@ -197,6 +197,29 @@ const bulkImportTimelineFields = {
   }),
 };
 
+const backfillFinancialYear = {
+  body: Joi.object()
+    .keys({
+      clientIds: Joi.array().items(Joi.string().custom(objectId)).min(1).max(500).required(),
+      financialYear: Joi.string()
+        .pattern(/^\d{4}-\d{4}$/)
+        .required()
+        .messages({
+          'string.pattern.base': 'financialYear must look like 2023-2024',
+        }),
+      activityId: Joi.string().custom(objectId).optional(),
+      subactivityId: Joi.string().custom(objectId).optional(),
+    })
+    .custom((value, helpers) => {
+      if (value.subactivityId && !value.activityId) {
+        return helpers.error('any.custom', {
+          message: 'activityId is required when subactivityId is provided',
+        });
+      }
+      return value;
+    }, 'subactivity requires activity'),
+};
+
 export {
   createTimeline,
   getTimelines,
@@ -205,4 +228,5 @@ export {
   deleteTimeline,
   bulkImportTimelines,
   bulkImportTimelineFields,
+  backfillFinancialYear,
 };

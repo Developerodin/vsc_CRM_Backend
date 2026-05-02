@@ -581,7 +581,7 @@ const queryTimelines = async (filter, options, user) => {
     // Use strictPopulate: false to handle null references gracefully
     await Timeline.populate(allResults, [
       { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
-      { path: 'client', select: 'name email phone pan gstNumbers tanNumber cinNumber udyamNumber iecCode', strictPopulate: false }
+      { path: 'client', select: 'name email phone state pan gstNumbers tanNumber cinNumber udyamNumber iecCode', strictPopulate: false }
     ]);
     
     // Process subactivity data since it's stored as embedded document
@@ -725,7 +725,7 @@ const queryTimelines = async (filter, options, user) => {
     if (result.results && result.results.length > 0) {
       await Timeline.populate(result.results, [
         { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
-        { path: 'client', select: 'name email phone pan gstNumbers tanNumber cinNumber udyamNumber iecCode', strictPopulate: false }
+        { path: 'client', select: 'name email phone state pan gstNumbers tanNumber cinNumber udyamNumber iecCode', strictPopulate: false }
       ]);
       
       // Process subactivity data since it's stored as embedded document
@@ -1021,10 +1021,9 @@ export const createClientTimelines = async (client, activities) => {
             // Check if subactivity is GST-related
             const isGstRelated = isGstRelatedSubactivity(subactivity);
             const clientGstNumbers = client.gstNumbers || [];
-            const hasMultipleGst = clientGstNumbers.length > 1;
-            
-            // If GST-related and client has multiple GST numbers, create one timeline per GST
-            if (isGstRelated && hasMultipleGst) {
+
+            // GST-related with at least one registration: one timeline per GST row (state + metadata)
+            if (isGstRelated && clientGstNumbers.length > 0) {
               // Create one timeline for each GST number
               for (const gstNumber of clientGstNumbers) {
                 if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
@@ -1109,7 +1108,7 @@ export const createClientTimelines = async (client, activities) => {
                 }
               }
             } else {
-              // Not GST-related OR client has single/no GST - create single timeline
+              // Not GST-related OR GST activity but client has no gstNumbers yet — single timeline
               if (subactivity.frequency && subactivity.frequency !== 'None' && subactivity.frequencyConfig) {
                 
                 // Create only ONE timeline for the current period

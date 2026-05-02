@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import { timelineService, timelineBulkImportService } from '../services/index.js';
+import { backfillFinancialYearTimelines } from '../services/timelinePastYearBackfill.service.js';
 
 import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
@@ -113,6 +114,11 @@ const getFrequencyStatusStats = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+const backfillFinancialYear = catchAsync(async (req, res) => {
+  const result = await backfillFinancialYearTimelines(req.body, req.user);
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   createTimeline,
   getTimelines,
@@ -123,4 +129,5 @@ export {
   getFrequencyPeriods,
   bulkImportTimelineFieldsController as bulkImportTimelineFields,
   getFrequencyStatusStats,
+  backfillFinancialYear,
 }; 

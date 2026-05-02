@@ -20,6 +20,10 @@ router
   .post(auth('manageTimelines'), validate(timelineValidation.bulkImportTimelineFields), timelineController.bulkImportTimelineFields);
 
 router
+  .route('/backfill-financial-year')
+  .post(auth('manageTimelines'), validate(timelineValidation.backfillFinancialYear), timelineController.backfillFinancialYear);
+
+router
   .route('/frequency-periods')
   .get(auth('getTimelines'), timelineController.getFrequencyPeriods);
 

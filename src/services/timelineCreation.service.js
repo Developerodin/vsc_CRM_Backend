@@ -5,6 +5,51 @@ import { getCurrentFinancialYear } from '../utils/financialYear.js';
 import { upsertRecurringTimeline } from './timelineUpsert.service.js';
 
 /**
+ * Detect GST-related subactivities (aligned with timelineGenerator/processors.js).
+ * @param {Object} subactivity - Activity subdocument
+ * @returns {boolean}
+ */
+const isGstRelatedSubactivity = (subactivity) => {
+  if (!subactivity) return false;
+  const name = (subactivity.name || '').toLowerCase();
+  if (name.includes('gst')) return true;
+  if (Array.isArray(subactivity.fields)) {
+    return subactivity.fields.some((field) => (field.name || '').toLowerCase().includes('gst'));
+  }
+  return false;
+};
+
+/**
+ * Upsert recurring timeline(s): GST subactivities with client gstNumbers create one row per registration (state + metadata).
+ * @param {Object} client - Client mongoose doc
+ * @param {Object} subactivity - Subactivity snapshot passed to upsert
+ * @param {Object} basePayload - Arguments for upsertRecurringTimeline excluding state/metadata
+ * @returns {Promise<Array>} Created/found timeline documents
+ */
+const upsertRecurringWithGstBranch = async (client, subactivity, basePayload) => {
+  const clientGstNumbers = Array.isArray(client.gstNumbers) ? client.gstNumbers : [];
+  if (isGstRelatedSubactivity(subactivity) && clientGstNumbers.length > 0) {
+    const rows = [];
+    for (const gstNumber of clientGstNumbers) {
+      const { timeline } = await upsertRecurringTimeline({
+        ...basePayload,
+        state: gstNumber.state,
+        metadata: {
+          gstNumber: gstNumber.gstNumber,
+          gstState: gstNumber.state,
+          gstUserId: gstNumber.gstUserId,
+          gstId: gstNumber._id?.toString() || gstNumber._id,
+        },
+      });
+      rows.push(timeline);
+    }
+    return rows;
+  }
+  const { timeline } = await upsertRecurringTimeline(basePayload);
+  return [timeline];
+};
+
+/**
  * Create timelines for a client based on activity subactivities
  * @param {ObjectId} clientId - Client ID
  * @param {ObjectId} activityId - Activity ID
@@ -31,16 +76,16 @@ const createTimelinesForClient = async (clientId, activityId, subactivityId = nu
       throw new ApiError(httpStatus.NOT_FOUND, 'Subactivity not found');
     }
     
-    const timeline = await createTimelineForSubactivity(client, activity, subactivity);
-    if (timeline) {
-      timelines.push(timeline);
+    const batch = await createTimelineForSubactivity(client, activity, subactivity);
+    if (batch?.length) {
+      timelines.push(...batch);
     }
   } else {
     // Create timelines for all subactivities in the activity
     for (const subactivity of activity.subactivities) {
-      const timeline = await createTimelineForSubactivity(client, activity, subactivity);
-      if (timeline) {
-        timelines.push(timeline);
+      const batch = await createTimelineForSubactivity(client, activity, subactivity);
+      if (batch?.length) {
+        timelines.push(...batch);
       }
     }
   }
@@ -53,7 +98,7 @@ const createTimelinesForClient = async (clientId, activityId, subactivityId = nu
  * @param {Object} client - Client object
  * @param {Object} activity - Activity object
  * @param {Object} subactivity - Subactivity object
- * @returns {Promise<Array>} - Array of created timelines
+ * @returns {Promise<Array>} - Flat array of created/upserted timelines (possibly empty before switch return)
  */
 const createTimelineForSubactivity = async (client, activity, subactivity) => {
   if (!subactivity.frequency || subactivity.frequency === 'None') {
@@ -95,7 +140,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(timeParts.hours, timeParts.minutes);
         }
 
-        const { timeline } = await upsertRecurringTimeline({
+        const batch = await upsertRecurringWithGstBranch(client, subactivity, {
           clientId: client._id,
           activityId: activity._id,
           branchId: client.branch,
@@ -104,7 +149,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           subactivity,
           financialYear: currentFYString || financialYear,
         });
-        timelines.push(timeline);
+        timelines.push(...batch);
       }
       break;
 
@@ -130,7 +175,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(timeParts.hours, timeParts.minutes);
         }
 
-        const { timeline } = await upsertRecurringTimeline({
+        const batch = await upsertRecurringWithGstBranch(client, subactivity, {
           clientId: client._id,
           activityId: activity._id,
           branchId: client.branch,
@@ -139,7 +184,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           subactivity,
           financialYear: currentFYString || financialYear,
         });
-        timelines.push(timeline);
+        timelines.push(...batch);
       }
       break;
 
@@ -168,7 +213,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
       }
 
       {
-        const { timeline } = await upsertRecurringTimeline({
+        const batch = await upsertRecurringWithGstBranch(client, subactivity, {
           clientId: client._id,
           activityId: activity._id,
           branchId: client.branch,
@@ -177,7 +222,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           subactivity,
           financialYear: currentFYString || financialYear,
         });
-        timelines.push(timeline);
+        timelines.push(...batch);
       }
       break;
 
@@ -194,7 +239,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(timeParts.hours, timeParts.minutes);
         }
 
-        const { timeline } = await upsertRecurringTimeline({
+        const batch = await upsertRecurringWithGstBranch(client, subactivity, {
           clientId: client._id,
           activityId: activity._id,
           branchId: client.branch,
@@ -203,7 +248,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           subactivity,
           financialYear: currentFYString || financialYear,
         });
-        timelines.push(timeline);
+        timelines.push(...batch);
       }
       break;
 
@@ -220,7 +265,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(timeParts.hours, timeParts.minutes);
         }
 
-        const { timeline } = await upsertRecurringTimeline({
+        const batch = await upsertRecurringWithGstBranch(client, subactivity, {
           clientId: client._id,
           activityId: activity._id,
           branchId: client.branch,
@@ -229,7 +274,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           subactivity,
           financialYear: currentFYString || financialYear,
         });
-        timelines.push(timeline);
+        timelines.push(...batch);
       }
       break;
 
@@ -245,7 +290,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           dueDate.setHours(9); // Default to 9 AM
         }
 
-        const { timeline } = await upsertRecurringTimeline({
+        const batch = await upsertRecurringWithGstBranch(client, subactivity, {
           clientId: client._id,
           activityId: activity._id,
           branchId: client.branch,
@@ -254,7 +299,7 @@ const createTimelineForSubactivity = async (client, activity, subactivity) => {
           subactivity,
           financialYear: currentFYString || financialYear,
         });
-        timelines.push(timeline);
+        timelines.push(...batch);
       }
       break;
   }

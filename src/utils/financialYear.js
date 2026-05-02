@@ -44,6 +44,29 @@ export const getCurrentFinancialYear = () => {
 };
 
 /**
+ * Parse Indian FY string "YYYY-YYYY" (April–March) into bounded dates.
+ * @param {string} yearString - e.g. "2023-2024"
+ * @returns {{ start: Date, end: Date, yearString: string }}
+ */
+export const parseFinancialYearString = (yearString) => {
+  const trimmed = String(yearString || '').trim();
+  const m = /^(\d{4})-(\d{4})$/.exec(trimmed);
+  if (!m) {
+    throw new Error('Invalid financial year format. Use YYYY-YYYY (e.g. 2023-2024)');
+  }
+  const y1 = parseInt(m[1], 10);
+  const y2 = parseInt(m[2], 10);
+  if (y2 !== y1 + 1) {
+    throw new Error('Financial year must span consecutive calendar years (e.g. 2023-2024)');
+  }
+  const start = new Date(y1, 3, 1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(y2, 2, 31);
+  end.setHours(23, 59, 59, 999);
+  return { start, end, yearString: trimmed };
+};
+
+/**
  * Calculate next occurrence date based on frequency configuration
  * @param {Object} frequencyConfig - Frequency configuration object
  * @param {String} frequency - Frequency type
@@ -184,6 +207,65 @@ export const calculateNextOccurrence = (frequencyConfig, frequency, startDate = 
   }
   
   return nextDate;
+};
+
+/**
+ * Enumerate recurring due dates inside [rangeStart, rangeEnd] using the same rules as calculateNextOccurrence.
+ * Hourly is omitted (would explode); callers should skip Hourly timelines for FY backfill.
+ * @param {Object} frequencyConfig - Subactivity frequency config
+ * @param {string} frequency - Frequency enum
+ * @param {Date} rangeStart - Inclusive lower bound
+ * @param {Date} rangeEnd - Inclusive upper bound
+ * @returns {Date[]}
+ */
+export const collectDueDatesInRange = (frequencyConfig, frequency, rangeStart, rangeEnd) => {
+  if (!frequencyConfig || frequency === 'OneTime' || frequency === 'None' || frequency === 'Hourly') {
+    return [];
+  }
+  if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
+    return [];
+  }
+
+  const maxDates =
+    frequency === 'Daily'
+      ? 400
+      : frequency === 'Weekly'
+        ? 60
+        : frequency === 'Monthly'
+          ? 14
+          : frequency === 'Quarterly'
+            ? 8
+            : frequency === 'Yearly'
+              ? 2
+              : 24;
+
+  const dates = [];
+  const seed = new Date(rangeStart);
+  seed.setDate(seed.getDate() - 1);
+  seed.setHours(12, 0, 0, 0);
+
+  let candidate = calculateNextOccurrence(frequencyConfig, frequency, seed);
+  let guard = 0;
+  const maxGuard = Math.max(500, maxDates * 20);
+
+  while (guard++ < maxGuard && dates.length < maxDates) {
+    if (!candidate || Number.isNaN(candidate.getTime())) {
+      break;
+    }
+    if (candidate > rangeEnd) {
+      break;
+    }
+    if (candidate >= rangeStart && candidate <= rangeEnd) {
+      dates.push(new Date(candidate.getTime()));
+    }
+    const next = calculateNextOccurrence(frequencyConfig, frequency, candidate);
+    if (!next || Number.isNaN(next.getTime()) || next.getTime() <= candidate.getTime()) {
+      break;
+    }
+    candidate = next;
+  }
+
+  return dates;
 };
 
 /**
