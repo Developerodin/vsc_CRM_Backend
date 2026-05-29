@@ -15,13 +15,17 @@ import TeamMember from '../models/teamMember.model.js';
  */
 const getTeamMemberDashboardCards = catchAsync(async (req, res) => {
   try {
-    const dashboardCards = await teamMemberAnalytics.getDashboardCards();
+    const branchId = req.query.branch || req.query.branchId || null;
+    const dashboardCards = await teamMemberAnalytics.getDashboardCards(req.user, branchId);
     res.status(httpStatus.OK).json({
       success: true,
       message: 'Dashboard cards retrieved successfully',
       data: dashboardCards
     });
   } catch (error) {
+    if (error.message?.includes('Access denied') || error.message?.includes('No branch access')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
+    }
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve dashboard cards');
   }
 });
@@ -33,8 +37,12 @@ const getTeamMemberDashboardCards = catchAsync(async (req, res) => {
  */
 const getTaskCompletionTrends = catchAsync(async (req, res) => {
   try {
-    const { months = 6 } = req.query;
-    const trends = await teamMemberAnalytics.getTaskCompletionTrends(parseInt(months));
+    const { months = 6, branch, branchId } = req.query;
+    const trends = await teamMemberAnalytics.getTaskCompletionTrends(
+      parseInt(months),
+      req.user,
+      branch || branchId || null
+    );
     
     res.status(httpStatus.OK).json({
       success: true,
@@ -42,6 +50,9 @@ const getTaskCompletionTrends = catchAsync(async (req, res) => {
       data: trends
     });
   } catch (error) {
+    if (error.message?.includes('Access denied') || error.message?.includes('No branch access')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
+    }
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve completion trends');
   }
 });
@@ -66,7 +77,8 @@ const getTopTeamMembersByCompletion = catchAsync(async (req, res) => {
     
     const topMembers = await teamMemberAnalytics.getTopTeamMembersByCompletion(
       limit ? parseInt(limit) : undefined,
-      filter
+      filter,
+      req.user
     );
     
     res.status(httpStatus.OK).json({
@@ -75,6 +87,9 @@ const getTopTeamMembersByCompletion = catchAsync(async (req, res) => {
       data: topMembers
     });
   } catch (error) {
+    if (error.message?.includes('Access denied') || error.message?.includes('No branch access')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
+    }
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve top team members');
   }
 });
@@ -90,7 +105,8 @@ const getTopTeamMembersByBranch = catchAsync(async (req, res) => {
     
     const topMembersByBranch = await teamMemberAnalytics.getTopTeamMembersByBranch(
       branchId || null,
-      parseInt(limit)
+      parseInt(limit),
+      req.user
     );
     
     res.status(httpStatus.OK).json({
@@ -99,6 +115,9 @@ const getTopTeamMembersByBranch = catchAsync(async (req, res) => {
       data: topMembersByBranch
     });
   } catch (error) {
+    if (error.message?.includes('Access denied') || error.message?.includes('No branch access')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
+    }
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve top team members by branch');
   }
 });
@@ -110,7 +129,8 @@ const getTopTeamMembersByBranch = catchAsync(async (req, res) => {
  */
 const getTeamMemberAnalyticsSummary = catchAsync(async (req, res) => {
   try {
-    const summary = await teamMemberAnalytics.getAnalyticsSummary();
+    const branchId = req.query.branch || req.query.branchId || null;
+    const summary = await teamMemberAnalytics.getAnalyticsSummary(req.user, branchId);
     
     res.status(httpStatus.OK).json({
       success: true,
@@ -148,7 +168,12 @@ const getTeamMemberDetailsOverview = catchAsync(async (req, res) => {
     // Extract options from query parameters
     const options = pick(req.query, ['limit', 'page']);
     
-    const overview = await teamMemberAnalytics.getTeamMemberDetailsOverview(teamMemberId, filters, options);
+    const overview = await teamMemberAnalytics.getTeamMemberDetailsOverview(
+      teamMemberId,
+      filters,
+      options,
+      req.user
+    );
     
     res.status(httpStatus.OK).json({
       success: true,
@@ -158,6 +183,9 @@ const getTeamMemberDetailsOverview = catchAsync(async (req, res) => {
   } catch (error) {
     if (error.message === 'Team member not found') {
       throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
+    }
+    if (error.message?.includes('Access denied') || error.message?.includes('No branch access')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
     }
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve team member overview');
   }
@@ -190,7 +218,12 @@ const getClientDetailsOverview = catchAsync(async (req, res) => {
     // Extract options from query parameters
     const options = pick(req.query, ['limit', 'page']);
     
-    const overview = await clientAnalytics.getClientDetailsOverview(clientId, filters, options);
+    const overview = await clientAnalytics.getClientDetailsOverview(
+      clientId,
+      filters,
+      options,
+      req.user
+    );
     
     res.status(httpStatus.OK).json({
       success: true,
@@ -200,6 +233,9 @@ const getClientDetailsOverview = catchAsync(async (req, res) => {
   } catch (error) {
     if (error.message === 'Client not found') {
       throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
+    }
+    if (error.message?.includes('Access denied') || error.message?.includes('No branch access')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
     }
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve client overview');
   }
@@ -522,7 +558,12 @@ const getTimelineDetailsOverview = catchAsync(async (req, res) => {
     // Extract options from query parameters
     const options = pick(req.query, ['limit', 'page']);
     
-    const overview = await timelineAnalytics.getTimelineDetailsOverview(timelineId, filters, options);
+    const overview = await timelineAnalytics.getTimelineDetailsOverview(
+      timelineId,
+      filters,
+      options,
+      req.user
+    );
     
     res.status(httpStatus.OK).json({
       success: true,
@@ -532,6 +573,9 @@ const getTimelineDetailsOverview = catchAsync(async (req, res) => {
   } catch (error) {
     if (error.message === 'Timeline not found') {
       throw new ApiError(httpStatus.NOT_FOUND, 'Timeline not found');
+    }
+    if (error.message?.includes('Access denied') || error.message?.includes('No branch access')) {
+      throw new ApiError(httpStatus.FORBIDDEN, error.message);
     }
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve timeline overview');
   }

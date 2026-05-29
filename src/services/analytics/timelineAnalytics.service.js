@@ -650,9 +650,10 @@ const getAllTimelinesTableData = async (filter = {}, options = {}, user = null) 
  * @param {ObjectId} timelineId - Timeline ID
  * @param {Object} filters - Filter options for tasks
  * @param {Object} options - Query options including pagination
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Object>} Timeline detailed overview
  */
-const getTimelineDetailsOverview = async (timelineId, filters = {}, options = {}) => {
+const getTimelineDetailsOverview = async (timelineId, filters = {}, options = {}, user = null) => {
   try {
     // Get timeline basic information
     const timeline = await Timeline.findById(timelineId)
@@ -662,6 +663,18 @@ const getTimelineDetailsOverview = async (timelineId, filters = {}, options = {}
 
     if (!timeline) {
       throw new Error('Timeline not found');
+    }
+
+    if (user) {
+      const timelineBranchId = timeline.branch?._id || timeline.branch;
+      if (user.userType === 'teamMember') {
+        const teamMemberBranchId = user.branch?._id || user.branch;
+        if (timelineBranchId?.toString() !== teamMemberBranchId?.toString()) {
+          throw new Error('Access denied to this branch');
+        }
+      } else if (user.role && timelineBranchId && !hasBranchAccess(user.role, timelineBranchId)) {
+        throw new Error('Access denied to this branch');
+      }
     }
 
     // Get all tasks related to this timeline (timeline is an array in Task model)

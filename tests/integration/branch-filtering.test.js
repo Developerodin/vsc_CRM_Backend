@@ -71,6 +71,65 @@ describe('Branch Filtering', () => {
     });
   });
 
+  describe('GET /v1/tasks', () => {
+    test('should return tasks list with branch filtering applied', async () => {
+      const res = await request(app)
+        .get('/v1/tasks')
+        .set('Authorization', `Bearer ${userAccessToken}`)
+        .send()
+        .expect(httpStatus.OK);
+
+      expect(res.body).toBeDefined();
+      expect(Array.isArray(res.body.results)).toBe(true);
+    });
+
+    test('should return 403 when user does not have access to requested task branch', async () => {
+      const res = await request(app)
+        .get('/v1/tasks?branch=507f1f77bcf86cd799439012')
+        .set('Authorization', `Bearer ${userAccessToken}`)
+        .send()
+        .expect(httpStatus.FORBIDDEN);
+
+      expect(res.body.message).toBe('Access denied to this branch');
+    });
+  });
+
+  describe('GET /v1/analytics/team-members/dashboard-cards', () => {
+    test('should return dashboard cards scoped by branch access', async () => {
+      const res = await request(app)
+        .get('/v1/analytics/team-members/dashboard-cards')
+        .set('Authorization', `Bearer ${userAccessToken}`)
+        .send()
+        .expect(httpStatus.OK);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toBeDefined();
+    });
+
+    test('should return 403 for unauthorized analytics branch filter', async () => {
+      const res = await request(app)
+        .get('/v1/analytics/team-members/dashboard-cards?branch=507f1f77bcf86cd799439012')
+        .set('Authorization', `Bearer ${userAccessToken}`)
+        .send()
+        .expect(httpStatus.FORBIDDEN);
+
+      expect(res.body.message).toBe('Access denied to this branch');
+    });
+  });
+
+  describe('GET /v1/analytics/team-members/completion-trends', () => {
+    test('should return completion trends scoped by branch access', async () => {
+      const res = await request(app)
+        .get('/v1/analytics/team-members/completion-trends?months=6')
+        .set('Authorization', `Bearer ${userAccessToken}`)
+        .send()
+        .expect(httpStatus.OK);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data?.trends).toBeDefined();
+    });
+  });
+
   describe('POST /v1/clients', () => {
     test('should create client with branch field', async () => {
       const newClient = {

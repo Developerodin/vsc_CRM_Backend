@@ -3,6 +3,143 @@ import mongoose from 'mongoose';
 import { Task, TeamMember, Timeline, Group } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
+import { hasBranchAccess, getUserBranchIds } from './role.service.js';
+
+/**
+ * Extract branch ID from a task document or populated branch field.
+ * @param {Object} task - Task document
+ * @returns {string|undefined} Branch ID string
+ */
+const getTaskBranchId = (task) => {
+  if (!task?.branch) return undefined;
+  return task.branch._id?.toString() || task.branch.toString();
+};
+
+/**
+ * Assert the user can access the task's branch.
+ * @param {Object} task - Task document
+ * @param {Object} user - Authenticated user
+ */
+const assertTaskBranchAccess = (task, user) => {
+  if (!user) return;
+
+  const taskBranchId = getTaskBranchId(task);
+  if (!taskBranchId) return;
+
+  if (user.userType === 'teamMember') {
+    const teamMemberBranchId = user.branch?._id?.toString() || user.branch?.toString();
+    if (teamMemberBranchId !== taskBranchId) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this task');
+    }
+    return;
+  }
+
+  if (user.role && !hasBranchAccess(user.role, taskBranchId)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  }
+};
+
+/**
+ * Validate branch access for create/update payloads.
+ * @param {ObjectId|string} branchId - Branch being assigned
+ * @param {Object} user - Authenticated user
+ */
+const assertBranchAccessForPayload = (branchId, user) => {
+  if (!user || !branchId) return;
+
+  if (user.userType === 'teamMember') {
+    const teamMemberBranchId = user.branch?._id?.toString() || user.branch?.toString();
+    if (teamMemberBranchId !== branchId.toString()) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+    return;
+  }
+
+  if (user.role && !hasBranchAccess(user.role, branchId)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+  }
+};
+
+/**
+ * Apply role-based branch restrictions to a Mongo filter object.
+ * @param {Object} mongoFilter - Query filter (mutated in place)
+ * @param {Object} user - Authenticated user
+ */
+const applyBranchFilterToMongoFilter = (mongoFilter, user) => {
+  if (!user) return;
+
+  if (user.userType === 'teamMember') {
+    const teamMemberBranchId = user.branch?._id?.toString() || user.branch?.toString();
+
+    if (mongoFilter.branch) {
+      const requestedBranchId = mongoFilter.branch.toString();
+      if (requestedBranchId !== teamMemberBranchId) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    } else {
+      mongoFilter.branch = teamMemberBranchId;
+    }
+    return;
+  }
+
+  if (user.role) {
+    if (mongoFilter.branch) {
+      if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    } else {
+      const allowedBranchIds = getUserBranchIds(user.role);
+
+      if (allowedBranchIds === null) {
+        // User has access to all branches
+      } else if (allowedBranchIds.length > 0) {
+        mongoFilter.branch = { $in: allowedBranchIds };
+      } else {
+        throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+      }
+    }
+  }
+};
+
+/**
+ * Build branch match criteria for aggregate/count queries.
+ * @param {Object} user - Authenticated user
+ * @param {ObjectId|string|null} branchId - Optional explicit branch filter
+ * @returns {Object} Mongo match fragment for branch field
+ */
+const buildBranchMatchForUser = (user, branchId = null) => {
+  if (!user) {
+    return branchId ? { branch: branchId } : {};
+  }
+
+  if (user.userType === 'teamMember') {
+    const teamMemberBranchId = user.branch?._id || user.branch;
+    if (branchId && branchId.toString() !== teamMemberBranchId.toString()) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+    return { branch: teamMemberBranchId };
+  }
+
+  if (!user.role) {
+    return branchId ? { branch: branchId } : {};
+  }
+
+  if (branchId) {
+    if (!hasBranchAccess(user.role, branchId)) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+    }
+    return { branch: branchId };
+  }
+
+  const allowedBranchIds = getUserBranchIds(user.role);
+  if (allowedBranchIds === null) {
+    return {};
+  }
+  if (allowedBranchIds.length > 0) {
+    return { branch: { $in: allowedBranchIds } };
+  }
+  throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
+};
 
 // Simple email queue for background processing
 const emailQueue = [];
@@ -91,10 +228,17 @@ const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
 /**
  * Create a task
  * @param {Object} taskBody
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Task>}
  */
-const createTask = async (taskBody) => {
+const createTask = async (taskBody, user = null) => {
   try {
+    if (taskBody.branch) {
+      assertBranchAccessForPayload(taskBody.branch, user);
+    } else if (user?.userType === 'teamMember' && user.branch) {
+      taskBody.branch = user.branch._id || user.branch;
+    }
+
     // Create the task
     const task = await Task.create(taskBody);
     
@@ -119,9 +263,10 @@ const createTask = async (taskBody) => {
 /**
  * Get task by id
  * @param {ObjectId} id
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Task>}
  */
-const getTaskById = async (id) => {
+const getTaskById = async (id, user = null) => {
   const task = await Task.findById(id)
     .populate('teamMember', 'name email phone')
     .populate('assignedBy', 'name email')
@@ -132,6 +277,8 @@ const getTaskById = async (id) => {
   if (!task) {
     throw new ApiError(404, 'Task not found');
   }
+
+  assertTaskBranchAccess(task, user);
   return task;
 };
 
@@ -155,9 +302,10 @@ const getTaskByIdMinimal = async (id) => {
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
  * @param {number} [options.limit] - Maximum number of results per page (if not provided, returns all results)
  * @param {number} [options.page] - Current page (default = 1)
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const queryTasks = async (filter, options) => {
+const queryTasks = async (filter, options, user = null) => {
   // Create a new filter object to avoid modifying the original
   const mongoFilter = { ...filter };
 
@@ -241,6 +389,8 @@ const queryTasks = async (filter, options) => {
   if (mongoFilter.startDate && mongoFilter.endDate) {
     // If both dates are set, they're already handled
   }
+
+  applyBranchFilterToMongoFilter(mongoFilter, user);
 
   const tasks = await Task.paginate(mongoFilter, {
     ...options,
@@ -412,10 +562,16 @@ const queryTasks = async (filter, options) => {
  * Update task by id
  * @param {ObjectId} taskId
  * @param {Object} updateBody
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Task>}
  */
-const updateTaskById = async (taskId, updateBody) => {
+const updateTaskById = async (taskId, updateBody, user = null) => {
   const task = await getTaskByIdMinimal(taskId);
+  assertTaskBranchAccess(task, user);
+
+  if (updateBody.branch) {
+    assertBranchAccessForPayload(updateBody.branch, user);
+  }
   
   // Check if teamMember is being updated and validate
   if (updateBody.teamMember && updateBody.teamMember !== task.teamMember.toString()) {
@@ -492,16 +648,18 @@ const updateTaskById = async (taskId, updateBody) => {
 
   Object.assign(task, taskUpdateBody);
   await task.save();
-  return getTaskById(taskId);
+  return getTaskById(taskId, user);
 };
 
 /**
  * Delete task by id
  * @param {ObjectId} taskId
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Task>}
  */
-const deleteTaskById = async (taskId) => {
+const deleteTaskById = async (taskId, user = null) => {
   const task = await getTaskByIdMinimal(taskId);
+  assertTaskBranchAccess(task, user);
   await Task.deleteOne({ _id: taskId });
   return task;
 };
@@ -512,64 +670,69 @@ const deleteTaskById = async (taskId) => {
  * @param {Object} options - Query options
  * @returns {Promise<QueryResult>}
  */
-const getTasksByTeamMember = async (teamMemberId, options = {}) => {
+const getTasksByTeamMember = async (teamMemberId, options = {}, user = null) => {
   const filter = { teamMember: teamMemberId };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get tasks by timeline
  * @param {ObjectId|Array<ObjectId>} timelineId
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksByTimeline = async (timelineId, options = {}) => {
+const getTasksByTimeline = async (timelineId, options = {}, user = null) => {
   const filter = { timeline: timelineId };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get tasks by assigned by user
  * @param {ObjectId} userId
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksByAssignedBy = async (userId, options = {}) => {
+const getTasksByAssignedBy = async (userId, options = {}, user = null) => {
   const filter = { assignedBy: userId };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get tasks by branch
  * @param {ObjectId} branchId
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksByBranch = async (branchId, options = {}) => {
+const getTasksByBranch = async (branchId, options = {}, user = null) => {
   const filter = { branch: branchId };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get tasks by status
  * @param {string} status
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksByStatus = async (status, options = {}) => {
+const getTasksByStatus = async (status, options = {}, user = null) => {
   const filter = { status };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get tasks by priority
  * @param {string} priority
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksByPriority = async (priority, options = {}) => {
+const getTasksByPriority = async (priority, options = {}, user = null) => {
   const filter = { priority };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
@@ -577,9 +740,10 @@ const getTasksByPriority = async (priority, options = {}) => {
  * @param {Date} startDate
  * @param {Date} endDate
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksByDateRange = async (startDate, endDate, options = {}) => {
+const getTasksByDateRange = async (startDate, endDate, options = {}, user = null) => {
   const filter = {
     $or: [
       { startDate: { $gte: startDate, $lte: endDate } },
@@ -590,42 +754,45 @@ const getTasksByDateRange = async (startDate, endDate, options = {}) => {
       }
     ]
   };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get overdue tasks
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getOverdueTasks = async (options = {}) => {
+const getOverdueTasks = async (options = {}, user = null) => {
   const now = new Date();
   const filter = {
     endDate: { $lt: now },
     status: { $nin: ['completed', 'cancelled'] }
   };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get high priority tasks
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getHighPriorityTasks = async (options = {}) => {
+const getHighPriorityTasks = async (options = {}, user = null) => {
   const filter = {
     priority: { $in: ['high', 'urgent', 'critical'] },
     status: { $nin: ['completed', 'cancelled'] }
   };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get tasks due today
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksDueToday = async (options = {}) => {
+const getTasksDueToday = async (options = {}, user = null) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);
@@ -635,15 +802,16 @@ const getTasksDueToday = async (options = {}) => {
     endDate: { $gte: today, $lt: tomorrow },
     status: { $nin: ['completed', 'cancelled'] }
   };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get tasks due this week
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksDueThisWeek = async (options = {}) => {
+const getTasksDueThisWeek = async (options = {}, user = null) => {
   const today = new Date();
   const endOfWeek = new Date(today);
   endOfWeek.setDate(today.getDate() + 7);
@@ -652,15 +820,16 @@ const getTasksDueThisWeek = async (options = {}) => {
     endDate: { $gte: today, $lte: endOfWeek },
     status: { $nin: ['completed', 'cancelled'] }
   };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get tasks due this month
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksDueThisMonth = async (options = {}) => {
+const getTasksDueThisMonth = async (options = {}, user = null) => {
   const today = new Date();
   const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   
@@ -668,32 +837,34 @@ const getTasksDueThisMonth = async (options = {}) => {
     endDate: { $gte: today, $lte: endOfMonth },
     status: { $nin: ['completed', 'cancelled'] }
   };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Search tasks by text (searches in remarks and metadata)
  * @param {string} searchText
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const searchTasks = async (searchText, options = {}) => {
+const searchTasks = async (searchText, options = {}, user = null) => {
   const filter = {
     $or: [
       { remarks: { $regex: searchText, $options: 'i' } },
       { 'metadata': { $regex: searchText, $options: 'i' } }
     ]
   };
-  return queryTasks(filter, options);
+  return queryTasks(filter, options, user);
 };
 
 /**
  * Get task statistics
  * @param {ObjectId} [branchId] - Optional branch filter
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<Object>}
  */
-const getTaskStatistics = async (branchId = null) => {
-  const matchStage = branchId ? { branch: branchId } : {};
+const getTaskStatistics = async (branchId = null, user = null) => {
+  const matchStage = buildBranchMatchForUser(user, branchId);
   
   const stats = await Task.aggregate([
     { $match: matchStage },
@@ -805,9 +976,10 @@ const bulkDeleteTasks = async (taskIds) => {
  * Get tasks of accessible team members for a team member
  * @param {ObjectId|string} teamMemberId - The team member requesting access
  * @param {Object} options - Query options
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<QueryResult>}
  */
-const getTasksOfAccessibleTeamMembers = async (teamMemberId, options = {}) => {
+const getTasksOfAccessibleTeamMembers = async (teamMemberId, options = {}, user = null) => {
   // Validate and convert teamMemberId to ObjectId
   if (!mongoose.Types.ObjectId.isValid(teamMemberId)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid team member ID format');
@@ -928,16 +1100,17 @@ const getTasksOfAccessibleTeamMembers = async (teamMemberId, options = {}) => {
   delete queryOptions.startDate;
   delete queryOptions.endDate;
   
-  return queryTasks(filter, queryOptions);
+  return queryTasks(filter, queryOptions, user);
 };
 
 /**
  * Create task for an accessible team member (with validation)
  * @param {ObjectId} assignedByTeamMemberId - Team member assigning the task
  * @param {Object} taskBody - Task data
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Task>}
  */
-const createTaskForAccessibleTeamMember = async (assignedByTeamMemberId, taskBody) => {
+const createTaskForAccessibleTeamMember = async (assignedByTeamMemberId, taskBody, user = null) => {
   // Validate that the assigned team member is accessible
   const hasAccess = await TeamMember.hasAccessToTeamMember(
     assignedByTeamMemberId,
@@ -958,7 +1131,7 @@ const createTaskForAccessibleTeamMember = async (assignedByTeamMemberId, taskBod
     assignedByTeamMember: assignedByTeamMemberId, // Track which team member assigned this task
   };
   
-  return createTask(taskData);
+  return createTask(taskData, user);
 };
 
 /**
@@ -966,11 +1139,13 @@ const createTaskForAccessibleTeamMember = async (assignedByTeamMemberId, taskBod
  * @param {ObjectId} teamMemberId - Team member trying to update
  * @param {ObjectId} taskId - Task ID
  * @param {Object} updateBody - Update data
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Task>}
  */
-const updateTaskOfAccessibleTeamMember = async (teamMemberId, taskId, updateBody) => {
+const updateTaskOfAccessibleTeamMember = async (teamMemberId, taskId, updateBody, user = null) => {
   // Get the task first
   const task = await getTaskByIdMinimal(taskId);
+  assertTaskBranchAccess(task, user);
   
   // Validate that the team member has access to the task's team member
   const hasAccess = await TeamMember.hasAccessToTeamMember(
@@ -1000,7 +1175,7 @@ const updateTaskOfAccessibleTeamMember = async (teamMemberId, taskId, updateBody
     }
   }
   
-  return updateTaskById(taskId, updateBody);
+  return updateTaskById(taskId, updateBody, user);
 };
 
 export default {

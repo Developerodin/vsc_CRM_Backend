@@ -32,6 +32,8 @@ const fixSuperadminPermissions = async () => {
       fileManager: true,
       settings: {
         activities: true,
+        businessMaster: true,
+        entityMaster: true,
         branches: true,
         users: true,
         roles: true,
@@ -66,6 +68,12 @@ const fixSuperadminPermissions = async () => {
       // File Manager permissions
       getFileManager: true,
       manageFileManager: true,
+      // Business Master permissions
+      getBusinessMasters: true,
+      manageBusinessMasters: true,
+      // Entity Master permissions
+      getEntityTypeMasters: true,
+      manageEntityTypeMasters: true,
     };
 
     // Update the superadmin role with ALL permissions

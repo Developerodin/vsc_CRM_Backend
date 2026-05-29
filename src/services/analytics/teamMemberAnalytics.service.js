@@ -26,23 +26,68 @@ const getMonthRanges = () => {
 };
 
 /**
+ * Build branch match criteria for analytics queries on branch-scoped collections.
+ * @param {Object} user - Authenticated user
+ * @param {ObjectId|string|null} branchId - Optional explicit branch filter
+ * @returns {Object} Mongo match fragment for branch field
+ */
+const buildBranchMatchForUser = (user, branchId = null) => {
+  if (!user) {
+    return branchId ? { branch: branchId } : {};
+  }
+
+  if (user.userType === 'teamMember') {
+    const teamMemberBranchId = user.branch?._id || user.branch;
+    if (branchId && branchId.toString() !== teamMemberBranchId.toString()) {
+      throw new Error('Access denied to this branch');
+    }
+    return { branch: teamMemberBranchId };
+  }
+
+  if (!user.role) {
+    return branchId ? { branch: branchId } : {};
+  }
+
+  if (branchId) {
+    if (!hasBranchAccess(user.role, branchId)) {
+      throw new Error('Access denied to this branch');
+    }
+    return { branch: branchId };
+  }
+
+  const allowedBranchIds = getUserBranchIds(user.role);
+  if (allowedBranchIds === null) {
+    return {};
+  }
+  if (allowedBranchIds.length > 0) {
+    return { branch: { $in: allowedBranchIds } };
+  }
+  throw new Error('No branch access granted');
+};
+
+/**
  * Get dashboard overview cards data
+ * @param {Object} [user] - Authenticated user for branch access filtering
+ * @param {ObjectId|string|null} [branchId] - Optional branch filter
  * @returns {Promise<Object>} Dashboard cards data
  */
-const getDashboardCards = async () => {
+const getDashboardCards = async (user = null, branchId = null) => {
   const { currentMonthStart, currentMonthEnd, lastMonthStart, lastMonthEnd } = getMonthRanges();
+  const branchMatch = buildBranchMatchForUser(user, branchId);
   
   try {
     // Get total team members count
-    const totalTeamMembers = await TeamMember.countDocuments();
+    const totalTeamMembers = await TeamMember.countDocuments(branchMatch);
     
     // Get team members count for current month
     const currentMonthTeamMembers = await TeamMember.countDocuments({
+      ...branchMatch,
       createdAt: { $gte: currentMonthStart, $lte: currentMonthEnd }
     });
     
     // Get team members count for last month
     const lastMonthTeamMembers = await TeamMember.countDocuments({
+      ...branchMatch,
       createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd }
     });
     
@@ -55,6 +100,7 @@ const getDashboardCards = async () => {
     const currentMonthTasks = await Task.aggregate([
       {
         $match: {
+          ...branchMatch,
           updatedAt: { $gte: currentMonthStart, $lte: currentMonthEnd },
           status: 'completed'
         }
@@ -71,6 +117,7 @@ const getDashboardCards = async () => {
     
     // Get total tasks for current month
     const currentMonthTotalTasks = await Task.countDocuments({
+      ...branchMatch,
       createdAt: { $gte: currentMonthStart, $lte: currentMonthEnd }
     });
     
@@ -78,6 +125,7 @@ const getDashboardCards = async () => {
     const lastMonthTasks = await Task.aggregate([
       {
         $match: {
+          ...branchMatch,
           updatedAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           status: 'completed'
         }
@@ -98,6 +146,7 @@ const getDashboardCards = async () => {
       : 0;
     
     const lastMonthTotalTasks = await Task.countDocuments({
+      ...branchMatch,
       createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd }
     });
     
@@ -118,6 +167,7 @@ const getDashboardCards = async () => {
     const currentMonthWorkload = await Task.aggregate([
       {
         $match: {
+          ...branchMatch,
           createdAt: { $gte: currentMonthStart, $lte: currentMonthEnd }
         }
       },
@@ -132,6 +182,7 @@ const getDashboardCards = async () => {
     const lastMonthWorkload = await Task.aggregate([
       {
         $match: {
+          ...branchMatch,
           createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd }
         }
       },
@@ -201,12 +252,15 @@ const getDashboardCards = async () => {
 /**
  * Get task completion trends for bar chart
  * @param {number} months - Number of months to get trends for (default: 6)
+ * @param {Object} [user] - Authenticated user for branch access filtering
+ * @param {ObjectId|string|null} [branchId] - Optional branch filter
  * @returns {Promise<Object>} Task completion trends data
  */
-const getTaskCompletionTrends = async (months = 6) => {
+const getTaskCompletionTrends = async (months = 6, user = null, branchId = null) => {
   try {
     const trends = [];
     const now = new Date();
+    const branchMatch = buildBranchMatchForUser(user, branchId);
     
     for (let i = months - 1; i >= 0; i--) {
       const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -216,12 +270,14 @@ const getTaskCompletionTrends = async (months = 6) => {
       
       // Get completed tasks for this month
       const completedTasks = await Task.countDocuments({
+        ...branchMatch,
         updatedAt: { $gte: monthStart, $lte: monthEnd },
         status: 'completed'
       });
       
       // Get total tasks for this month
       const totalTasks = await Task.countDocuments({
+        ...branchMatch,
         createdAt: { $gte: monthStart, $lte: monthEnd }
       });
       
@@ -254,16 +310,20 @@ const getTaskCompletionTrends = async (months = 6) => {
  * Get top team members by task completion
  * @param {number} [limit] - Number of top members to return (if not provided, returns all)
  * @param {Object} filter - Additional filters (branch, date range, etc.)
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<Object>} Top team members data
  */
-const getTopTeamMembersByCompletion = async (limit, filter = {}) => {
+const getTopTeamMembersByCompletion = async (limit, filter = {}, user = null) => {
   try {
     const { currentMonthStart, currentMonthEnd } = getMonthRanges();
+    const { branch, ...restFilter } = filter;
+    const branchMatch = buildBranchMatchForUser(user, branch || null);
     
     const matchStage = {
       updatedAt: { $gte: currentMonthStart, $lte: currentMonthEnd },
       status: 'completed',
-      ...filter
+      ...branchMatch,
+      ...restFilter
     };
     
     const topMembers = await Task.aggregate([
@@ -336,20 +396,19 @@ const getTopTeamMembersByCompletion = async (limit, filter = {}) => {
  * Get top team members by branch
  * @param {ObjectId} branchId - Branch ID to filter by (optional)
  * @param {number} limit - Number of top members per branch (default: 5)
+ * @param {Object} [user] - Authenticated user for branch access filtering
  * @returns {Promise<Object>} Top team members by branch data
  */
-const getTopTeamMembersByBranch = async (branchId = null, limit = 5) => {
+const getTopTeamMembersByBranch = async (branchId = null, limit = 5, user = null) => {
   try {
     const { currentMonthStart, currentMonthEnd } = getMonthRanges();
+    const branchMatch = buildBranchMatchForUser(user, branchId);
     
     const matchStage = {
       updatedAt: { $gte: currentMonthStart, $lte: currentMonthEnd },
-      status: 'completed'
+      status: 'completed',
+      ...branchMatch
     };
-    
-    if (branchId) {
-      matchStage.branch = branchId;
-    }
     
     const pipeline = [
       { $match: matchStage },
@@ -471,9 +530,12 @@ const getTopTeamMembersByBranch = async (branchId = null, limit = 5) => {
 /**
  * Get comprehensive team member details overview
  * @param {ObjectId} teamMemberId - Team member ID
+ * @param {Object} filters - Query filters
+ * @param {Object} options - Pagination options
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Object>} Team member detailed overview
  */
-const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options = {}) => {
+const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options = {}, user = null) => {
   try {
     // Get team member basic information
     const teamMember = await TeamMember.findById(teamMemberId)
@@ -482,6 +544,18 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
     
     if (!teamMember) {
       throw new Error('Team member not found');
+    }
+
+    if (user) {
+      const memberBranchId = teamMember.branch?._id || teamMember.branch;
+      if (user.userType === 'teamMember') {
+        const teamMemberBranchId = user.branch?._id || user.branch;
+        if (memberBranchId?.toString() !== teamMemberBranchId?.toString()) {
+          throw new Error('Access denied to this branch');
+        }
+      } else if (user.role && memberBranchId && !hasBranchAccess(user.role, memberBranchId)) {
+        throw new Error('Access denied to this branch');
+      }
     }
 
     const { currentMonthStart, currentMonthEnd } = getMonthRanges();
@@ -892,15 +966,17 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
 
 /**
  * Get comprehensive analytics summary
+ * @param {Object} [user] - Authenticated user for branch access filtering
+ * @param {ObjectId|string|null} [branchId] - Optional branch filter
  * @returns {Promise<Object>} Complete analytics summary
  */
-const getAnalyticsSummary = async () => {
+const getAnalyticsSummary = async (user = null, branchId = null) => {
   try {
     const [dashboardCards, trends, topMembers, topMembersByBranch] = await Promise.all([
-      getDashboardCards(),
-      getTaskCompletionTrends(),
-      getTopTeamMembersByCompletion(),
-      getTopTeamMembersByBranch()
+      getDashboardCards(user, branchId),
+      getTaskCompletionTrends(6, user, branchId),
+      getTopTeamMembersByCompletion(undefined, branchId ? { branch: branchId } : {}, user),
+      getTopTeamMembersByBranch(branchId || null, 5, user)
     ]);
     
     return {
@@ -976,7 +1052,13 @@ const getAllTeamMembersTableData = async (filter = {}, options = {}, user = null
     }
 
     // Apply branch filtering based on user's access
-    if (user && user.role) {
+    if (user?.userType === 'teamMember' && user.branch) {
+      const branchId = user.branch._id || user.branch;
+      if (mongoFilter.branch && String(mongoFilter.branch) !== String(branchId)) {
+        throw new Error('Access denied to this branch');
+      }
+      mongoFilter.branch = branchId;
+    } else if (user && user.role) {
       // If specific branch is requested in filter
       if (mongoFilter.branch) {
         // Check if user has access to this specific branch
@@ -1028,8 +1110,20 @@ const getAllTeamMembersTableData = async (filter = {}, options = {}, user = null
     // Get all team member IDs we're interested in
     const teamMemberIds = teamMembers.map(tm => tm._id);
 
-    // Get ALL tasks first (like clients table does), then filter by team member
-    const allTasks = await Task.find()
+    // Get tasks scoped to team members and branch access
+    const taskFilter = { teamMember: { $in: teamMemberIds } };
+    if (mongoFilter.branch) {
+      taskFilter.branch = mongoFilter.branch;
+    } else if (user?.userType === 'teamMember' && user.branch) {
+      taskFilter.branch = user.branch._id || user.branch;
+    } else if (user?.role) {
+      const allowedBranchIds = getUserBranchIds(user.role);
+      if (allowedBranchIds !== null && allowedBranchIds.length > 0) {
+        taskFilter.branch = { $in: allowedBranchIds };
+      }
+    }
+
+    const allTasks = await Task.find(taskFilter)
       .select('_id status priority startDate endDate timeline branch createdAt teamMember')
       .populate('teamMember', 'name email phone')
       .populate({

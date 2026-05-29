@@ -25,6 +25,8 @@ const roleSchema = mongoose.Schema(
       fileManager: { type: Boolean, default: false },
       settings: {
         activities: { type: Boolean, default: false },
+        businessMaster: { type: Boolean, default: false },
+        entityMaster: { type: Boolean, default: false },
         branches: { type: Boolean, default: false },
         users: { type: Boolean, default: false },
         roles: { type: Boolean, default: false },
@@ -59,6 +61,12 @@ const roleSchema = mongoose.Schema(
       // File Manager permissions
       getFileManager: { type: Boolean, default: false },
       manageFileManager: { type: Boolean, default: false },
+      // Business Master permissions
+      getBusinessMasters: { type: Boolean, default: false },
+      manageBusinessMasters: { type: Boolean, default: false },
+      // Entity Master permissions
+      getEntityTypeMasters: { type: Boolean, default: false },
+      manageEntityTypeMasters: { type: Boolean, default: false },
       // Email / bulk email
       sendEmails: { type: Boolean, default: false },
     },

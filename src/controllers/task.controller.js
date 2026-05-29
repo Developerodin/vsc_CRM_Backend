@@ -22,7 +22,7 @@ const createTask = catchAsync(async (req, res) => {
       body.assignedBy = req.user?.id ?? req.user?._id?.toString() ?? null;
     }
   }
-  const task = await taskService.createTask(body);
+  const task = await taskService.createTask(body, req.user);
   res.status(httpStatus.CREATED).send(task);
 });
 
@@ -67,7 +67,7 @@ const getTasks = catchAsync(async (req, res) => {
   }
   
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.queryTasks(filter, options);
+  const result = await taskService.queryTasks(filter, options, req.user);
   res.send(result);
 });
 
@@ -77,7 +77,7 @@ const getTasks = catchAsync(async (req, res) => {
  * @access Private
  */
 const getTask = catchAsync(async (req, res) => {
-  const task = await taskService.getTaskById(req.params.taskId);
+  const task = await taskService.getTaskById(req.params.taskId, req.user);
   res.send(task);
 });
 
@@ -87,7 +87,7 @@ const getTask = catchAsync(async (req, res) => {
  * @access Private
  */
 const updateTask = catchAsync(async (req, res) => {
-  const task = await taskService.updateTaskById(req.params.taskId, req.body);
+  const task = await taskService.updateTaskById(req.params.taskId, req.body, req.user);
   res.send(task);
 });
 
@@ -97,7 +97,7 @@ const updateTask = catchAsync(async (req, res) => {
  * @access Private
  */
 const deleteTask = catchAsync(async (req, res) => {
-  await taskService.deleteTaskById(req.params.taskId);
+  await taskService.deleteTaskById(req.params.taskId, req.user);
   res.status(httpStatus.NO_CONTENT).send();
 });
 
@@ -108,7 +108,7 @@ const deleteTask = catchAsync(async (req, res) => {
  */
 const getTasksByTeamMember = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksByTeamMember(req.params.teamMemberId, options);
+  const result = await taskService.getTasksByTeamMember(req.params.teamMemberId, options, req.user);
   res.send(result);
 });
 
@@ -119,7 +119,7 @@ const getTasksByTeamMember = catchAsync(async (req, res) => {
  */
 const getTasksByTimeline = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksByTimeline(req.params.timelineId, options);
+  const result = await taskService.getTasksByTimeline(req.params.timelineId, options, req.user);
   res.send(result);
 });
 
@@ -130,7 +130,7 @@ const getTasksByTimeline = catchAsync(async (req, res) => {
  */
 const getTasksByAssignedBy = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksByAssignedBy(req.params.userId, options);
+  const result = await taskService.getTasksByAssignedBy(req.params.userId, options, req.user);
   res.send(result);
 });
 
@@ -141,7 +141,7 @@ const getTasksByAssignedBy = catchAsync(async (req, res) => {
  */
 const getTasksByBranch = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksByBranch(req.params.branchId, options);
+  const result = await taskService.getTasksByBranch(req.params.branchId, options, req.user);
   res.send(result);
 });
 
@@ -152,7 +152,7 @@ const getTasksByBranch = catchAsync(async (req, res) => {
  */
 const getTasksByStatus = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksByStatus(req.params.status, options);
+  const result = await taskService.getTasksByStatus(req.params.status, options, req.user);
   res.send(result);
 });
 
@@ -163,7 +163,7 @@ const getTasksByStatus = catchAsync(async (req, res) => {
  */
 const getTasksByPriority = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksByPriority(req.params.priority, options);
+  const result = await taskService.getTasksByPriority(req.params.priority, options, req.user);
   res.send(result);
 });
 
@@ -183,7 +183,8 @@ const getTasksByDateRange = catchAsync(async (req, res) => {
   const result = await taskService.getTasksByDateRange(
     new Date(startDate),
     new Date(endDate),
-    options
+    options,
+    req.user
   );
   res.send(result);
 });
@@ -195,7 +196,7 @@ const getTasksByDateRange = catchAsync(async (req, res) => {
  */
 const getOverdueTasks = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getOverdueTasks(options);
+  const result = await taskService.getOverdueTasks(options, req.user);
   res.send(result);
 });
 
@@ -206,7 +207,7 @@ const getOverdueTasks = catchAsync(async (req, res) => {
  */
 const getHighPriorityTasks = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getHighPriorityTasks(options);
+  const result = await taskService.getHighPriorityTasks(options, req.user);
   res.send(result);
 });
 
@@ -217,7 +218,7 @@ const getHighPriorityTasks = catchAsync(async (req, res) => {
  */
 const getTasksDueToday = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksDueToday(options);
+  const result = await taskService.getTasksDueToday(options, req.user);
   res.send(result);
 });
 
@@ -228,7 +229,7 @@ const getTasksDueToday = catchAsync(async (req, res) => {
  */
 const getTasksDueThisWeek = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksDueThisWeek(options);
+  const result = await taskService.getTasksDueThisWeek(options, req.user);
   res.send(result);
 });
 
@@ -239,7 +240,7 @@ const getTasksDueThisWeek = catchAsync(async (req, res) => {
  */
 const getTasksDueThisMonth = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.getTasksDueThisMonth(options);
+  const result = await taskService.getTasksDueThisMonth(options, req.user);
   res.send(result);
 });
 
@@ -256,7 +257,7 @@ const searchTasks = catchAsync(async (req, res) => {
   }
   
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await taskService.searchTasks(q, options);
+  const result = await taskService.searchTasks(q, options, req.user);
   res.send(result);
 });
 
@@ -269,7 +270,7 @@ const getTaskStatistics = catchAsync(async (req, res) => {
   const { branchId } = req.query;
   // Convert empty string to null/undefined
   const normalizedBranchId = branchId && branchId.trim() !== '' ? branchId : null;
-  const stats = await taskService.getTaskStatistics(normalizedBranchId);
+  const stats = await taskService.getTaskStatistics(normalizedBranchId, req.user);
   res.send(stats);
 });
 
@@ -341,7 +342,7 @@ const addAttachment = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'File name and file URL are required');
   }
   
-  const task = await taskService.getTaskById(req.params.taskId);
+  const task = await taskService.getTaskById(req.params.taskId, req.user);
   await task.addAttachment(fileName, fileUrl);
   res.send(task);
 });
@@ -353,7 +354,7 @@ const addAttachment = catchAsync(async (req, res) => {
  */
 const removeAttachment = catchAsync(async (req, res) => {
   const { fileName } = req.params;
-  const task = await taskService.getTaskById(req.params.taskId);
+  const task = await taskService.getTaskById(req.params.taskId, req.user);
   await task.removeAttachment(fileName);
   res.send(task);
 });
@@ -367,7 +368,8 @@ const getTasksOfAccessibleTeamMembers = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page', 'status', 'priority']);
   const result = await taskService.getTasksOfAccessibleTeamMembers(
     req.params.teamMemberId,
-    options
+    options,
+    req.user
   );
   res.send(result);
 });
@@ -380,7 +382,8 @@ const getTasksOfAccessibleTeamMembers = catchAsync(async (req, res) => {
 const createTaskForAccessibleTeamMember = catchAsync(async (req, res) => {
   const task = await taskService.createTaskForAccessibleTeamMember(
     req.params.teamMemberId,
-    req.body
+    req.body,
+    req.user
   );
   res.status(httpStatus.CREATED).send(task);
 });
@@ -394,7 +397,8 @@ const updateTaskOfAccessibleTeamMember = catchAsync(async (req, res) => {
   const task = await taskService.updateTaskOfAccessibleTeamMember(
     req.params.teamMemberId,
     req.params.taskId,
-    req.body
+    req.body,
+    req.user
   );
   res.send(task);
 });

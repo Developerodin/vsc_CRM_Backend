@@ -81,9 +81,10 @@ const buildTimelineHistoryByYear = (allTimelines) => {
  * @param {ObjectId} clientId - Client ID
  * @param {Object} filters - Filter options for tasks
  * @param {Object} options - Query options including pagination
+ * @param {Object} [user] - Authenticated user for branch access validation
  * @returns {Promise<Object>} Client detailed overview
  */
-const getClientDetailsOverview = async (clientId, filters = {}, options = {}) => {
+const getClientDetailsOverview = async (clientId, filters = {}, options = {}, user = null) => {
   try {
     // Get client with category, turnover, turnoverHistory, activities
     const client = await Client.findById(clientId)
@@ -93,6 +94,18 @@ const getClientDetailsOverview = async (clientId, filters = {}, options = {}) =>
 
     if (!client) {
       throw new Error('Client not found');
+    }
+
+    if (user) {
+      const clientBranchId = client.branch?._id || client.branch;
+      if (user.userType === 'teamMember') {
+        const teamMemberBranchId = user.branch?._id || user.branch;
+        if (clientBranchId?.toString() !== teamMemberBranchId?.toString()) {
+          throw new Error('Access denied to this branch');
+        }
+      } else if (user.role && clientBranchId && !hasBranchAccess(user.role, clientBranchId)) {
+        throw new Error('Access denied to this branch');
+      }
     }
 
     const { yearString: currentFY } = getCurrentFinancialYear();

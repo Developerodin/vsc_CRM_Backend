@@ -175,6 +175,20 @@ const getAvailableNavigationPermissions = () => {
           path: '/activities',
           category: 'settings',
         },
+        businessMaster: {
+          key: 'settings.businessMaster',
+          title: 'Business Master',
+          description: 'Manage business type master data',
+          path: '/settings/business-master',
+          category: 'settings',
+        },
+        entityMaster: {
+          key: 'settings.entityMaster',
+          title: 'Entity Master',
+          description: 'Manage entity type master data',
+          path: '/settings/entity-master',
+          category: 'settings',
+        },
         branches: {
           key: 'settings.branches',
           title: 'Branches',
@@ -349,6 +363,38 @@ const getAvailableApiPermissions = () => {
       description: 'Can upload, delete, and manage files',
       category: 'file_management',
       group: 'fileManager',
+    },
+
+    // Business Master Management
+    getBusinessMasters: {
+      key: 'getBusinessMasters',
+      title: 'View Business Masters',
+      description: 'Can view business master list and details',
+      category: 'business_master_management',
+      group: 'businessMaster',
+    },
+    manageBusinessMasters: {
+      key: 'manageBusinessMasters',
+      title: 'Manage Business Masters',
+      description: 'Can create, update, and delete business masters',
+      category: 'business_master_management',
+      group: 'businessMaster',
+    },
+
+    // Entity Master Management
+    getEntityTypeMasters: {
+      key: 'getEntityTypeMasters',
+      title: 'View Entity Masters',
+      description: 'Can view entity master list and details',
+      category: 'entity_master_management',
+      group: 'entityMaster',
+    },
+    manageEntityTypeMasters: {
+      key: 'manageEntityTypeMasters',
+      title: 'Manage Entity Masters',
+      description: 'Can create, update, and delete entity masters',
+      category: 'entity_master_management',
+      group: 'entityMaster',
     },
   };
 };
