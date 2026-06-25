@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import { Branch } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
+import { ensureBranchRootFolders } from './branchFileManager.service.js';
 
 /**
  * Create a branch
@@ -14,7 +15,9 @@ const createBranch = async (branchBody) => {
   if (await Branch.isPhoneTaken(branchBody.phone)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Phone number already taken');
   }
-  return Branch.create(branchBody);
+  const branch = await Branch.create(branchBody);
+  await ensureBranchRootFolders(branch._id);
+  return branch;
 };
 
 /**
@@ -180,6 +183,11 @@ const bulkImportBranches = async (branches) => {
             rawResult: true,
           });
           results.created = createdBranches.insertedCount || validBranches.length;
+          await Promise.all(
+            (createdBranches.insertedDocs || validBranches).map((branch) =>
+              ensureBranchRootFolders(branch._id || branch.id)
+            )
+          );
         }
       } else {
         const createdBranches = await Branch.insertMany(toCreate, {
@@ -187,6 +195,11 @@ const bulkImportBranches = async (branches) => {
           rawResult: true,
         });
         results.created = createdBranches.insertedCount || toCreate.length;
+        await Promise.all(
+          (createdBranches.insertedDocs || toCreate).map((branch) =>
+            ensureBranchRootFolders(branch._id || branch.id)
+          )
+        );
       }
     } catch (error) {
       if (error.writeErrors) {

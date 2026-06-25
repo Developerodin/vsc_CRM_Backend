@@ -985,66 +985,15 @@ const processGstNumbersFromFrontend = async (gstNumbersData, existingGstNumbers 
  */
 // Helper function to create client subfolder
 const createClientSubfolder = async (clientName, branchId, clientId = null) => {
-  try {
-    // Ensure Clients parent folder exists
-    let clientsParentFolder = await FileManager.findOne({
-      type: 'folder',
-      'folder.name': 'Clients',
-      'folder.isRoot': true,
-      isDeleted: false
-    });
-
-    if (!clientsParentFolder) {
-      clientsParentFolder = await FileManager.create({
-        type: 'folder',
-        folder: {
-          name: 'Clients',
-          description: 'Parent folder for all client subfolders',
-          parentFolder: null,
-          createdBy: branchId,
-          isRoot: true,
-          path: '/Clients'
-        }
-      });
-    }
-
-    // Create client subfolder if it doesn't exist
-    const existingClientFolder = await FileManager.findOne({
-      type: 'folder',
-      'folder.name': clientName,
-      'folder.parentFolder': clientsParentFolder._id,
-      isDeleted: false
-    });
-
-    if (!existingClientFolder) {
-      // Create new folder with clientId in metadata
-      await FileManager.create({
-        type: 'folder',
-        folder: {
-          name: clientName,
-          description: `Folder for client: ${clientName}`,
-          parentFolder: clientsParentFolder._id,
-          createdBy: branchId,
-          isRoot: false,
-          path: `/Clients/${clientName}`,
-          metadata: {
-            clientName: clientName,
-            ...(clientId && { clientId: clientId })
-          }
-        }
-      });
-    } else if (clientId && (!existingClientFolder.folder.metadata || !existingClientFolder.folder.metadata.clientId)) {
-      // Update existing folder to include clientId if it's missing
-      existingClientFolder.folder.metadata = {
-        ...(existingClientFolder.folder.metadata || {}),
-        clientId: clientId,
-        clientName: clientName
-      };
-      await existingClientFolder.save();
-    }
-  } catch (error) {
-    throw error;
-  }
+  const { ensureClientFolderForClient } = await import('./branchFileManager.service.js');
+  await ensureClientFolderForClient(
+    {
+      _id: clientId,
+      name: clientName,
+      branch: branchId,
+    },
+    branchId
+  );
 };
 
 // Note: createClientTimelines function removed - using createTimelinesFromService from timeline.service.js instead

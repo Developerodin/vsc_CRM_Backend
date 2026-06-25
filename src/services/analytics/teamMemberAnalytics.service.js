@@ -26,6 +26,93 @@ const getMonthRanges = () => {
 };
 
 /**
+ * Normalize a task's timeline field into an array of populated timeline documents.
+ * @param {Object} task - Task document with populated timeline
+ * @returns {Array<Object>} Timeline entries linked to the task
+ */
+const getTaskTimelineEntries = (task) => {
+  if (!task?.timeline) {
+    return [];
+  }
+  return Array.isArray(task.timeline) ? task.timeline.filter(Boolean) : [task.timeline];
+};
+
+/**
+ * Build flat task detail rows for analytics UI (client, task name, status).
+ * @param {Array<Object>} tasks - Populated task documents
+ * @returns {Array<Object>} Flattened task detail rows
+ */
+const buildTaskDetailRows = (tasks) => {
+  return tasks.flatMap((task) => {
+    const timelines = getTaskTimelineEntries(task);
+
+    if (timelines.length === 0) {
+      return [{
+        taskId: task._id?.toString(),
+        taskName: task.remarks || 'Untitled Task',
+        clientName: '—',
+        clientId: null,
+        activityName: '—',
+        status: task.status,
+        priority: task.priority,
+        startDate: task.startDate,
+        endDate: task.endDate,
+        timelineId: null,
+      }];
+    }
+
+    return timelines.map((timelineEntry) => ({
+      taskId: task._id?.toString(),
+      taskName: task.remarks || timelineEntry.activity?.name || 'Untitled Task',
+      clientName: timelineEntry.client?.name || '—',
+      clientId: timelineEntry.client?._id?.toString() || timelineEntry.client?.toString() || null,
+      activityName: timelineEntry.activity?.name || '—',
+      status: task.status,
+      priority: task.priority,
+      startDate: task.startDate,
+      endDate: task.endDate,
+      timelineId: timelineEntry._id?.toString() || null,
+    }));
+  });
+};
+
+/**
+ * Serialize a populated timeline document for analytics API responses.
+ * @param {Object} timelineEntry - Populated timeline document
+ * @returns {Object|null} Serialized timeline payload
+ */
+const serializeTimelineForResponse = (timelineEntry) => {
+  if (!timelineEntry) {
+    return null;
+  }
+
+  return {
+    id: timelineEntry._id,
+    status: timelineEntry.status,
+    startDate: timelineEntry.startDate,
+    endDate: timelineEntry.endDate,
+    frequency: timelineEntry.frequency,
+    frequencyConfig: timelineEntry.frequencyConfig,
+    frequencyStatus: timelineEntry.frequencyStatus || [],
+    branch: timelineEntry.branch || null,
+    udin: timelineEntry.udin || [],
+    createdAt: timelineEntry.createdAt,
+    client: timelineEntry.client ? {
+      id: timelineEntry.client._id,
+      name: timelineEntry.client.name,
+      email: timelineEntry.client.email,
+      phone: timelineEntry.client.phone,
+      company: timelineEntry.client.company,
+    } : null,
+    activity: timelineEntry.activity ? {
+      id: timelineEntry.activity._id,
+      name: timelineEntry.activity.name,
+      description: timelineEntry.activity.description,
+    } : null,
+  };
+};
+
+/**
  * Build branch match criteria for analytics queries on branch-scoped collections.
  * @param {Object} user - Authenticated user
  * @param {ObjectId|string|null} branchId - Optional explicit branch filter
@@ -578,24 +665,26 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
       // Filter by client search
       if (filters.clientSearch) {
         const clientSearchRegex = new RegExp(filters.clientSearch, 'i');
-        allTasks = allTasks.filter(task => 
-          task.timeline && 
-          task.timeline.client && 
-          (clientSearchRegex.test(task.timeline.client.name) ||
-           clientSearchRegex.test(task.timeline.client.email) ||
-           clientSearchRegex.test(task.timeline.client.phone) ||
-           clientSearchRegex.test(task.timeline.client.company || ''))
+        allTasks = allTasks.filter((task) =>
+          getTaskTimelineEntries(task).some((timelineEntry) =>
+            timelineEntry.client &&
+            (clientSearchRegex.test(timelineEntry.client.name) ||
+              clientSearchRegex.test(timelineEntry.client.email) ||
+              clientSearchRegex.test(timelineEntry.client.phone) ||
+              clientSearchRegex.test(timelineEntry.client.company || ''))
+          )
         );
       }
 
       // Filter by activity search
       if (filters.activitySearch) {
         const activitySearchRegex = new RegExp(filters.activitySearch, 'i');
-        allTasks = allTasks.filter(task => 
-          task.timeline && 
-          task.timeline.activity && 
-          (activitySearchRegex.test(task.timeline.activity.name) ||
-           activitySearchRegex.test(task.timeline.activity.description || ''))
+        allTasks = allTasks.filter((task) =>
+          getTaskTimelineEntries(task).some((timelineEntry) =>
+            timelineEntry.activity &&
+            (activitySearchRegex.test(timelineEntry.activity.name) ||
+              activitySearchRegex.test(timelineEntry.activity.description || ''))
+          )
         );
       }
 
@@ -653,7 +742,11 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
     );
 
     // Get timeline information (clients handled)
-    const timelineIds = [...new Set(allTasks.map(task => task.timeline && task.timeline._id).filter(Boolean))];
+    const timelineIds = [...new Set(
+      allTasks.flatMap((task) =>
+        getTaskTimelineEntries(task).map((timelineEntry) => timelineEntry._id).filter(Boolean)
+      )
+    )];
     
     const timelines = await Timeline.find({ _id: { $in: timelineIds } })
       .populate('client', 'name email phone company address city state country pinCode')
@@ -662,12 +755,13 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
       .sort({ startDate: -1 });
 
     // Also get client details directly from tasks for better population
-    const clientIds = [...new Set(allTasks.map(task => {
-      if (task.timeline && task.timeline.client) {
-        return task.timeline.client._id || task.timeline.client;
-      }
-      return null;
-    }).filter(Boolean))];
+    const clientIds = [...new Set(
+      allTasks.flatMap((task) =>
+        getTaskTimelineEntries(task)
+          .map((timelineEntry) => timelineEntry.client?._id || timelineEntry.client || null)
+          .filter(Boolean)
+      )
+    )];
 
     const clients = await Client.find({ _id: { $in: clientIds } })
       .select('name email phone company address city state country pinCode');
@@ -754,48 +848,52 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
     const clientSummary = {};
     
     // Process each task to extract client information
-    allTasks.forEach(task => {
-      if (task.timeline && task.timeline.client) {
-        const clientId = task.timeline.client._id ? task.timeline.client._id.toString() : task.timeline.client.toString();
-        
+    allTasks.forEach((task) => {
+      getTaskTimelineEntries(task).forEach((timelineEntry) => {
+        if (!timelineEntry.client) {
+          return;
+        }
+
+        const clientId = timelineEntry.client._id
+          ? timelineEntry.client._id.toString()
+          : timelineEntry.client.toString();
+
         if (!clientSummary[clientId]) {
-          // Find client details from populated data or from clients array
           let clientDetails = null;
-          if (task.timeline.client._id) {
-            // Client is populated
-            clientDetails = task.timeline.client;
+          if (timelineEntry.client._id) {
+            clientDetails = timelineEntry.client;
           } else {
-            // Client is just an ID, find it in clients array
-            clientDetails = clients.find(c => c._id.toString() === clientId);
+            clientDetails = clients.find((client) => client._id.toString() === clientId);
           }
-          
+
           clientSummary[clientId] = {
             client: clientDetails || { _id: clientId },
             timelines: [],
             totalTasks: 0,
             completedTasks: 0,
-            activities: new Set()
+            activities: new Set(),
           };
         }
-        
-        // Add timeline if not already present
-        const timelineExists = clientSummary[clientId].timelines.some(t => t._id.toString() === task.timeline._id.toString());
+
+        const timelineExists = clientSummary[clientId].timelines.some(
+          (timeline) => timeline._id.toString() === timelineEntry._id.toString()
+        );
         if (!timelineExists) {
-          clientSummary[clientId].timelines.push(task.timeline);
+          clientSummary[clientId].timelines.push(timelineEntry);
         }
-        
-        // Count tasks
+
         clientSummary[clientId].totalTasks += 1;
         if (task.status === 'completed') {
           clientSummary[clientId].completedTasks += 1;
         }
-        
-        // Add activity if available
-        if (task.timeline.activity) {
-          clientSummary[clientId].activities.add(task.timeline.activity);
+
+        if (timelineEntry.activity) {
+          clientSummary[clientId].activities.add(timelineEntry.activity);
         }
-      }
+      });
     });
+
+    const taskDetails = buildTaskDetailRows(allTasks);
 
     // Convert client summary to array and add completion rates
     const clientSummaryArray = Object.values(clientSummary).map(client => ({
@@ -841,6 +939,7 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
       },
       tasks: {
         byPriority: tasksByPriority,
+        taskDetails,
         recent: paginatedRecentTasks, // Paginated recent tasks
         pagination: {
           page,
@@ -865,15 +964,15 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
           },
           activities: Array.from(client.activities).map(activity => {
             // Get tasks for this specific client-activity combination
-            const activityTasks = allTasks.filter(task => 
-              task.timeline && 
-              task.timeline.client && 
-              (task.timeline.client._id ? 
-                task.timeline.client._id.toString() === client.client._id.toString() :
-                task.timeline.client.toString() === client.client._id.toString()
-              ) &&
-              task.timeline.activity && 
-              task.timeline.activity._id.toString() === activity._id.toString()
+            const activityTasks = allTasks.filter((task) =>
+              getTaskTimelineEntries(task).some((timelineEntry) =>
+                timelineEntry.client &&
+                (timelineEntry.client._id
+                  ? timelineEntry.client._id.toString() === client.client._id.toString()
+                  : timelineEntry.client.toString() === client.client._id.toString()) &&
+                timelineEntry.activity &&
+                timelineEntry.activity._id.toString() === activity._id.toString()
+              )
             );
 
             return {
@@ -883,78 +982,60 @@ const getTeamMemberDetailsOverview = async (teamMemberId, filters = {}, options 
                 description: activity.description
               },
               totalTasks: activityTasks.length,
-              taskDetails: activityTasks.map(task => ({
-                id: task._id,
-                title: task.title || 'Untitled Task',
-                description: task.description || '',
-                status: task.status,
-                priority: task.priority,
-                remarks: task.remarks,
-                startDate: task.startDate,
-                endDate: task.endDate,
-                createdAt: task.createdAt,
-                updatedAt: task.updatedAt,
-                attachments: task.attachments || [],
-                // Timeline information for this task
-                timeline: task.timeline ? {
-                  id: task.timeline._id,
-                  status: task.timeline.status,
-                  startDate: task.timeline.startDate,
-                  endDate: task.timeline.endDate,
-                  frequency: task.timeline.frequency,
-                  frequencyConfig: task.timeline.frequencyConfig,
-                  frequencyStatus: task.timeline.frequencyStatus || [],
-                  branch: task.timeline.branch || null,
-                  udin: task.timeline.udin || [],
-                  createdAt: task.timeline.createdAt
-                } : null,
-                // Branch information
-                branch: task.branch ? {
-                  id: task.branch._id,
-                  name: task.branch.name,
-                  location: task.branch.location
-                } : null,
-                // Assigned by information
-                assignedBy: task.assignedBy ? {
-                  id: task.assignedBy._id,
-                  name: task.assignedBy.name,
-                  email: task.assignedBy.email
-                } : null
-              }))
+              taskDetails: activityTasks.map((task) => {
+                const matchedTimeline = getTaskTimelineEntries(task).find((timelineEntry) =>
+                  timelineEntry.activity &&
+                  timelineEntry.activity._id.toString() === activity._id.toString()
+                );
+
+                return {
+                  id: task._id,
+                  title: task.remarks || task.title || 'Untitled Task',
+                  description: task.description || '',
+                  status: task.status,
+                  priority: task.priority,
+                  remarks: task.remarks,
+                  startDate: task.startDate,
+                  endDate: task.endDate,
+                  createdAt: task.createdAt,
+                  updatedAt: task.updatedAt,
+                  attachments: task.attachments || [],
+                  timeline: serializeTimelineForResponse(matchedTimeline),
+                  branch: task.branch ? {
+                    id: task.branch._id,
+                    name: task.branch.name,
+                    location: task.branch.location,
+                  } : null,
+                  assignedBy: task.assignedBy ? {
+                    id: task.assignedBy._id,
+                    name: task.assignedBy.name,
+                    email: task.assignedBy.email,
+                  } : null,
+                };
+              }),
             };
-          })
-        }))
+          }),
+        })),
       },
       clients: {
         total: clientSummaryArray.length,
         summary: clientSummaryArray,
         timelines: timelines,
-        timelineDetails: allTasks.map(task => ({
-          taskId: task._id,
-          taskStatus: task.status,
-          taskPriority: task.priority,
-          taskRemarks: task.remarks,
-          taskStartDate: task.startDate,
-          taskEndDate: task.endDate,
-          timeline: task.timeline ? {
-            id: task.timeline._id,
-            status: task.timeline.status,
-            startDate: task.timeline.startDate,
-            endDate: task.timeline.endDate,
-            client: task.timeline.client ? {
-              id: task.timeline.client._id,
-              name: task.timeline.client.name,
-              email: task.timeline.client.email,
-              phone: task.timeline.client.phone,
-              company: task.timeline.client.company
-            } : null,
-            activity: task.timeline.activity ? {
-              id: task.timeline.activity._id,
-              name: task.timeline.activity.name,
-              description: task.timeline.activity.description
-            } : null
-          } : null
-        }))
+        timelineDetails: taskDetails.map((detail) => ({
+          taskId: detail.taskId,
+          taskStatus: detail.status,
+          taskPriority: detail.priority,
+          taskRemarks: detail.taskName,
+          taskStartDate: detail.startDate,
+          taskEndDate: detail.endDate,
+          clientName: detail.clientName,
+          activityName: detail.activityName,
+          timeline: detail.timelineId ? {
+            id: detail.timelineId,
+            client: detail.clientId ? { id: detail.clientId, name: detail.clientName } : null,
+            activity: detail.activityName ? { name: detail.activityName } : null,
+          } : null,
+        })),
       },
       generatedAt: new Date().toISOString()
     };

@@ -2,7 +2,7 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { Task, TeamMember, Timeline, Group } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
-import { sendEmail, generateTaskAssignmentHTML } from './email.service.js';
+import { sendEmail, generateTaskAssignmentHTML, generateTaskCompletionHTML } from './email.service.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 
 /**
@@ -158,7 +158,11 @@ const processEmailQueue = async () => {
   while (emailQueue.length > 0) {
     const emailJob = emailQueue.shift();
     try {
-      await sendTaskAssignmentEmail(emailJob.task, emailJob.teamMember, emailJob.assignedBy);
+      if (emailJob.type === 'completion') {
+        await sendTaskCompletionEmailToAssigner(emailJob.task);
+      } else {
+        await sendTaskAssignmentEmail(emailJob.task, emailJob.teamMember, emailJob.assignedBy);
+      }
     } catch (error) {
       // Log error but continue processing
     }
@@ -177,10 +181,31 @@ const getTaskAssigner = (task) => task?.assignedBy || task?.assignedByTeamMember
  */
 const queueTaskAssignmentEmail = (task, teamMember, assignedBy) => {
   const assigner = assignedBy ?? getTaskAssigner(task);
-  emailQueue.push({ task, teamMember, assignedBy: assigner });
-  
+  emailQueue.push({ type: 'assignment', task, teamMember, assignedBy: assigner });
+
   // Process queue asynchronously
   setImmediate(() => processEmailQueue());
+};
+
+/**
+ * Queue a task completion email to the original assignor.
+ * @param {Object} task - Populated task after completion
+ */
+const queueTaskCompletionEmailToAssigner = (task) => {
+  emailQueue.push({ type: 'completion', task });
+  setImmediate(() => processEmailQueue());
+};
+
+/**
+ * Notify the assignor when a task transitions to completed.
+ * @param {string} previousStatus - Status before update
+ * @param {Object} task - Populated task after update
+ */
+const notifyAssignorOnTaskCompletion = (previousStatus, task) => {
+  if (previousStatus === 'completed' || task?.status !== 'completed') {
+    return;
+  }
+  queueTaskCompletionEmailToAssigner(task);
 };
 
 /**
@@ -222,6 +247,59 @@ const sendTaskAssignmentEmail = async (task, teamMember, assignedBy = null) => {
 
   } catch (error) {
     // Don't throw error - email failure shouldn't prevent task creation
+  }
+};
+
+/**
+ * Send task completion email to the person who originally assigned the task.
+ * @param {Object} task - Populated completed task
+ * @returns {Promise<void>}
+ */
+const sendTaskCompletionEmailToAssigner = async (task) => {
+  try {
+    const assigner = getTaskAssigner(task);
+    if (!assigner?.email) {
+      return;
+    }
+
+    const assignee = task.teamMember;
+    if (assignee?.email && assigner.email === assignee.email) {
+      return;
+    }
+
+    const completedByDisplay = assignee
+      ? (assignee.email ? `${assignee.name} (${assignee.email})` : assignee.name)
+      : 'Assignee';
+
+    const taskData = {
+      taskTitle: `Task: ${task.remarks || 'Task Completed'}`,
+      taskDescription: task.remarks || 'The assigned task has been marked as completed.',
+      completedBy: completedByDisplay,
+      completedAt: new Date().toLocaleString(),
+      priority: task.priority || 'medium',
+      taskId: task._id ? task._id.toString() : null,
+      branchName: task.branch?.name || null,
+    };
+
+    const html = generateTaskCompletionHTML(taskData);
+    const plainText = [
+      'A task you assigned has been marked as completed.',
+      '',
+      `Task: ${taskData.taskTitle}`,
+      `Description: ${taskData.taskDescription}`,
+      `Completed By: ${taskData.completedBy}`,
+      `Completed At: ${taskData.completedAt}`,
+      `Priority: ${taskData.priority.toUpperCase()}`,
+    ].join('\n');
+
+    await sendEmail(
+      assigner.email,
+      `✅ Task Completed: ${taskData.taskTitle}`,
+      plainText,
+      html
+    );
+  } catch (error) {
+    // Don't throw error - email failure shouldn't prevent task update
   }
 };
 
@@ -646,9 +724,12 @@ const updateTaskById = async (taskId, updateBody, user = null) => {
     }
   }
 
+  const previousStatus = task.status;
   Object.assign(task, taskUpdateBody);
   await task.save();
-  return getTaskById(taskId, user);
+  const updatedTask = await getTaskById(taskId, user);
+  notifyAssignorOnTaskCompletion(previousStatus, updatedTask);
+  return updatedTask;
 };
 
 /**
@@ -1205,4 +1286,5 @@ export default {
   getTasksOfAccessibleTeamMembers,
   createTaskForAccessibleTeamMember,
   updateTaskOfAccessibleTeamMember,
+  notifyAssignorOnTaskCompletion,
 };

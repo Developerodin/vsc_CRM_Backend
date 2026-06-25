@@ -454,6 +454,8 @@ const updateTask = catchAsync(async (req, res) => {
       await Promise.all(timelineUpdatePromises);
     }
 
+    const previousStatus = task.status;
+
     // Update the task
     const updatedTask = await Task.findByIdAndUpdate(
       taskId,
@@ -474,6 +476,8 @@ const updateTask = catchAsync(async (req, res) => {
     if (!updatedTask) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Task not found');
     }
+
+    taskService.notifyAssignorOnTaskCompletion(previousStatus, updatedTask);
 
     logger.info(`Task ${taskId} updated by team member ${teamMemberId}`);
 

@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import pick from '../utils/pick.js';
 import catchAsync from '../utils/catchAsync.js';
 import * as fileManagerService from '../services/fileManager.service.js';
+import { getFileManagerBranchIds } from '../services/branchFileManager.service.js';
 
 /**
  * Create a folder
@@ -9,11 +10,16 @@ import * as fileManagerService from '../services/fileManager.service.js';
  * @access Private
  */
 const createFolder = catchAsync(async (req, res) => {
+  const branchIds = getFileManagerBranchIds(req.user);
   const folderBody = {
     ...req.body,
     createdBy: req.user.id,
+    metadata: {
+      ...(req.body.metadata || {}),
+      ...(branchIds.length === 1 ? { branchId: branchIds[0] } : {}),
+    },
   };
-  
+
   const folder = await fileManagerService.createFolder(folderBody);
   res.status(httpStatus.CREATED).send(folder);
 });
@@ -71,7 +77,7 @@ const getFolderContents = catchAsync(async (req, res) => {
  */
 const getRootFolders = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await fileManagerService.getRootFolders(req.user.id, options);
+  const result = await fileManagerService.getRootFolders(req.user, options);
   res.send(result);
 });
 
@@ -82,7 +88,7 @@ const getRootFolders = catchAsync(async (req, res) => {
  */
 const getFolderTree = catchAsync(async (req, res) => {
   const { rootFolderId } = req.query;
-  const tree = await fileManagerService.getFolderTree(req.user.id, rootFolderId);
+  const tree = await fileManagerService.getFolderTree(req.user, rootFolderId);
   res.send(tree);
 });
 
@@ -154,12 +160,9 @@ const deleteMultipleItems = catchAsync(async (req, res) => {
 const searchItems = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['query', 'type', 'userId', 'includeSubfolders']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  
-  // If no userId specified, use current user's items
-  if (!filter.userId) {
-    filter.userId = req.user.id;
-  }
-  
+
+  filter.user = req.user;
+
   const result = await fileManagerService.searchItems(filter, options);
   res.send(result);
 });
@@ -171,18 +174,18 @@ const searchItems = catchAsync(async (req, res) => {
  */
 const getDashboard = catchAsync(async (req, res) => {
   const options = pick(req.query, ['limit']);
-  
+
   // Get root folders
-  const rootFolders = await fileManagerService.getRootFolders(req.user.id, { ...options, limit: 5 });
-  
+  const rootFolders = await fileManagerService.getRootFolders(req.user, { ...options, limit: 5 });
+
   // Get recent files
   const recentFiles = await fileManagerService.searchItems(
-    { userId: req.user.id, type: 'file' },
+    { user: req.user, type: 'file' },
     { ...options, sortBy: 'createdAt:desc' }
   );
-  
+
   // Get folder tree for navigation
-  const folderTree = await fileManagerService.getFolderTree(req.user.id);
+  const folderTree = await fileManagerService.getFolderTree(req.user);
   
   res.send({
     rootFolders: rootFolders.results,
@@ -217,6 +220,7 @@ const uploadFileToClient = catchAsync(async (req, res) => {
  */
 const getClientContents = catchAsync(async (req, res) => {
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  options.uploadedBy = req.user.id;
   const result = await fileManagerService.getClientFolderContents(req.params.clientId, options);
   res.send(result);
 });

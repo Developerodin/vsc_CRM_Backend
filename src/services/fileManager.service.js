@@ -4,6 +4,55 @@ import ApiError from '../utils/ApiError.js';
 import FileManager from '../models/fileManager.model.js';
 import Client from '../models/client.model.js';
 import { deleteFileFromS3 } from '../controllers/common.controller.js';
+import {
+  buildRootFolderFilterForUser,
+  ensureClientFolderForClient,
+  ensureRootFoldersForUser,
+  getFileManagerBranchIds,
+} from './branchFileManager.service.js';
+
+/**
+ * Build ownership scope for file manager search queries.
+ * @param {Object} filter - Search filter that may include user or userId
+ * @returns {Object|null} Mongo condition or null when no scope applies
+ */
+const buildUserScopeCondition = (filter) => {
+  const user = filter.user;
+  if (user) {
+    const branchIds = getFileManagerBranchIds(user);
+    if (branchIds.length > 0) {
+      const branchObjectIds = branchIds.map((id) => new mongoose.Types.ObjectId(id));
+      return {
+        $or: [
+          { 'folder.metadata.branchId': { $in: branchObjectIds } },
+          { 'file.metadata.branchId': { $in: branchObjectIds } },
+          { 'folder.metadata.clientId': { $exists: true } },
+        ],
+      };
+    }
+
+    const userId = user.id || user._id;
+    return {
+      $or: [
+        { 'folder.createdBy': userId },
+        { 'file.uploadedBy': userId },
+        { 'folder.metadata.clientId': { $exists: true } },
+      ],
+    };
+  }
+
+  if (filter.userId) {
+    return {
+      $or: [
+        { 'folder.createdBy': filter.userId },
+        { 'file.uploadedBy': filter.userId },
+        { 'folder.metadata.clientId': { $exists: true } },
+      ],
+    };
+  }
+
+  return null;
+};
 
 /**
  * Create a folder
@@ -195,18 +244,13 @@ const getFolderContents = async (folderId, options = {}) => {
 };
 
 /**
- * Get root folders for a user
- * @param {ObjectId} userId
+ * Get root folders for a user (branch-scoped for branch admins).
+ * @param {Object} user - Authenticated user
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-const getRootFolders = async (userId, options = {}) => {
-  const filter = {
-    type: 'folder',
-    'folder.createdBy': userId,
-    'folder.isRoot': true,
-    isDeleted: false,
-  };
+const getRootFolders = async (user, options = {}) => {
+  const filter = await buildRootFolderFilterForUser(user);
 
   const result = await FileManager.paginate(filter, {
     ...options,
@@ -403,17 +447,9 @@ const searchItems = async (filter, options = {}) => {
     }
 
     // Handle user permissions more flexibly
-    if (filter.userId) {
-
-      searchFilter.$and = [
-        {
-          $or: [
-            { 'folder.createdBy': filter.userId },
-            { 'file.uploadedBy': filter.userId },
-            { 'folder.metadata.clientId': { $exists: true } }
-          ]
-        }
-      ];
+    const userScope = buildUserScopeCondition(filter);
+    if (userScope) {
+      searchFilter.$and = [userScope];
     } else {
       delete searchFilter.$and;
     }
@@ -468,12 +504,9 @@ const searchItems = async (filter, options = {}) => {
       searchFilter.type = filter.type;
     }
 
-    if (filter.userId) {
-      searchFilter.$or = [
-        { 'folder.createdBy': filter.userId },
-        { 'file.uploadedBy': filter.userId },
-        { 'folder.metadata.clientId': { $exists: true } }
-      ];
+    const userScope = buildUserScopeCondition(filter);
+    if (userScope) {
+      searchFilter.$and = [userScope];
     }
 
     const result = await FileManager.paginate(searchFilter, {
@@ -736,16 +769,17 @@ const searchClientSubfolders = async (query, options = {}) => {
 
 /**
  * Get folder tree structure
- * @param {ObjectId} userId
+ * @param {Object} user - Authenticated user
  * @param {ObjectId} rootFolderId
  * @returns {Promise<Object>}
  */
-const getFolderTree = async (userId, rootFolderId = null) => {
+const getFolderTree = async (user, rootFolderId = null) => {
+  await ensureRootFoldersForUser(user);
+
   const buildTree = async (parentId) => {
     const children = await FileManager.find({
       type: 'folder',
       'folder.parentFolder': parentId,
-      'folder.createdBy': userId,
       isDeleted: false,
     }).populate('folder.createdBy', 'name email');
 
@@ -767,7 +801,37 @@ const getFolderTree = async (userId, rootFolderId = null) => {
     return tree;
   };
 
-  const tree = await buildTree(rootFolderId);
+  if (rootFolderId) {
+    const rootFolder = await getFolderById(rootFolderId);
+    return [{
+      id: rootFolder._id,
+      name: rootFolder.folder.name,
+      path: rootFolder.folder.path,
+      description: rootFolder.folder.description,
+      createdBy: rootFolder.folder.createdBy,
+      createdAt: rootFolder.createdAt,
+      updatedAt: rootFolder.updatedAt,
+      children: await buildTree(rootFolder._id),
+    }];
+  }
+
+  const rootFilter = await buildRootFolderFilterForUser(user);
+  const rootFolders = await FileManager.find(rootFilter).sort({ 'folder.name': 1 });
+  const tree = [];
+
+  for (const rootFolder of rootFolders) {
+    tree.push({
+      id: rootFolder._id,
+      name: rootFolder.folder.name,
+      path: rootFolder.folder.path,
+      description: rootFolder.folder.description,
+      createdBy: rootFolder.folder.createdBy,
+      createdAt: rootFolder.createdAt,
+      updatedAt: rootFolder.updatedAt,
+      children: await buildTree(rootFolder._id),
+    });
+  }
+
   return tree;
 };
 
@@ -777,78 +841,8 @@ const getFolderTree = async (userId, rootFolderId = null) => {
  * @param {Object} fileData
  * @returns {Promise<FileManager>}
  */
-/**
- * Ensure the Clients root folder and a client subfolder exist; create if missing.
- * @param {Object} client - Client document
- * @param {ObjectId} createdBy - User/branch id for folder createdBy
- * @returns {Promise<FileManager>} The client folder document
- */
 const ensureClientFolderExists = async (client, createdBy) => {
-  const clientId = client._id;
-  const clientName = client.name || `Client ${clientId}`;
-
-  let clientFolder = await FileManager.findOne({
-    type: 'folder',
-    'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
-    isDeleted: false,
-  });
-  if (clientFolder) return clientFolder;
-
-  // Get or create Clients root folder
-  let clientsRoot = await FileManager.findOne({
-    type: 'folder',
-    'folder.name': 'Clients',
-    'folder.isRoot': true,
-    isDeleted: false,
-  });
-  if (!clientsRoot) {
-    clientsRoot = await FileManager.create({
-      type: 'folder',
-      folder: {
-        name: 'Clients',
-        description: 'Parent folder for all client subfolders',
-        parentFolder: null,
-        createdBy,
-        isRoot: true,
-        path: '/Clients',
-      },
-    });
-  }
-
-  // Find or create client subfolder
-  const existingByName = await FileManager.findOne({
-    type: 'folder',
-    'folder.name': clientName,
-    'folder.parentFolder': clientsRoot._id,
-    isDeleted: false,
-  });
-
-  if (!existingByName) {
-    clientFolder = await FileManager.create({
-      type: 'folder',
-      folder: {
-        name: clientName,
-        description: `Folder for client: ${clientName}`,
-        parentFolder: clientsRoot._id,
-        createdBy,
-        isRoot: false,
-        path: `/Clients/${clientName}`,
-        metadata: { clientId, clientName },
-      },
-    });
-  } else {
-    if (!existingByName.folder.metadata?.clientId) {
-      existingByName.folder.metadata = {
-        ...(existingByName.folder.metadata || {}),
-        clientId,
-        clientName,
-      };
-      await existingByName.save();
-    }
-    clientFolder = existingByName;
-  }
-
-  return clientFolder;
+  return ensureClientFolderForClient(client, createdBy);
 };
 
 const uploadFileToClientFolder = async (clientId, fileData) => {
@@ -903,11 +897,20 @@ const getClientFolderContents = async (clientId, options = {}) => {
   }
 
   // Find the client's folder
-  const clientFolder = await FileManager.findOne({
+  let clientFolder = await FileManager.findOne({
     type: 'folder',
     'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
     isDeleted: false,
   });
+
+  if (!clientFolder) {
+    await ensureClientFolderExists(client, options?.uploadedBy || client.branch);
+    clientFolder = await FileManager.findOne({
+      type: 'folder',
+      'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
+      isDeleted: false,
+    });
+  }
 
   if (!clientFolder) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client folder not found. Please ensure client folder was created properly.');

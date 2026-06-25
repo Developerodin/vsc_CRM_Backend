@@ -364,6 +364,108 @@ const generateTaskAssignmentHTML = (taskData) => {
 };
 
 /**
+ * Generate HTML template for task completion notification email to the assignor.
+ * @param {Object} completionData
+ * @returns {string} HTML content
+ */
+const generateTaskCompletionHTML = (completionData) => {
+  const {
+    taskTitle,
+    taskDescription,
+    completedBy,
+    completedAt,
+    priority,
+    taskId,
+    branchName,
+  } = completionData;
+
+  const priorityColors = {
+    low: '#4caf50',
+    medium: '#ff9800',
+    high: '#f44336',
+    urgent: '#9c27b0',
+    critical: '#d32f2f',
+  };
+
+  const priorityColor = priorityColors[priority] || '#666';
+  const adminCrmUrl = 'https://main.dnmvta02jt3n3.amplifyapp.com';
+  const viewDetailsUrl = taskId ? `${adminCrmUrl}/tasks/${taskId}` : adminCrmUrl;
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Task Completed</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .task-card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .task-title { font-size: 24px; font-weight: bold; color: #2c3e50; margin-bottom: 15px; }
+        .task-description { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .task-details { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
+        .detail-item { background: #e8f5e9; padding: 10px; border-radius: 5px; }
+        .priority-badge { display: inline-block; padding: 5px 15px; border-radius: 20px; color: white; font-weight: bold; background: ${priorityColor}; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+        .cta-button { display: inline-block; background: #43a047; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; margin-top: 15px; font-weight: bold; }
+        .crm-link { color: #2e7d32; text-decoration: none; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>✅ Task Completed</h1>
+          <p>A task you assigned has been marked as completed</p>
+        </div>
+        <div class="content">
+          <div class="task-card">
+            <div class="task-title">${taskTitle}</div>
+            <div class="task-description">
+              <strong>📝 Description:</strong><br>
+              ${taskDescription}
+            </div>
+            <div class="task-details">
+              <div class="detail-item">
+                <strong>👤 Completed By:</strong><br>
+                ${completedBy}
+              </div>
+              <div class="detail-item">
+                <strong>📅 Completed At:</strong><br>
+                ${completedAt}
+              </div>
+              ${branchName ? `
+              <div class="detail-item">
+                <strong>🏢 Branch:</strong><br>
+                ${branchName}
+              </div>
+              ` : ''}
+            </div>
+            ${priority ? `
+            <div style="text-align: center; margin: 15px 0;">
+              <span class="priority-badge">Priority: ${priority.toUpperCase()}</span>
+            </div>
+            ` : ''}
+            <div style="text-align: center; margin-top: 20px;">
+              <a href="${viewDetailsUrl}" class="cta-button" target="_blank">View Task in CRM</a>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <p>This notification was sent because you originally assigned this task.</p>
+          <p style="margin-top: 10px;">
+            <a href="${viewDetailsUrl}" class="crm-link" target="_blank">🔗 Open Task Details</a>
+          </p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
+/**
  * Generate HTML template for daily task reminder email
  * @param {Object} reminderData
  * @returns {string} HTML content
@@ -689,6 +791,7 @@ export {
   getOTPEmailContent,
   generateCustomEmailHTML,
   generateTaskAssignmentHTML,
+  generateTaskCompletionHTML,
   generateDailyReminderHTML,
   generateNotificationHTML,
 };
