@@ -119,6 +119,9 @@ fileManagerSchema.index({ 'file.uploadedBy': 1 });
 fileManagerSchema.index({ 'file.parentFolder': 1 });
 fileManagerSchema.index({ 'folder.path': 1 });
 fileManagerSchema.index({ isDeleted: 1 });
+// Compound indexes matching the core access patterns (folder tree, folder contents).
+fileManagerSchema.index({ type: 1, isDeleted: 1, 'folder.parentFolder': 1 });
+fileManagerSchema.index({ type: 1, isDeleted: 1, 'file.parentFolder': 1 });
 
 // Virtual for getting full path
 fileManagerSchema.virtual('fullPath').get(function() {

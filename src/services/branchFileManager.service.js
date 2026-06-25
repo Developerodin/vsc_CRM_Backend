@@ -6,6 +6,183 @@ import { getUserBranchIds } from './role.service.js';
 
 const ROOT_FOLDER_NAMES = ['Documents', 'Clients'];
 
+/** @type {Map<string, Promise<unknown>>} Serializes root-folder creation per branch + name */
+const rootFolderChains = new Map();
+
+/**
+ * Run an async task under a per-branch/per-name lock to prevent duplicate root folders.
+ * @param {string} lockKey - Unique lock key
+ * @param {() => Promise<T>} task - Task to run exclusively
+ * @returns {Promise<T>}
+ * @template T
+ */
+const withRootFolderLock = (lockKey, task) => {
+  const previous = rootFolderChains.get(lockKey) || Promise.resolve();
+  const next = previous.then(task, task);
+  rootFolderChains.set(
+    lockKey,
+    next.catch(() => undefined)
+  );
+  return next;
+};
+
+/**
+ * Count direct child items for a folder.
+ * @param {mongoose.Types.ObjectId} folderId - Folder id
+ * @returns {Promise<number>} Child item count
+ */
+const countFolderChildren = async (folderId) => {
+  return FileManager.countDocuments({
+    isDeleted: false,
+    $or: [
+      { 'folder.parentFolder': folderId },
+      { 'file.parentFolder': folderId },
+    ],
+  });
+};
+
+/**
+ * Soft-delete duplicate branch root folders, keeping the one with the most content.
+ * @param {mongoose.Types.ObjectId|string} branchId - Branch identifier
+ * @returns {Promise<number>} Number of duplicate folders removed
+ */
+const dedupeBranchRootFolders = async (branchId) => {
+  const branchObjectId = new mongoose.Types.ObjectId(branchId);
+  let removed = 0;
+
+  for (const name of ROOT_FOLDER_NAMES) {
+    const folders = await FileManager.find({
+      type: 'folder',
+      'folder.name': name,
+      'folder.isRoot': true,
+      'folder.metadata.branchId': branchObjectId,
+      isDeleted: false,
+    }).sort({ createdAt: 1 });
+
+    if (folders.length <= 1) {
+      continue;
+    }
+
+    let canonical = folders[0];
+    let bestScore = await countFolderChildren(canonical._id);
+
+    for (let index = 1; index < folders.length; index += 1) {
+      const candidate = folders[index];
+      const score = await countFolderChildren(candidate._id);
+      if (score > bestScore) {
+        canonical = candidate;
+        bestScore = score;
+      }
+    }
+
+    for (const folder of folders) {
+      if (folder._id.toString() === canonical._id.toString()) {
+        continue;
+      }
+
+      const childCount = await countFolderChildren(folder._id);
+      if (childCount > 0) {
+        await FileManager.updateMany(
+          { type: 'folder', 'folder.parentFolder': folder._id, isDeleted: false },
+          { $set: { 'folder.parentFolder': canonical._id } }
+        );
+        await FileManager.updateMany(
+          { type: 'file', 'file.parentFolder': folder._id, isDeleted: false },
+          { $set: { 'file.parentFolder': canonical._id } }
+        );
+      }
+
+      folder.isDeleted = true;
+      await folder.save();
+      removed += 1;
+    }
+  }
+
+  return removed;
+};
+
+/**
+ * Ensure one branch-scoped root folder exists.
+ * @param {mongoose.Types.ObjectId|string} branchId - Branch identifier
+ * @param {string} name - Root folder name (Documents or Clients)
+ * @param {mongoose.Types.ObjectId|string} [createdByUserId] - User id stored on folder.createdBy
+ * @returns {Promise<Object>} Root folder document
+ */
+const ensureSingleBranchRootFolder = async (branchId, name, createdByUserId = null) => {
+  const branchObjectId = new mongoose.Types.ObjectId(branchId);
+  const lockKey = `${branchObjectId.toString()}:${name}`;
+
+  return withRootFolderLock(lockKey, async () => {
+    const createdBy = createdByUserId
+      ? new mongoose.Types.ObjectId(createdByUserId)
+      : branchObjectId;
+
+    let folder = await FileManager.findOne({
+      type: 'folder',
+      'folder.name': name,
+      'folder.isRoot': true,
+      'folder.metadata.branchId': branchObjectId,
+      isDeleted: false,
+    });
+
+    if (folder) {
+      return folder;
+    }
+
+    const legacyFolder = await FileManager.findOne({
+      type: 'folder',
+      'folder.name': name,
+      'folder.isRoot': true,
+      'folder.createdBy': branchObjectId,
+      isDeleted: false,
+      $or: [
+        { 'folder.metadata.branchId': { $exists: false } },
+        { 'folder.metadata.branchId': null },
+      ],
+    });
+
+    if (legacyFolder) {
+      legacyFolder.folder.metadata = {
+        ...(legacyFolder.folder.metadata || {}),
+        branchId: branchObjectId,
+      };
+      await legacyFolder.save();
+      return legacyFolder;
+    }
+
+    return FileManager.create({
+      type: 'folder',
+      folder: {
+        name,
+        description:
+          name === 'Clients'
+            ? 'Parent folder for all client subfolders'
+            : 'Branch documents folder',
+        parentFolder: null,
+        createdBy,
+        isRoot: true,
+        path: `/${name}`,
+        metadata: { branchId: branchObjectId },
+      },
+    });
+  });
+};
+
+/**
+ * Ensure Documents and Clients root folders exist for a branch.
+ * @param {mongoose.Types.ObjectId|string} branchId - Branch identifier
+ * @param {mongoose.Types.ObjectId|string} [createdByUserId] - User id stored on folder.createdBy
+ * @returns {Promise<{ documents: Object, clients: Object }>}
+ */
+const ensureBranchRootFolders = async (branchId, createdByUserId = null) => {
+  await dedupeBranchRootFolders(branchId);
+
+  const documents = await ensureSingleBranchRootFolder(branchId, 'Documents', createdByUserId);
+  const clients = await ensureSingleBranchRootFolder(branchId, 'Clients', createdByUserId);
+
+  return { documents, clients };
+};
+
 /**
  * Resolve branch IDs a user can access in the file manager.
  * @param {Object} user - Authenticated user with role / assignedBranch
@@ -27,74 +204,6 @@ const getFileManagerBranchIds = (user) => {
 
   const branchIds = getUserBranchIds(user.role);
   return branchIds || [];
-};
-
-/**
- * Ensure Documents and Clients root folders exist for a branch.
- * @param {mongoose.Types.ObjectId|string} branchId - Branch identifier
- * @param {mongoose.Types.ObjectId|string} [createdByUserId] - User id stored on folder.createdBy
- * @returns {Promise<{ documents: Object, clients: Object }>}
- */
-const ensureBranchRootFolders = async (branchId, createdByUserId = null) => {
-  const branchObjectId = new mongoose.Types.ObjectId(branchId);
-  const createdBy = createdByUserId
-    ? new mongoose.Types.ObjectId(createdByUserId)
-    : branchObjectId;
-
-  const folders = {};
-
-  for (const name of ROOT_FOLDER_NAMES) {
-    let folder = await FileManager.findOne({
-      type: 'folder',
-      'folder.name': name,
-      'folder.isRoot': true,
-      'folder.metadata.branchId': branchObjectId,
-      isDeleted: false,
-    });
-
-    if (!folder) {
-      const legacyFolder = await FileManager.findOne({
-        type: 'folder',
-        'folder.name': name,
-        'folder.isRoot': true,
-        'folder.createdBy': branchObjectId,
-        isDeleted: false,
-        $or: [
-          { 'folder.metadata.branchId': { $exists: false } },
-          { 'folder.metadata.branchId': null },
-        ],
-      });
-
-      if (legacyFolder) {
-        legacyFolder.folder.metadata = {
-          ...(legacyFolder.folder.metadata || {}),
-          branchId: branchObjectId,
-        };
-        await legacyFolder.save();
-        folder = legacyFolder;
-      } else {
-        folder = await FileManager.create({
-          type: 'folder',
-          folder: {
-            name,
-            description:
-              name === 'Clients'
-                ? 'Parent folder for all client subfolders'
-                : 'Branch documents folder',
-            parentFolder: null,
-            createdBy,
-            isRoot: true,
-            path: `/${name}`,
-            metadata: { branchId: branchObjectId },
-          },
-        });
-      }
-    }
-
-    folders[name.toLowerCase()] = folder;
-  }
-
-  return folders;
 };
 
 /**
@@ -158,8 +267,8 @@ const buildRootFolderFilterForUser = async (user) => {
  * @returns {Promise<Object>} Clients root folder document
  */
 const getClientsRootForBranch = async (branchId, createdByUserId = null) => {
-  const { clients } = await ensureBranchRootFolders(branchId, createdByUserId);
-  return clients;
+  await dedupeBranchRootFolders(branchId);
+  return ensureSingleBranchRootFolder(branchId, 'Clients', createdByUserId);
 };
 
 /**
@@ -200,21 +309,6 @@ const reparentClientFolderIfNeeded = async (clientFolder, clientsRoot, client) =
   };
   await clientFolder.save();
   return clientFolder;
-};
-
-/**
- * Count direct child items for a folder.
- * @param {mongoose.Types.ObjectId} folderId - Folder id
- * @returns {Promise<number>} Child item count
- */
-const countFolderChildren = async (folderId) => {
-  return FileManager.countDocuments({
-    isDeleted: false,
-    $or: [
-      { 'folder.parentFolder': folderId },
-      { 'file.parentFolder': folderId },
-    ],
-  });
 };
 
 /**
@@ -316,8 +410,13 @@ const removeEmptyDuplicateClientFolders = async (candidates, canonicalFolder) =>
  * @returns {Promise<number>} Number of clients synced
  */
 const syncBranchClientFolders = async (branchId) => {
+  const { clients: clientsRoot } = await ensureBranchRootFolders(branchId);
   const clients = await Client.find({ branch: branchId }).select('_id name branch');
-  await Promise.all(clients.map((client) => ensureClientFolderForClient(client)));
+
+  for (const client of clients) {
+    await ensureClientFolderForClient(client, null, clientsRoot);
+  }
+
   return clients.length;
 };
 
@@ -325,9 +424,10 @@ const syncBranchClientFolders = async (branchId) => {
  * Ensure a client subfolder exists under the branch Clients root.
  * @param {Object} client - Client mongoose document
  * @param {mongoose.Types.ObjectId|string} [createdByUserId] - User performing the action
+ * @param {Object} [clientsRoot] - Pre-resolved branch Clients root folder
  * @returns {Promise<Object>} Client folder document
  */
-const ensureClientFolderForClient = async (client, createdByUserId = null) => {
+const ensureClientFolderForClient = async (client, createdByUserId = null, clientsRoot = null) => {
   const clientId = client._id;
   const clientName = client.name || `Client ${clientId}`;
   const branchId = client.branch?._id || client.branch;
@@ -336,7 +436,8 @@ const ensureClientFolderForClient = async (client, createdByUserId = null) => {
     throw new Error(`Client ${clientId} has no branch assigned`);
   }
 
-  const clientsRoot = await getClientsRootForBranch(branchId, createdByUserId || branchId);
+  const resolvedClientsRoot = clientsRoot
+    || await getClientsRootForBranch(branchId, createdByUserId || branchId);
   const createdBy = createdByUserId
     ? new mongoose.Types.ObjectId(createdByUserId)
     : new mongoose.Types.ObjectId(branchId);
@@ -346,7 +447,7 @@ const ensureClientFolderForClient = async (client, createdByUserId = null) => {
   const bestFolder = await pickBestClientFolder(candidates);
 
   if (bestFolder) {
-    const canonical = await reparentClientFolderIfNeeded(bestFolder, clientsRoot, client);
+    const canonical = await reparentClientFolderIfNeeded(bestFolder, resolvedClientsRoot, client);
     await removeEmptyDuplicateClientFolders(candidates, canonical);
     return canonical;
   }
@@ -354,7 +455,7 @@ const ensureClientFolderForClient = async (client, createdByUserId = null) => {
   const existingByName = await FileManager.findOne({
     type: 'folder',
     'folder.name': clientName,
-    'folder.parentFolder': clientsRoot._id,
+    'folder.parentFolder': resolvedClientsRoot._id,
     isDeleted: false,
   });
 
@@ -371,15 +472,15 @@ const ensureClientFolderForClient = async (client, createdByUserId = null) => {
     return existingByName;
   }
 
-  clientFolder = await FileManager.create({
+  const clientFolder = await FileManager.create({
     type: 'folder',
     folder: {
       name: clientName,
       description: `Folder for client: ${clientName}`,
-      parentFolder: clientsRoot._id,
+      parentFolder: resolvedClientsRoot._id,
       createdBy,
       isRoot: false,
-      path: `${clientsRoot.folder.path}/${clientName}`,
+      path: `${resolvedClientsRoot.folder.path}/${clientName}`,
       metadata: {
         clientId,
         clientName,
@@ -399,6 +500,7 @@ const backfillAllBranchFileManagerFolders = async () => {
   const summary = {
     branchesProcessed: 0,
     rootFoldersEnsured: 0,
+    rootFoldersDeduped: 0,
     clientFoldersEnsured: 0,
     clientFoldersReparented: 0,
     errors: [],
@@ -407,6 +509,7 @@ const backfillAllBranchFileManagerFolders = async () => {
   const branches = await Branch.find({});
   for (const branch of branches) {
     try {
+      summary.rootFoldersDeduped += await dedupeBranchRootFolders(branch._id);
       await ensureBranchRootFolders(branch._id);
       summary.branchesProcessed += 1;
       summary.rootFoldersEnsured += ROOT_FOLDER_NAMES.length;
@@ -453,6 +556,7 @@ const backfillAllBranchFileManagerFolders = async () => {
 
 export {
   getFileManagerBranchIds,
+  dedupeBranchRootFolders,
   ensureBranchRootFolders,
   ensureRootFoldersForUser,
   buildRootFolderFilterForUser,

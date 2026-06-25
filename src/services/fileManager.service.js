@@ -190,14 +190,6 @@ const getFolderContents = async (folderId, options = {}) => {
     await syncBranchClientFolders(folder.folder.metadata.branchId);
   }
   
-  // First, let's test a direct query to see what's in the database
-
-  const directQuery = await FileManager.findOne({ 
-    type: 'file', 
-    'file.parentFolder': folderId,
-    isDeleted: false 
-  });
-
   const filter = {
     $or: [
       { 'folder.parentFolder': folderId },
@@ -206,27 +198,27 @@ const getFolderContents = async (folderId, options = {}) => {
     isDeleted: false,
   };
 
-  // Try a direct query instead of paginate to debug the issue
-
   const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
   const limit = hasLimit ? parseInt(options.limit, 10) : null;
   const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
   const skip = hasLimit ? (page - 1) * limit : 0;
-  
-  const countPromise = FileManager.countDocuments(filter);
+
+  // Run the count and the page fetch concurrently. createdBy/uploadedBy are not
+  // rendered in the contents list, so we skip those populates to avoid the extra
+  // join on every folder open.
   let docsPromise = FileManager.find(filter)
-    .populate('folder.createdBy', 'name email')
-    .populate('file.uploadedBy', 'name email')
     .sort(options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc');
-  
+
   if (hasLimit) {
     docsPromise = docsPromise.skip(skip).limit(limit);
   }
-  
-  const docsResult = await docsPromise.lean(); // Use lean() to get plain objects
-  const [totalResults, results] = await Promise.all([countPromise, Promise.resolve(docsResult)]);
+
+  const [totalResults, results] = await Promise.all([
+    FileManager.countDocuments(filter),
+    docsPromise.lean(),
+  ]);
   const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
-  
+
   const result = {
     results,
     page,
@@ -234,14 +226,6 @@ const getFolderContents = async (folderId, options = {}) => {
     totalPages,
     totalResults,
   };
-
-  // Log each result item individually
-  if (result.results && result.results.length > 0) {
-
-    result.results.forEach((item, index) => {
-
-    });
-  }
 
   const response = {
     folder,
@@ -462,43 +446,11 @@ const searchItems = async (filter, options = {}) => {
       delete searchFilter.$and;
     }
 
-    // Test the search filter directly to see what it finds
-
-    const testQuery = await FileManager.find(searchFilter).limit(3);
-
-    if (testQuery.length > 0) {
-
-    }
-
     const result = await FileManager.paginate(searchFilter, {
       ...options,
       populate: 'folder.createdBy,file.uploadedBy',
       sortBy: options.sortBy || 'type:asc,folder.name:asc,file.fileName:asc',
     });
-
-    if (result.totalResults > 0) {
-
-      if (result.results[0].type === 'folder') {
-
-      }
-    } else {
-
-      const debugFolders = await FileManager.find({
-        type: 'folder',
-        isDeleted: false,
-        'folder.name': { $regex: 'Abhishek', $options: 'i' }
-      }).limit(5);
-
-      if (debugFolders.length > 0) {
-
-      }
-      
-      const allFolders = await FileManager.find({
-        type: 'folder',
-        isDeleted: false
-      }).limit(3);
-
-    }
 
     return result;
   } else {
@@ -784,63 +736,63 @@ const searchClientSubfolders = async (query, options = {}) => {
 const getFolderTree = async (user, rootFolderId = null) => {
   await ensureRootFoldersForUser(user);
 
-  const buildTree = async (parentId) => {
-    const children = await FileManager.find({
-      type: 'folder',
-      'folder.parentFolder': parentId,
-      isDeleted: false,
-    }).populate('folder.createdBy', 'name email');
+  // Fetch every folder once (lean, minimal fields, no populate) and assemble the
+  // tree in memory. This replaces the previous recursive approach which issued one
+  // DB query (plus a populate) for EVERY folder in the hierarchy — an N+1 that made
+  // tree loads scale linearly with the total folder count.
+  const allFolders = await FileManager.find({ type: 'folder', isDeleted: false })
+    .select('folder.name folder.path folder.description folder.parentFolder createdAt updatedAt')
+    .sort({ 'folder.name': 1 })
+    .lean();
 
-    const tree = [];
-    for (const child of children) {
-      const node = {
-        id: child._id,
-        name: child.folder.name,
-        path: child.folder.path,
-        description: child.folder.description,
-        createdBy: child.folder.createdBy,
-        createdAt: child.createdAt,
-        updatedAt: child.updatedAt,
-        children: await buildTree(child._id),
-      };
-      tree.push(node);
+  const byId = new Map();
+  const childrenByParent = new Map();
+  for (const f of allFolders) {
+    byId.set(String(f._id), f);
+    const parentKey = f.folder && f.folder.parentFolder ? String(f.folder.parentFolder) : null;
+    if (parentKey) {
+      if (!childrenByParent.has(parentKey)) childrenByParent.set(parentKey, []);
+      childrenByParent.get(parentKey).push(f);
     }
+  }
 
-    return tree;
-  };
+  const buildNode = (f) => ({
+    id: f._id,
+    name: f.folder.name,
+    path: f.folder.path,
+    description: f.folder.description,
+    createdAt: f.createdAt,
+    updatedAt: f.updatedAt,
+    children: (childrenByParent.get(String(f._id)) || []).map(buildNode),
+  });
 
   if (rootFolderId) {
+    const root = byId.get(String(rootFolderId));
+    if (root) {
+      return [buildNode(root)];
+    }
+    // Fallback: load the folder directly if it wasn't in the cached set.
     const rootFolder = await getFolderById(rootFolderId);
-    return [{
-      id: rootFolder._id,
-      name: rootFolder.folder.name,
-      path: rootFolder.folder.path,
-      description: rootFolder.folder.description,
-      createdBy: rootFolder.folder.createdBy,
+    return [buildNode({
+      _id: rootFolder._id,
+      folder: rootFolder.folder,
       createdAt: rootFolder.createdAt,
       updatedAt: rootFolder.updatedAt,
-      children: await buildTree(rootFolder._id),
-    }];
+    })];
   }
 
+  // Determine which folders are roots for this user (branch-scoped where applicable),
+  // then attach their pre-grouped descendants from the in-memory map.
   const rootFilter = await buildRootFolderFilterForUser(user);
-  const rootFolders = await FileManager.find(rootFilter).sort({ 'folder.name': 1 });
-  const tree = [];
+  const rootDocs = await FileManager.find(rootFilter)
+    .select('_id')
+    .sort({ 'folder.name': 1 })
+    .lean();
 
-  for (const rootFolder of rootFolders) {
-    tree.push({
-      id: rootFolder._id,
-      name: rootFolder.folder.name,
-      path: rootFolder.folder.path,
-      description: rootFolder.folder.description,
-      createdBy: rootFolder.folder.createdBy,
-      createdAt: rootFolder.createdAt,
-      updatedAt: rootFolder.updatedAt,
-      children: await buildTree(rootFolder._id),
-    });
-  }
-
-  return tree;
+  return rootDocs
+    .map((r) => byId.get(String(r._id)))
+    .filter(Boolean)
+    .map(buildNode);
 };
 
 /**
