@@ -70,6 +70,24 @@ class MemoryCache {
   }
 
   /**
+   * Clear cache entries whose keys start with a prefix.
+   * @param {string} prefix - Cache key prefix (e.g. "clients:")
+   * @returns {number} Number of keys removed
+   */
+  clearByPrefix(prefix) {
+    let removed = 0;
+
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.delete(key);
+        removed += 1;
+      }
+    }
+
+    return removed;
+  }
+
+  /**
    * Clear all cache
    */
   clear() {

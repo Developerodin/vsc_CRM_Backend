@@ -9,6 +9,7 @@ import {
   ensureClientFolderForClient,
   ensureRootFoldersForUser,
   getFileManagerBranchIds,
+  syncBranchClientFolders,
 } from './branchFileManager.service.js';
 
 /**
@@ -181,6 +182,13 @@ const getFileById = async (id) => {
  */
 const getFolderContents = async (folderId, options = {}) => {
   const folder = await getFolderById(folderId);
+
+  if (
+    folder.folder.name === 'Clients' &&
+    folder.folder.metadata?.branchId
+  ) {
+    await syncBranchClientFolders(folder.folder.metadata.branchId);
+  }
   
   // First, let's test a direct query to see what's in the database
 
@@ -896,21 +904,8 @@ const getClientFolderContents = async (clientId, options = {}) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client not found');
   }
 
-  // Find the client's folder
-  let clientFolder = await FileManager.findOne({
-    type: 'folder',
-    'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
-    isDeleted: false,
-  });
-
-  if (!clientFolder) {
-    await ensureClientFolderExists(client, options?.uploadedBy || client.branch);
-    clientFolder = await FileManager.findOne({
-      type: 'folder',
-      'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
-      isDeleted: false,
-    });
-  }
+  // Ensure folder exists under the correct branch Clients root (reparents legacy folders)
+  const clientFolder = await ensureClientFolderExists(client, options?.uploadedBy || client.branch);
 
   if (!clientFolder) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Client folder not found. Please ensure client folder was created properly.');

@@ -71,7 +71,14 @@ const clientSchema = mongoose.Schema(
     dob: {
       type: Date,
       validate(value) {
-        if (value && value > new Date()) {
+        if (!value) return;
+
+        const dob = new Date(value);
+        const today = new Date();
+        const toDateKey = (date) =>
+          `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+
+        if (toDateKey(dob) > toDateKey(today)) {
           throw new Error('Date of birth cannot be in the future');
         }
       },

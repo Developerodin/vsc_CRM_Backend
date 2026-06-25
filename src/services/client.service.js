@@ -6,6 +6,15 @@ import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 import { createClientTimelines as createTimelinesFromService } from './timeline.service.js';
 import cache from '../utils/cache.js';
 
+const CLIENTS_CACHE_PREFIX = 'clients:';
+
+/**
+ * Drop cached client list responses after create/update/delete.
+ */
+const invalidateClientsCache = () => {
+  cache.clearByPrefix(CLIENTS_CACHE_PREFIX);
+};
+
 /**
  * Helper function to get month name from month index
  * @param {number} monthIndex - Month index (0-11)
@@ -309,6 +318,7 @@ const createClient = async (clientBody, user = null) => {
   }
   
   const client = await Client.create(clientBody);
+  invalidateClientsCache();
   return client;
 };
 
@@ -624,6 +634,7 @@ const updateClientById = async (clientId, updateBody, user = null) => {
   
   Object.assign(client, updateBody);
   await client.save();
+  invalidateClientsCache();
   return client;
 };
 
@@ -658,6 +669,7 @@ const updateClientStatus = async (clientId, status, user = null) => {
   }
   
   await client.save();
+  invalidateClientsCache();
   return client;
 };
 
@@ -678,6 +690,7 @@ const deleteClientById = async (clientId, user = null) => {
   }
   
   await client.deleteOne();
+  invalidateClientsCache();
   return client;
 };
 
@@ -777,6 +790,10 @@ const bulkDeleteClients = async (clientIds) => {
   const duration = (endTime - startTime) / 1000;
 
   if (results.errors.length > 0) {
+  }
+
+  if (results.deleted > 0) {
+    invalidateClientsCache();
   }
 
   return results;
@@ -1551,6 +1568,10 @@ const bulkImportClients = async (clients) => {
   
   const endTime = Date.now();
   const duration = (endTime - startTime) / 1000;
+
+  if (results.created > 0 || results.updated > 0) {
+    invalidateClientsCache();
+  }
   
   return results;
 };
