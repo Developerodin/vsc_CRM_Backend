@@ -122,6 +122,10 @@ fileManagerSchema.index({ isDeleted: 1 });
 // Compound indexes matching the core access patterns (folder tree, folder contents).
 fileManagerSchema.index({ type: 1, isDeleted: 1, 'folder.parentFolder': 1 });
 fileManagerSchema.index({ type: 1, isDeleted: 1, 'file.parentFolder': 1 });
+// Branch/client folder lookups (root folder filter, client folder sync & fast-path).
+fileManagerSchema.index({ 'folder.metadata.branchId': 1 });
+fileManagerSchema.index({ 'folder.metadata.clientId': 1 });
+fileManagerSchema.index({ type: 1, 'folder.isRoot': 1, isDeleted: 1 });
 
 // Virtual for getting full path
 fileManagerSchema.virtual('fullPath').get(function() {

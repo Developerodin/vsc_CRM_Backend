@@ -9,6 +9,40 @@ const ROOT_FOLDER_NAMES = ['Documents', 'Clients'];
 /** @type {Map<string, Promise<unknown>>} Serializes root-folder creation per branch + name */
 const rootFolderChains = new Map();
 
+// --- Read-path throttling -------------------------------------------------
+// dedupeBranchRootFolders and syncBranchClientFolders are data-integrity
+// maintenance jobs. They used to run on EVERY folder-tree / Clients-folder open,
+// turning a simple read into hundreds of sequential DB round-trips. Client
+// folders are already created on client save (post-save hook), so re-running the
+// full sync on every read is redundant — we throttle it to run at most once per
+// branch per TTL, which keeps the self-healing behaviour without the per-open hang.
+const DEDUPE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const CLIENT_SYNC_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CLIENT_SYNC_CONCURRENCY = 10;
+
+/** @type {Map<string, number>} branchId -> last dedupe epoch ms */
+const dedupeTimestamps = new Map();
+/** @type {Map<string, number>} branchId -> last client-folder sync epoch ms */
+const clientSyncTimestamps = new Map();
+
+/**
+ * Returns true when an operation for `key` ran within `ttlMs` and should be skipped.
+ * Records `now` as the run time when it is allowed to proceed.
+ * @param {Map<string, number>} store - Timestamp cache
+ * @param {string} key - Cache key (branch id)
+ * @param {number} ttlMs - Time-to-live in ms
+ * @returns {boolean} True when the caller should skip (still fresh)
+ */
+const isThrottled = (store, key, ttlMs) => {
+  const last = store.get(key);
+  const now = Date.now();
+  if (last && now - last < ttlMs) {
+    return true;
+  }
+  store.set(key, now);
+  return false;
+};
+
 /**
  * Run an async task under a per-branch/per-name lock to prevent duplicate root folders.
  * @param {string} lockKey - Unique lock key
@@ -46,7 +80,13 @@ const countFolderChildren = async (folderId) => {
  * @param {mongoose.Types.ObjectId|string} branchId - Branch identifier
  * @returns {Promise<number>} Number of duplicate folders removed
  */
-const dedupeBranchRootFolders = async (branchId) => {
+const dedupeBranchRootFolders = async (branchId, { force = false } = {}) => {
+  // Dedupe is pure maintenance; skip if we deduped this branch recently.
+  // `force` lets the manual backfill job bypass the read-path throttle.
+  if (!force && isThrottled(dedupeTimestamps, String(branchId), DEDUPE_TTL_MS)) {
+    return 0;
+  }
+
   const branchObjectId = new mongoose.Types.ObjectId(branchId);
   let removed = 0;
 
@@ -409,12 +449,21 @@ const removeEmptyDuplicateClientFolders = async (candidates, canonicalFolder) =>
  * @param {mongoose.Types.ObjectId|string} branchId - Branch identifier
  * @returns {Promise<number>} Number of clients synced
  */
-const syncBranchClientFolders = async (branchId) => {
-  const { clients: clientsRoot } = await ensureBranchRootFolders(branchId);
-  const clients = await Client.find({ branch: branchId }).select('_id name branch');
+const syncBranchClientFolders = async (branchId, { force = false } = {}) => {
+  // This is a self-healing backfill. Client folders are already created on client
+  // save (post-save hook), so running the full per-client sync on every Clients
+  // folder open is redundant and was the main cause of slow loads. Throttle it.
+  if (!force && isThrottled(clientSyncTimestamps, String(branchId), CLIENT_SYNC_TTL_MS)) {
+    return 0;
+  }
 
-  for (const client of clients) {
-    await ensureClientFolderForClient(client, null, clientsRoot);
+  const { clients: clientsRoot } = await ensureBranchRootFolders(branchId);
+  const clients = await Client.find({ branch: branchId }).select('_id name branch').lean();
+
+  // Process clients in bounded-concurrency batches instead of one-at-a-time.
+  for (let i = 0; i < clients.length; i += CLIENT_SYNC_CONCURRENCY) {
+    const batch = clients.slice(i, i + CLIENT_SYNC_CONCURRENCY);
+    await Promise.all(batch.map((client) => ensureClientFolderForClient(client, null, clientsRoot)));
   }
 
   return clients.length;
@@ -442,6 +491,27 @@ const ensureClientFolderForClient = async (client, createdByUserId = null, clien
     ? new mongoose.Types.ObjectId(createdByUserId)
     : new mongoose.Types.ObjectId(branchId);
   const branchObjectId = new mongoose.Types.ObjectId(branchId);
+
+  // Fast path: a single folder for this client already exists, correctly parented
+  // under the branch Clients root and carrying branch metadata. This is the
+  // steady-state case for every already-synced client, so we return immediately and
+  // skip the 3-query candidate scan + child-count scoring + dedupe below. We fetch
+  // up to 2 so we can detect (and fall through to dedupe) when duplicates exist.
+  const existingByClientId = await FileManager.find({
+    type: 'folder',
+    'folder.metadata.clientId': new mongoose.Types.ObjectId(clientId),
+    isDeleted: false,
+  }).limit(2);
+
+  if (existingByClientId.length === 1) {
+    const onlyFolder = existingByClientId[0];
+    if (
+      onlyFolder.folder.parentFolder?.toString() === resolvedClientsRoot._id.toString() &&
+      onlyFolder.folder.metadata?.branchId
+    ) {
+      return onlyFolder;
+    }
+  }
 
   const candidates = await findClientFolderCandidates(client);
   const bestFolder = await pickBestClientFolder(candidates);
@@ -509,7 +579,7 @@ const backfillAllBranchFileManagerFolders = async () => {
   const branches = await Branch.find({});
   for (const branch of branches) {
     try {
-      summary.rootFoldersDeduped += await dedupeBranchRootFolders(branch._id);
+      summary.rootFoldersDeduped += await dedupeBranchRootFolders(branch._id, { force: true });
       await ensureBranchRootFolders(branch._id);
       summary.branchesProcessed += 1;
       summary.rootFoldersEnsured += ROOT_FOLDER_NAMES.length;
