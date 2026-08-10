@@ -115,9 +115,25 @@ const getClientActivities = catchAsync(async (req, res) => {
 });
 
 const getClientTaskStatistics = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'email', 'search', 'branch']);
+  const filter = pick(req.query, [
+    'name',
+    'email',
+    'phone',
+    'district',
+    'pan',
+    'branch',
+    'category',
+    'businessType',
+    'entityType',
+    'gstNumber',
+    'tanNumber',
+    'cinNumber',
+    'udyamNumber',
+    'iecCode',
+    'search',
+  ]);
   const options = pick(req.query, ['limit', 'page']);
-  
+
   const result = await clientService.getClientTaskStatistics(filter, options, req.user);
   res.send(result);
 });

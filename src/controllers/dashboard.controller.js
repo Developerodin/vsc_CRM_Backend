@@ -122,6 +122,16 @@ const getTaskTrends = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(data);
 });
 
+/**
+ * Aggregated dashboard summary (single round-trip).
+ */
+const getDashboardSummary = catchAsync(async (req, res) => {
+  const { branchId, startDate, endDate, frequency, interval } = req.query;
+  const cleanedParams = cleanParams({ branchId, startDate, endDate, frequency, interval });
+  const data = await dashboardService.getDashboardSummary(req.user, cleanedParams);
+  res.status(httpStatus.OK).send(data);
+});
+
 export { 
   getTotalActivities, 
   getTotalTeams, 
@@ -139,5 +149,6 @@ export {
   getTimelineCompletionRates,
   getTotalTasksAndStatus,
   getTaskAnalytics,
-  getTaskTrends
+  getTaskTrends,
+  getDashboardSummary,
 }; 

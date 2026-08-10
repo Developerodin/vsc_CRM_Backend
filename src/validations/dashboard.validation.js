@@ -117,6 +117,16 @@ const getTaskTrends = {
   }),
 };
 
+const getDashboardSummary = {
+  query: Joi.object().keys({
+    branchId: Joi.string().custom(objectId).optional().allow(''),
+    startDate: Joi.date().iso().optional().allow(''),
+    endDate: Joi.date().iso().optional().allow(''),
+    frequency: Joi.string().valid('Hourly', 'Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly').optional().allow(''),
+    interval: Joi.string().valid('day', 'week', 'month').default('month'),
+  }),
+};
+
 export { 
   getTimelineCountsByBranch, 
   getAssignedTaskCounts, 
@@ -132,5 +142,6 @@ export {
   getTimelineCompletionRates,
   getTotalTasksAndStatus,
   getTaskAnalytics,
-  getTaskTrends
+  getTaskTrends,
+  getDashboardSummary,
 }; 

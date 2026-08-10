@@ -92,7 +92,7 @@ const getGroupTaskStatistics = {
     branch: Joi.string().custom(objectId),
     client: Joi.string().trim().allow('', null),
     search: Joi.string().trim().allow('', null),
-    limit: Joi.number().integer().min(1).max(10000),
+    limit: Joi.number().integer().min(1).max(100),
     page: Joi.number().integer().min(1),
   }),
 };

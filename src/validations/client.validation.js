@@ -274,9 +274,20 @@ const getClientTaskStatistics = {
   query: Joi.object().keys({
     name: Joi.string().trim().allow(''),
     email: Joi.string().trim().allow(''),
-    search: Joi.string().trim().allow(''), // Add search parameter
+    phone: Joi.string().trim().allow(''),
+    district: Joi.string().trim().allow(''),
+    pan: Joi.string().trim().allow(''),
     branch: Joi.string().custom(objectId),
-    limit: Joi.number().integer().min(1).max(10000),
+    category: Joi.string().valid('A', 'B', 'C').allow(''),
+    businessType: Joi.string().trim().allow(''),
+    entityType: Joi.string().trim().allow(''),
+    gstNumber: Joi.string().trim().allow(''),
+    tanNumber: Joi.string().trim().allow(''),
+    cinNumber: Joi.string().trim().allow(''),
+    udyamNumber: Joi.string().trim().allow(''),
+    iecCode: Joi.string().trim().allow(''),
+    search: Joi.string().trim().allow(''),
+    limit: Joi.number().integer().min(1).max(100),
     page: Joi.number().integer().min(1),
   }),
 };

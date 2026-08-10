@@ -15,8 +15,11 @@ import { errorConverter, errorHandler } from './middlewares/error.js';
 import ApiError from './utils/ApiError.js';
 import { setupBranchAccess } from './scripts/setup-branch-access.js';
 import cronManager from './jobs/cronManager.js';
+import responseTime from './middlewares/responseTime.js';
 
 const app = express();
+
+app.use(responseTime());
 
 if (config.env !== 'test') {
   app.use(morgan.successHandler);
@@ -63,8 +66,11 @@ app.use((req, res, next) => {
 
 // setupBranchAccess(); 
 
-// Start cron jobs in production and development
-if (config.env !== 'test') {
+// Timeline cron: worker in prod (ENABLE_CRON=true); in-process for local/dev when not explicitly disabled
+const enableCron =
+  process.env.ENABLE_CRON === 'true' ||
+  (process.env.ENABLE_CRON !== 'false' && config.env !== 'production');
+if (config.env !== 'test' && enableCron) {
   cronManager.start().catch(error => {
     console.error('Failed to start cron jobs:', error);
   });

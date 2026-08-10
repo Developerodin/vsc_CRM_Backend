@@ -1,9 +1,23 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { Task, TeamMember, Timeline, Group } from '../models/index.js';
+import { Task, TeamMember, Timeline, Group, Activity, Client, Branch } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { sendEmail, generateTaskAssignmentHTML, generateTaskCompletionHTML } from './email.service.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
+import { resolveClientIdsFromTimelineIds } from './taskStatsByClient.helper.js';
+import { invalidateGroupsAnalyticsCache } from './group.service.js';
+
+/**
+ * Sync denormalized Task.clients from linked timeline documents.
+ * @param {Object} taskDoc - Mongoose task document (or plain object with timeline)
+ * @returns {Promise<import('mongoose').Types.ObjectId[]>} Resolved client IDs
+ */
+const syncTaskClientsFromTimelines = async (taskDoc) => {
+  const timelineIds = Array.isArray(taskDoc?.timeline) ? taskDoc.timeline : [];
+  const clientIds = await resolveClientIdsFromTimelineIds(timelineIds);
+  taskDoc.clients = clientIds;
+  return clientIds;
+};
 
 /**
  * Extract branch ID from a task document or populated branch field.
@@ -317,8 +331,15 @@ const createTask = async (taskBody, user = null) => {
       taskBody.branch = user.branch._id || user.branch;
     }
 
+    if (taskBody.timeline?.length) {
+      taskBody.clients = await resolveClientIdsFromTimelineIds(taskBody.timeline);
+    } else if (!Array.isArray(taskBody.clients)) {
+      taskBody.clients = [];
+    }
+
     // Create the task
     const task = await Task.create(taskBody);
+    invalidateGroupsAnalyticsCache();
     
     // Populate the created task efficiently
     const populatedTask = await Task.findById(task._id)
@@ -400,14 +421,49 @@ const queryTasks = async (filter, options, user = null) => {
     delete mongoFilter.group;
   }
   
-  // Handle global search across multiple fields
+  // Resolve global search to Mongo filters BEFORE paginate (correct totals + DB-side filter)
   if (mongoFilter.search && mongoFilter.search.trim() !== '') {
     const searchValue = mongoFilter.search.trim();
     const searchRegex = { $regex: searchValue, $options: 'i' };
-    
-    // Create an $or condition to search across multiple fields
-    // Note: We'll need to handle this after population since some fields are references
-    mongoFilter.searchValue = searchValue; // Store for later processing
+
+    const [matchingMembers, matchingBranches, matchingActivities, matchingClients] = await Promise.all([
+      TeamMember.find({ name: searchRegex }).select('_id').limit(100).lean(),
+      Branch.find({ name: searchRegex }).select('_id').limit(100).lean(),
+      Activity.find({ name: searchRegex }).select('_id').limit(100).lean(),
+      Client.find({ name: searchRegex }).select('_id').limit(100).lean(),
+    ]);
+
+    let matchingTimelineIds = [];
+    const timelineOr = [];
+    if (matchingActivities.length) {
+      timelineOr.push({ activity: { $in: matchingActivities.map((a) => a._id) } });
+    }
+    if (matchingClients.length) {
+      timelineOr.push({ client: { $in: matchingClients.map((c) => c._id) } });
+    }
+    if (timelineOr.length) {
+      const matchingTimelines = await Timeline.find({ $or: timelineOr }).select('_id').limit(500).lean();
+      matchingTimelineIds = matchingTimelines.map((t) => t._id);
+    }
+
+    const orClauses = [
+      { remarks: searchRegex },
+      { status: searchRegex },
+      { priority: searchRegex },
+    ];
+    if (matchingMembers.length) {
+      const memberIds = matchingMembers.map((m) => m._id);
+      orClauses.push({ teamMember: { $in: memberIds } });
+      orClauses.push({ assignedByTeamMember: { $in: memberIds } });
+    }
+    if (matchingBranches.length) {
+      orClauses.push({ branch: { $in: matchingBranches.map((b) => b._id) } });
+    }
+    if (matchingTimelineIds.length) {
+      orClauses.push({ timeline: { $in: matchingTimelineIds } });
+    }
+
+    mongoFilter.$or = orClauses;
     delete mongoFilter.search;
   }
   
@@ -449,16 +505,22 @@ const queryTasks = async (filter, options, user = null) => {
     }
   }
   
-  // Handle date range filtering
+  // Handle date range filtering (merge with search $or via $and when both present)
   if (mongoFilter.startDateRange && mongoFilter.endDateRange) {
-    mongoFilter.$or = [
+    const dateOr = [
       { startDate: { $gte: mongoFilter.startDateRange, $lte: mongoFilter.endDateRange } },
       { endDate: { $gte: mongoFilter.startDateRange, $lte: mongoFilter.endDateRange } },
-      { 
+      {
         startDate: { $lte: mongoFilter.startDateRange },
-        endDate: { $gte: mongoFilter.endDateRange }
-      }
+        endDate: { $gte: mongoFilter.endDateRange },
+      },
     ];
+    if (mongoFilter.$or) {
+      mongoFilter.$and = [{ $or: mongoFilter.$or }, { $or: dateOr }];
+      delete mongoFilter.$or;
+    } else {
+      mongoFilter.$or = dateOr;
+    }
     delete mongoFilter.startDateRange;
     delete mongoFilter.endDateRange;
   }
@@ -470,13 +532,16 @@ const queryTasks = async (filter, options, user = null) => {
 
   applyBranchFilterToMongoFilter(mongoFilter, user);
 
+  // Strip non-schema keys before paginate
+  delete mongoFilter.searchValue;
+
   const tasks = await Task.paginate(mongoFilter, {
     ...options,
     populate: [
       { path: 'teamMember', select: 'name email phone' },
       { path: 'assignedBy', select: 'name email' },
       { path: 'assignedByTeamMember', select: 'name email phone' },
-      { path: 'timeline' },
+      { path: 'timeline', select: 'activity client status dueDate frequency' },
       { path: 'branch', select: 'name location' }
     ],
   });
@@ -528,7 +593,7 @@ const queryTasks = async (filter, options, user = null) => {
       
       const populatedTimelines = await Timeline.find({ _id: { $in: timelineObjectIds } })
         .populate('activity', 'name description category')
-        .populate('client', 'name email phone company address city state country pinCode gst branch status businessType entityType')
+        .populate('client', 'name email phone')
         .lean();
       
       // Create a map of populated timelines for quick lookup
@@ -565,74 +630,6 @@ const queryTasks = async (filter, options, user = null) => {
     }
   }
   
-  // Handle search filtering after population
-  if (mongoFilter.searchValue) {
-    const searchValue = mongoFilter.searchValue.toLowerCase();
-    tasks.results = tasks.results.filter(task => {
-      // Search in team member name
-      if (task.teamMember && task.teamMember.name && 
-          task.teamMember.name.toLowerCase().includes(searchValue)) {
-        return true;
-      }
-      
-      // Search in assigned by name
-      if (task.assignedBy && task.assignedBy.name && 
-          task.assignedBy.name.toLowerCase().includes(searchValue)) {
-        return true;
-      }
-      
-      // Search in timeline activity (handle array of timelines)
-      if (task.timeline && Array.isArray(task.timeline)) {
-        for (const timeline of task.timeline) {
-          if (timeline && timeline.activity) {
-            const activityName = typeof timeline.activity === 'object' 
-              ? timeline.activity.name 
-              : String(timeline.activity);
-            if (activityName && activityName.toLowerCase().includes(searchValue)) {
-              return true;
-            }
-          }
-          if (timeline && timeline.client) {
-            const clientName = typeof timeline.client === 'object' 
-              ? timeline.client.name 
-              : String(timeline.client);
-            if (clientName && clientName.toLowerCase().includes(searchValue)) {
-              return true;
-            }
-          }
-        }
-      }
-      
-      // Search in branch name
-      if (task.branch && task.branch.name && 
-          task.branch.name.toLowerCase().includes(searchValue)) {
-        return true;
-      }
-      
-      // Search in status
-      if (task.status && task.status.toLowerCase().includes(searchValue)) {
-        return true;
-      }
-      
-      // Search in priority
-      if (task.priority && task.priority.toLowerCase().includes(searchValue)) {
-        return true;
-      }
-      
-      // Search in remarks
-      if (task.remarks && task.remarks.toLowerCase().includes(searchValue)) {
-        return true;
-      }
-      
-      return false;
-    });
-    
-    // Update total results count
-    tasks.totalResults = tasks.results.length;
-    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
-    tasks.totalPages = hasLimit ? Math.ceil(tasks.totalResults / parseInt(options.limit, 10)) : 1;
-  }
-
   return tasks;
 };
 
@@ -726,7 +723,16 @@ const updateTaskById = async (taskId, updateBody, user = null) => {
 
   const previousStatus = task.status;
   Object.assign(task, taskUpdateBody);
+
+  // Keep denormalized clients in sync whenever timelines change (or were never backfilled).
+  const timelinesChanged = Object.prototype.hasOwnProperty.call(taskUpdateBody, 'timeline');
+  const clientsMissing = !Array.isArray(task.clients) || task.clients.length === 0;
+  if (timelinesChanged || (clientsMissing && task.timeline?.length)) {
+    await syncTaskClientsFromTimelines(task);
+  }
+
   await task.save();
+  invalidateGroupsAnalyticsCache();
   const updatedTask = await getTaskById(taskId, user);
   notifyAssignorOnTaskCompletion(previousStatus, updatedTask);
   return updatedTask;
@@ -742,6 +748,7 @@ const deleteTaskById = async (taskId, user = null) => {
   const task = await getTaskByIdMinimal(taskId);
   assertTaskBranchAccess(task, user);
   await Task.deleteOne({ _id: taskId });
+  invalidateGroupsAnalyticsCache();
   return task;
 };
 
@@ -985,6 +992,7 @@ const bulkUpdateTaskStatus = async (taskIds, status) => {
     { _id: { $in: taskIds } },
     { $set: { status } }
   );
+  invalidateGroupsAnalyticsCache();
   return result;
 };
 
@@ -1001,8 +1009,22 @@ const bulkCreateTasks = async (tasks) => {
   };
 
   try {
+    // Denormalize clients from timelines before insert so analytics can index-match.
+    const preparedTasks = await Promise.all(
+      tasks.map(async (taskBody) => {
+        const next = { ...taskBody };
+        if (next.timeline?.length) {
+          next.clients = await resolveClientIdsFromTimelineIds(next.timeline);
+        } else if (!Array.isArray(next.clients)) {
+          next.clients = [];
+        }
+        return next;
+      })
+    );
+
     // Use insertMany for better performance
-    const createdTasks = await Task.insertMany(tasks, { ordered: false });
+    const createdTasks = await Task.insertMany(preparedTasks, { ordered: false });
+    invalidateGroupsAnalyticsCache();
     
     // Populate all created tasks in one query
     const populatedTasks = await Task.find({ 
@@ -1027,6 +1049,9 @@ const bulkCreateTasks = async (tasks) => {
     // Handle bulk insert errors
     if (error.writeErrors) {
       results.created = error.insertedCount || 0;
+      if (results.created > 0) {
+        invalidateGroupsAnalyticsCache();
+      }
       error.writeErrors.forEach((writeError, index) => {
         results.errors.push({
           index: writeError.index,
@@ -1050,6 +1075,7 @@ const bulkCreateTasks = async (tasks) => {
  */
 const bulkDeleteTasks = async (taskIds) => {
   const result = await Task.deleteMany({ _id: { $in: taskIds } });
+  invalidateGroupsAnalyticsCache();
   return result;
 };
 

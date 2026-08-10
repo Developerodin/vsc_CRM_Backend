@@ -8,6 +8,7 @@ import Group from '../models/group.model.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 import { getCurrentFinancialYear, generateTimelineDates, calculateNextOccurrence } from '../utils/financialYear.js';
 import cache from '../utils/cache.js';
+import { invalidateGroupsAnalyticsCache } from './group.service.js';
 
 /**
  * Validate if activity ID exists
@@ -532,224 +533,138 @@ const queryTimelines = async (filter, options, user) => {
     }
   }
 
-  // Check if we need to apply post-query filters (text-based searches on activity/client name or search parameter)
-  // Note: activityName, subactivityName and activity (as string) are now handled above, so they won't trigger post-query
-  // However, if sortBy includes activityName, we need post-query filtering to sort by populated activity name
-  const sortByIncludesActivityName = options.sortBy && options.sortBy.includes('activityName');
-  const needsPostQueryFilter = (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) ||
-                                !!searchTerm ||
-                                sortByIncludesActivityName;
-
-  let result;
-  
-  if (needsPostQueryFilter) {
-    // If we need post-query filters, we must:
-    // 1. Get ALL documents matching the MongoDB filter (without pagination, but with sorting)
-    // 2. Populate and apply post-query filters
-    // 3. Count the filtered results
-    // 4. Apply pagination to the filtered results
-    
-    // Build sort query
-    let sort = '';
-    if (options.sortBy) {
-      const sortingCriteria = [];
-      options.sortBy.split(',').forEach((sortOption) => {
-        const [key, order] = sortOption.split(':');
-        // Map common field names to actual Timeline model fields
-        const fieldMap = {
-          'title': 'createdAt', // Timeline doesn't have title, use createdAt
-          'name': 'createdAt',
-          'date': 'dueDate',
-          'dueDate': 'dueDate',
-          'createdAt': 'createdAt',
-          'updatedAt': 'updatedAt'
+  // Resolve text client / search filters to IDs in Mongo before pagination (never load-all-then-slice)
+  if (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
+    const clientSearchTerm = String(filter.client).trim().replace(/\+/g, ' ');
+    if (clientSearchTerm) {
+      const clientNameFilter = { name: { $regex: clientSearchTerm, $options: 'i' } };
+      if (groupClientIds !== null) {
+        clientNameFilter._id = { $in: groupClientIds };
+      }
+      const matchingClients = await Client.find(clientNameFilter).select('_id').lean();
+      const clientIds = matchingClients.map((c) => c._id);
+      if (clientIds.length === 0) {
+        return {
+          results: [],
+          page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+          limit: options.limit ? Math.min(parseInt(options.limit, 10), 100) : 50,
+          totalPages: 0,
+          totalResults: 0,
         };
-        const actualField = fieldMap[key] || key;
-        sortingCriteria.push((order === 'desc' ? '-' : '') + actualField);
-      });
-      sort = sortingCriteria.join(' ');
+      }
+      mongoFilter.client = { $in: clientIds };
     } else {
-      sort = 'createdAt';
+      delete mongoFilter.client;
     }
-    
-    // Get all documents matching the filter with sorting (no pagination)
-    // Ensure subactivity filter is preserved if it was set
-    const queryFilter = { ...mongoFilter };
-    let allResults = await Timeline.find(queryFilter).sort(sort);
-    
-    // Populate the results with activity and client data
-    // Use strictPopulate: false to handle null references gracefully
-    await Timeline.populate(allResults, [
-      { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
-      { path: 'client', select: 'name email phone state pan gstNumbers tanNumber cinNumber udyamNumber iecCode', strictPopulate: false }
+  }
+
+  if (searchTerm && String(searchTerm).trim() !== '') {
+    const searchTermLower = String(searchTerm).trim().replace(/\+/g, ' ');
+    const [matchingActivities, matchingClients] = await Promise.all([
+      Activity.find({ name: { $regex: searchTermLower, $options: 'i' } }).select('_id').lean(),
+      Client.find({ name: { $regex: searchTermLower, $options: 'i' } }).select('_id').lean(),
     ]);
-    
-    // Process subactivity data since it's stored as embedded document
-    // Note: subactivity is already in the timeline document, but we may want to enrich it from activity
-    allResults.forEach(timeline => {
-      // If subactivity exists in timeline (embedded doc), keep it
-      // Only enrich if we have activity data and subactivity needs enrichment
+    const activityIds = matchingActivities.map((a) => a._id);
+    const clientIds = matchingClients.map((c) => c._id);
+    const orClauses = [];
+    if (activityIds.length) orClauses.push({ activity: { $in: activityIds } });
+    if (clientIds.length) orClauses.push({ client: { $in: clientIds } });
+    if (orClauses.length === 0) {
+      return {
+        results: [],
+        page: options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1,
+        limit: options.limit ? Math.min(parseInt(options.limit, 10), 100) : 50,
+        totalPages: 0,
+        totalResults: 0,
+      };
+    }
+    mongoFilter.$or = orClauses;
+  }
+
+  // activityName sort → sort by activity ObjectIds ordered by name (bounded list)
+  let mappedOptions = { ...options };
+  if (mappedOptions.sortBy && mappedOptions.sortBy.includes('activityName')) {
+    const sortFields = mappedOptions.sortBy.split(',');
+    const activitySort = sortFields.find((s) => s.startsWith('activityName'));
+    const order = activitySort && activitySort.endsWith(':desc') ? -1 : 1;
+    const activitiesOrdered = await Activity.find({})
+      .select('_id')
+      .sort({ name: order })
+      .lean();
+    // Fallback sort field for paginate; in-memory reorder of page only after populate
+    mappedOptions.sortBy = sortFields
+      .map((sortOption) => {
+        const [key, ord] = sortOption.split(':');
+        if (key === 'activityName') return `activity:${ord || 'asc'}`;
+        const fieldMap = {
+          title: 'createdAt',
+          name: 'createdAt',
+          date: 'dueDate',
+          dueDate: 'dueDate',
+          createdAt: 'createdAt',
+          updatedAt: 'updatedAt',
+        };
+        return `${fieldMap[key] || key}:${ord || 'asc'}`;
+      })
+      .join(',');
+    mappedOptions._activityNameOrder = activitiesOrdered.map((a) => a._id.toString());
+    mappedOptions._activityNameSortDir = order;
+  } else if (mappedOptions.sortBy) {
+    const sortOptions = mappedOptions.sortBy.split(',');
+    mappedOptions.sortBy = sortOptions
+      .map((sortOption) => {
+        const [key, order] = sortOption.split(':');
+        const fieldMap = {
+          title: 'createdAt',
+          name: 'createdAt',
+          date: 'dueDate',
+          dueDate: 'dueDate',
+          createdAt: 'createdAt',
+          updatedAt: 'updatedAt',
+        };
+        return `${fieldMap[key] || key}:${order}`;
+      })
+      .join(',');
+  }
+
+  const result = await Timeline.paginate(mongoFilter, mappedOptions);
+
+  if (result.results && result.results.length > 0) {
+    await Timeline.populate(result.results, [
+      { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
+      {
+        path: 'client',
+        select: 'name email phone state pan gstNumbers tanNumber cinNumber udyamNumber iecCode',
+        strictPopulate: false,
+      },
+    ]);
+
+    result.results.forEach((timeline) => {
       if (timeline.subactivity && timeline.subactivity._id) {
-        // Subactivity is already present as embedded document - keep it
-        // Optionally enrich from activity if activity is populated and has more complete data
         if (timeline.activity && timeline.activity.subactivities && Array.isArray(timeline.activity.subactivities)) {
           const matchingSub = timeline.activity.subactivities.find(
-            sub => sub._id && sub._id.toString() === timeline.subactivity._id.toString()
+            (sub) => sub._id && sub._id.toString() === timeline.subactivity._id.toString()
           );
           if (matchingSub) {
-            // Merge to get complete subactivity data (activity has more fields like frequencyConfig)
             timeline.subactivity = { ...timeline.subactivity, ...matchingSub };
           }
         }
       }
     });
 
-    // Note: activityName and activity (as string) filters are now handled by converting to activity IDs
-    // before this point, so they don't need post-query filtering
-
-    if (filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
-      // Filter by client name (case-insensitive partial match)
-      const clientSearchTerm = filter.client.toLowerCase().trim().replace(/\+/g, ' '); // Handle URL encoding
-      if (clientSearchTerm) { // Only filter if search term is not empty
-        allResults = allResults.filter(timeline => 
-          timeline.client && 
-          timeline.client.name && 
-          timeline.client.name.toLowerCase().includes(clientSearchTerm)
-        );
-      }
-    }
-
-    // Handle search parameter (searches in both activity and client names)
-    if (searchTerm) {
-      const searchTermLower = searchTerm.toLowerCase().trim().replace(/\+/g, ' ');
-      if (searchTermLower) { // Only filter if search term is not empty
-        allResults = allResults.filter(timeline => {
-          // Search in activity name
-          const matchesActivity = timeline.activity && 
-                                  timeline.activity.name && 
-                                  timeline.activity.name.toLowerCase().includes(searchTermLower);
-          
-          // Search in client name
-          const matchesClient = timeline.client && 
-                               timeline.client.name && 
-                               timeline.client.name.toLowerCase().includes(searchTermLower);
-          
-          return matchesActivity || matchesClient;
-        });
-      }
-    }
-
-    // Handle group filter in post-query (if group was provided and client was also a string)
-    // Note: If groupClientIds was set and client was ObjectId, it's already filtered in MongoDB
-    // But if client was a string, we need to filter by both group clients AND client name
-    if (groupClientIds !== null && filter.client && !mongoose.Types.ObjectId.isValid(filter.client)) {
-      // Both group and client (string) filters are active
-      // Filter by group clients first
-      if (groupClientIds.length > 0) {
-        allResults = allResults.filter(timeline => 
-          timeline.client && 
-          timeline.client._id && 
-          groupClientIds.includes(timeline.client._id.toString())
-        );
-      } else {
-        // Group has no clients, return empty results
-        allResults = [];
-      }
-    }
-
-    // Handle sorting by activityName (requires post-query since it's a populated field)
-    if (sortByIncludesActivityName && allResults.length > 0) {
-      const sortFields = options.sortBy.split(',');
-      sortFields.forEach(sortField => {
-        const [field, order] = sortField.split(':');
-        if (field === 'activityName') {
-          const sortOrder = order === 'desc' ? -1 : 1;
-          allResults.sort((a, b) => {
-            const aName = (a.activity && a.activity.name) ? a.activity.name.toLowerCase() : '';
-            const bName = (b.activity && b.activity.name) ? b.activity.name.toLowerCase() : '';
-            if (aName < bName) return -1 * sortOrder;
-            if (aName > bName) return 1 * sortOrder;
-            return 0;
-          });
-        }
-      });
-    }
-
-    // Get total count of filtered results (this is the true total)
-    const totalResults = allResults.length;
-    
-    // Apply pagination to filtered results
-    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
-    const limit = hasLimit ? parseInt(options.limit, 10) : null;
-    const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-    const skip = hasLimit ? (page - 1) * limit : 0;
-    
-    const paginatedResults = hasLimit 
-      ? allResults.slice(skip, skip + limit)
-      : allResults;
-    
-    const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
-    
-    result = {
-      results: paginatedResults,
-      page,
-      limit: limit || totalResults,
-      totalPages,
-      totalResults, // This is now the total count of all matching documents after post-query filters
-    };
-  } else {
-    // No post-query filters needed, use standard pagination
-    // Map sortBy field names to actual Timeline model fields
-    let mappedOptions = { ...options };
-    if (mappedOptions.sortBy) {
-      const sortOptions = mappedOptions.sortBy.split(',');
-      const mappedSortOptions = sortOptions.map(sortOption => {
-        const [key, order] = sortOption.split(':');
-        const fieldMap = {
-          'title': 'createdAt', // Timeline doesn't have title, use createdAt
-          'name': 'createdAt',
-          'date': 'dueDate',
-          'dueDate': 'dueDate',
-          'createdAt': 'createdAt',
-          'updatedAt': 'updatedAt'
-        };
-        const actualField = fieldMap[key] || key;
-        return `${actualField}:${order}`;
-      });
-      mappedOptions.sortBy = mappedSortOptions.join(',');
-    }
-    
-    result = await Timeline.paginate(mongoFilter, mappedOptions);
-    
-    // Populate the results with activity and client data
-    if (result.results && result.results.length > 0) {
-      await Timeline.populate(result.results, [
-        { path: 'activity', select: 'name sortOrder subactivities', strictPopulate: false },
-        { path: 'client', select: 'name email phone state pan gstNumbers tanNumber cinNumber udyamNumber iecCode', strictPopulate: false }
-      ]);
-      
-      // Process subactivity data since it's stored as embedded document
-      // Note: subactivity is already in the timeline document, but we may want to enrich it from activity
-      result.results.forEach(timeline => {
-        // If subactivity exists in timeline (embedded doc), keep it
-        // Only enrich if we have activity data and subactivity needs enrichment
-        if (timeline.subactivity && timeline.subactivity._id) {
-          // Subactivity is already present as embedded document - keep it
-          // Optionally enrich from activity if activity is populated and has more complete data
-          if (timeline.activity && timeline.activity.subactivities && Array.isArray(timeline.activity.subactivities)) {
-            const matchingSub = timeline.activity.subactivities.find(
-              sub => sub._id && sub._id.toString() === timeline.subactivity._id.toString()
-            );
-            if (matchingSub) {
-              // Merge to get complete subactivity data (activity has more fields like frequencyConfig)
-              timeline.subactivity = { ...timeline.subactivity, ...matchingSub };
-            }
-          }
-        }
+    if (mappedOptions._activityNameOrder) {
+      const orderMap = new Map(mappedOptions._activityNameOrder.map((id, idx) => [id, idx]));
+      const dir = mappedOptions._activityNameSortDir || 1;
+      result.results.sort((a, b) => {
+        const aId = a.activity?._id?.toString() || '';
+        const bId = b.activity?._id?.toString() || '';
+        const aIdx = orderMap.has(aId) ? orderMap.get(aId) : Number.MAX_SAFE_INTEGER;
+        const bIdx = orderMap.has(bId) ? orderMap.get(bId) : Number.MAX_SAFE_INTEGER;
+        return (aIdx - bIdx) * dir;
       });
     }
   }
-  
+
   return result;
 };
 
@@ -852,6 +767,7 @@ const updateTimelineById = async (timelineId, updateBody, user = null) => {
     timeline.markModified('referenceNumber');
   }
   await timeline.save();
+  invalidateGroupsAnalyticsCache();
   return timeline.populate([
     { path: 'activity', select: 'name' },
     { path: 'client', select: 'name email' }
@@ -867,6 +783,7 @@ const updateTimelineById = async (timelineId, updateBody, user = null) => {
 const deleteTimelineById = async (timelineId, user = null) => {
   const timeline = await getTimelineById(timelineId, user);
   await timeline.deleteOne();
+  invalidateGroupsAnalyticsCache();
   return timeline;
 };
 
@@ -1474,6 +1391,8 @@ export const updateTimelineStatus = async (timelineId, status) => {
     { status },
     { new: true, runValidators: true }
   );
+
+  invalidateGroupsAnalyticsCache();
   
   // Populate the updated timeline before returning
   const populatedTimeline = await Timeline.populate(timeline, [
@@ -1592,12 +1511,12 @@ const getFrequencyPeriods = async (frequency, financialYear = null) => {
  * @param {Object} user - User object with role information
  * @returns {Promise<Object>}
  */
-export const getFrequencyStatusStats = async (params, user) => {
-  const { branchId, startDate, endDate, frequency, status } = params;
+export const getFrequencyStatusStats = async (params = {}, user = null) => {
+  const { branchId, startDate, endDate, frequency, status } = params || {};
   
-  // Check cache first
+  // Check cache first — JWT/user payloads may omit _id; never assume it exists
   const cacheKey = cache.generateKey('frequency-status-stats', { 
-    userId: user._id.toString(), 
+    userId: user?._id?.toString?.() || user?.id?.toString?.() || 'anon',
     branchId: branchId || 'all',
     startDate: startDate || '',
     endDate: endDate || '',
@@ -1622,77 +1541,64 @@ export const getFrequencyStatusStats = async (params, user) => {
   }
   
   // Apply user's branch access restrictions
-  if (user.role && !branchId) {
+  if (user?.role && !branchId) {
     const allowedBranchIds = getUserBranchIds(user.role);
     if (allowedBranchIds !== null && allowedBranchIds.length > 0) {
       filter.branch = { $in: allowedBranchIds };
     }
   }
   
-  // Use aggregation pipeline for better performance
+  // Aggregate counts in Mongo — never $push every document into memory
   const pipeline = [
     { $match: filter },
     {
-      $group: {
-        _id: null,
-        totalTimelines: { $sum: 1 },
-        frequencyBreakdown: {
-          $push: {
-            frequency: { $ifNull: ['$frequency', 'None'] },
-            status: { $ifNull: ['$status', 'pending'] }
-          }
-        }
-      }
-    }
-  ];
-  
-  const result = await Timeline.aggregate(pipeline);
-  
-  if (!result || result.length === 0) {
-    return {
-      success: true,
-      data: {
-        totalTimelines: 0,
-        frequencyBreakdown: {},
-        statusBreakdown: {
-          pending: 0,
-          completed: 0,
-          delayed: 0,
-          ongoing: 0,
-          notApplicable: 0
-        }
+      $facet: {
+        byFrequency: [
+          {
+            $group: {
+              _id: { $ifNull: ['$frequency', 'None'] },
+              count: { $sum: 1 },
+            },
+          },
+        ],
+        byStatus: [
+          {
+            $group: {
+              _id: { $ifNull: ['$status', 'pending'] },
+              count: { $sum: 1 },
+            },
+          },
+        ],
+        total: [{ $count: 'totalTimelines' }],
       },
-      filters: { branchId, startDate, endDate, frequency, status }
-    };
-  }
-  
-  const aggregatedData = result[0];
+    },
+  ];
+
+  const result = await Timeline.aggregate(pipeline);
+
+  const facet = result?.[0] || { byFrequency: [], byStatus: [], total: [] };
   const stats = {
-    totalTimelines: aggregatedData.totalTimelines,
+    totalTimelines: facet.total?.[0]?.totalTimelines || 0,
     frequencyBreakdown: {},
     statusBreakdown: {
       pending: 0,
       completed: 0,
       delayed: 0,
       ongoing: 0,
-      notApplicable: 0
-    }
+      notApplicable: 0,
+    },
   };
 
-  // Process the aggregated data
-  aggregatedData.frequencyBreakdown.forEach(item => {
-    // Count by frequency
-    if (!stats.frequencyBreakdown[item.frequency]) {
-      stats.frequencyBreakdown[item.frequency] = 0;
-    }
-    stats.frequencyBreakdown[item.frequency]++;
-    
-    // Count by status
-    if (stats.statusBreakdown[item.status] !== undefined) {
-      stats.statusBreakdown[item.status]++;
+  (facet.byFrequency || []).forEach((row) => {
+    stats.frequencyBreakdown[row._id] = row.count;
+  });
+  (facet.byStatus || []).forEach((row) => {
+    const key = row._id === 'not applicable' ? 'notApplicable' : row._id;
+    if (stats.statusBreakdown[key] !== undefined) {
+      stats.statusBreakdown[key] = row.count;
     }
   });
-  
+
   const finalResult = {
     success: true,
     data: stats,
@@ -1701,8 +1607,8 @@ export const getFrequencyStatusStats = async (params, user) => {
       startDate,
       endDate,
       frequency,
-      status
-    }
+      status,
+    },
   };
   
   // Cache the result for 3 minutes

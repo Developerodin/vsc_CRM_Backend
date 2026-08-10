@@ -45,6 +45,12 @@ const taskSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Timeline',
     }],
+    // Denormalized from linked timelines — keeps group/client analytics scans indexable
+    // as the tasks collection grows (avoids full-collection task-first scans).
+    clients: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Client',
+    }],
     remarks: {
       type: String,
       trim: true,
@@ -81,6 +87,7 @@ const taskSchema = mongoose.Schema(
 // Indexes for better query performance
 taskSchema.index({ teamMember: 1, status: 1 });
 taskSchema.index({ branch: 1, status: 1 });
+taskSchema.index({ branch: 1, 'timeline.0': 1 }); // Branch-scoped task-first analytics prefilter
 taskSchema.index({ startDate: 1, endDate: 1 });
 taskSchema.index({ priority: 1, status: 1 });
 taskSchema.index({ assignedBy: 1 });
@@ -92,6 +99,7 @@ taskSchema.index({ teamMember: 1, createdAt: -1 }); // For team member task hist
 // Index for timeline array field - critical for group statistics queries
 taskSchema.index({ timeline: 1 });
 taskSchema.index({ status: 1, timeline: 1 }); // Compound index for status + timeline queries
+taskSchema.index({ clients: 1, status: 1 }); // Denormalized client filter for analytics
 
 // Instance method to add attachment
 taskSchema.methods.addAttachment = function(fileName, fileUrl) {

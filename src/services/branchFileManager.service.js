@@ -3,8 +3,10 @@ import FileManager from '../models/fileManager.model.js';
 import Client from '../models/client.model.js';
 import { Branch } from '../models/index.js';
 import { getUserBranchIds } from './role.service.js';
+import cache from '../utils/cache.js';
 
 const ROOT_FOLDER_NAMES = ['Documents', 'Clients'];
+const FOLDER_TREE_CACHE_PREFIX = 'folderTree';
 
 /** @type {Map<string, Promise<unknown>>} Serializes root-folder creation per branch + name */
 const rootFolderChains = new Map();
@@ -26,6 +28,24 @@ const dedupeTimestamps = new Map();
 const clientSyncTimestamps = new Map();
 
 /**
+ * Drop cached folder-tree responses so newly created client folders appear without a hard refresh.
+ * @returns {number} Number of cache keys removed
+ */
+const invalidateFolderTreeCache = () => cache.clearByPrefix(FOLDER_TREE_CACHE_PREFIX);
+
+/**
+ * Returns true when an operation for `key` is still within its TTL (without recording a run).
+ * @param {Map<string, number>} store - Timestamp cache
+ * @param {string} key - Cache key (branch id)
+ * @param {number} ttlMs - Time-to-live in ms
+ * @returns {boolean}
+ */
+const isWithinThrottleWindow = (store, key, ttlMs) => {
+  const last = store.get(key);
+  return !!(last && Date.now() - last < ttlMs);
+};
+
+/**
  * Returns true when an operation for `key` ran within `ttlMs` and should be skipped.
  * Records `now` as the run time when it is allowed to proceed.
  * @param {Map<string, number>} store - Timestamp cache
@@ -34,13 +54,38 @@ const clientSyncTimestamps = new Map();
  * @returns {boolean} True when the caller should skip (still fresh)
  */
 const isThrottled = (store, key, ttlMs) => {
-  const last = store.get(key);
-  const now = Date.now();
-  if (last && now - last < ttlMs) {
+  if (isWithinThrottleWindow(store, key, ttlMs)) {
     return true;
   }
-  store.set(key, now);
+  store.set(key, Date.now());
   return false;
+};
+
+/**
+ * Whether a Clients-folder open should schedule background client-folder sync.
+ * @param {mongoose.Types.ObjectId|string} branchId
+ * @returns {boolean}
+ */
+const shouldScheduleClientFolderSync = (branchId) => {
+  return !isWithinThrottleWindow(clientSyncTimestamps, String(branchId), CLIENT_SYNC_TTL_MS);
+};
+
+/**
+ * Claim the client-folder sync throttle window (prevents concurrent opens from stampeding).
+ * @param {mongoose.Types.ObjectId|string} branchId
+ */
+const claimClientFolderSyncSlot = (branchId) => {
+  if (!branchId) return;
+  clientSyncTimestamps.set(String(branchId), Date.now());
+};
+
+/**
+ * Force the next Clients-folder open to re-run sync (e.g. after creating a client folder).
+ * @param {mongoose.Types.ObjectId|string} branchId
+ */
+const markClientFolderSyncStale = (branchId) => {
+  if (!branchId) return;
+  clientSyncTimestamps.delete(String(branchId));
 };
 
 /**
@@ -446,27 +491,77 @@ const removeEmptyDuplicateClientFolders = async (candidates, canonicalFolder) =>
 
 /**
  * Sync all client folders for a single branch under its Clients root.
+ * Cheap set-diff: one clients query + one folders query, then only heal
+ * clients that are missing / duplicated / mis-parented. Steady-state = ~2 reads.
  * @param {mongoose.Types.ObjectId|string} branchId - Branch identifier
- * @returns {Promise<number>} Number of clients synced
+ * @param {{ force?: boolean }} [options]
+ * @returns {Promise<number>} Number of clients that needed healing work
  */
 const syncBranchClientFolders = async (branchId, { force = false } = {}) => {
   // This is a self-healing backfill. Client folders are already created on client
   // save (post-save hook), so running the full per-client sync on every Clients
-  // folder open is redundant and was the main cause of slow loads. Throttle it.
+  // folder open is redundant. Throttle + set-diff keep the heal without the hang.
   if (!force && isThrottled(clientSyncTimestamps, String(branchId), CLIENT_SYNC_TTL_MS)) {
     return 0;
   }
 
   const { clients: clientsRoot } = await ensureBranchRootFolders(branchId);
   const clients = await Client.find({ branch: branchId }).select('_id name branch').lean();
-
-  // Process clients in bounded-concurrency batches instead of one-at-a-time.
-  for (let i = 0; i < clients.length; i += CLIENT_SYNC_CONCURRENCY) {
-    const batch = clients.slice(i, i + CLIENT_SYNC_CONCURRENCY);
-    await Promise.all(batch.map((client) => ensureClientFolderForClient(client, null, clientsRoot)));
+  if (clients.length === 0) {
+    return 0;
   }
 
-  return clients.length;
+  const clientIds = clients.map((c) => c._id);
+  const existingFolders = await FileManager.find({
+    type: 'folder',
+    'folder.metadata.clientId': { $in: clientIds },
+    isDeleted: false,
+  })
+    .select('folder.metadata.clientId folder.parentFolder folder.metadata.branchId')
+    .lean();
+
+  /** @type {Map<string, Array<Object>>} */
+  const foldersByClient = new Map();
+  existingFolders.forEach((folder) => {
+    const id = folder.folder?.metadata?.clientId?.toString?.();
+    if (!id) return;
+    if (!foldersByClient.has(id)) {
+      foldersByClient.set(id, []);
+    }
+    foldersByClient.get(id).push(folder);
+  });
+
+  const rootId = clientsRoot._id.toString();
+  const needsWork = clients.filter((client) => {
+    const folders = foldersByClient.get(client._id.toString()) || [];
+    if (folders.length !== 1) {
+      return true;
+    }
+    const only = folders[0];
+    return (
+      only.folder.parentFolder?.toString() !== rootId ||
+      !only.folder.metadata?.branchId
+    );
+  });
+
+  if (needsWork.length === 0) {
+    return 0;
+  }
+
+  for (let i = 0; i < needsWork.length; i += CLIENT_SYNC_CONCURRENCY) {
+    const batch = needsWork.slice(i, i + CLIENT_SYNC_CONCURRENCY);
+    await Promise.all(
+      batch.map((client) =>
+        ensureClientFolderForClient(client, null, clientsRoot, { skipCacheSideEffects: true })
+      )
+    );
+  }
+
+  if (needsWork.length > 0) {
+    invalidateFolderTreeCache();
+  }
+
+  return needsWork.length;
 };
 
 /**
@@ -474,16 +569,33 @@ const syncBranchClientFolders = async (branchId, { force = false } = {}) => {
  * @param {Object} client - Client mongoose document
  * @param {mongoose.Types.ObjectId|string} [createdByUserId] - User performing the action
  * @param {Object} [clientsRoot] - Pre-resolved branch Clients root folder
+ * @param {{ skipCacheSideEffects?: boolean }} [options] - Skip tree invalidation / sync-stale marks (batch sync)
  * @returns {Promise<Object>} Client folder document
  */
-const ensureClientFolderForClient = async (client, createdByUserId = null, clientsRoot = null) => {
+const ensureClientFolderForClient = async (
+  client,
+  createdByUserId = null,
+  clientsRoot = null,
+  options = {}
+) => {
   const clientId = client._id;
   const clientName = client.name || `Client ${clientId}`;
   const branchId = client.branch?._id || client.branch;
+  const skipCacheSideEffects = options?.skipCacheSideEffects === true;
 
   if (!branchId) {
     throw new Error(`Client ${clientId} has no branch assigned`);
   }
+
+  /**
+   * Invalidate folder-tree cache and allow the next Clients open to re-sync.
+   * Skipped during batch sync (caller invalidates once at the end).
+   */
+  const applyCacheSideEffects = () => {
+    if (skipCacheSideEffects) return;
+    invalidateFolderTreeCache();
+    markClientFolderSyncStale(branchId);
+  };
 
   const resolvedClientsRoot = clientsRoot
     || await getClientsRootForBranch(branchId, createdByUserId || branchId);
@@ -519,6 +631,7 @@ const ensureClientFolderForClient = async (client, createdByUserId = null, clien
   if (bestFolder) {
     const canonical = await reparentClientFolderIfNeeded(bestFolder, resolvedClientsRoot, client);
     await removeEmptyDuplicateClientFolders(candidates, canonical);
+    applyCacheSideEffects();
     return canonical;
   }
 
@@ -538,6 +651,7 @@ const ensureClientFolderForClient = async (client, createdByUserId = null, clien
         branchId: branchObjectId,
       };
       await existingByName.save();
+      applyCacheSideEffects();
     }
     return existingByName;
   }
@@ -559,6 +673,7 @@ const ensureClientFolderForClient = async (client, createdByUserId = null, clien
     },
   });
 
+  applyCacheSideEffects();
   return clientFolder;
 };
 
@@ -633,5 +748,8 @@ export {
   getClientsRootForBranch,
   ensureClientFolderForClient,
   syncBranchClientFolders,
+  shouldScheduleClientFolderSync,
+  claimClientFolderSyncSlot,
+  invalidateFolderTreeCache,
   backfillAllBranchFileManagerFolders,
 };

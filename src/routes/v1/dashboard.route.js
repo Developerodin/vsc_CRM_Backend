@@ -7,6 +7,10 @@ import { dashboardValidation } from '../../validations/index.js';
 const router = express.Router();
 
 router
+  .route('/summary')
+  .get(auth(), validate(dashboardValidation.getDashboardSummary), dashboardController.getDashboardSummary);
+
+router
   .route('/total-activities')
   .get(auth(), dashboardController.getTotalActivities);
 

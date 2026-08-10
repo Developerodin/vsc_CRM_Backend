@@ -1,18 +1,24 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { Client, Activity, FileManager, Timeline, Task, Branch } from '../models/index.js';
+import { Client, Activity, FileManager, Branch } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { hasBranchAccess, getUserBranchIds } from './role.service.js';
 import { createClientTimelines as createTimelinesFromService } from './timeline.service.js';
 import cache from '../utils/cache.js';
+import {
+  aggregateTaskStatsByClientIds,
+  clampStatsLimit,
+} from './taskStatsByClient.helper.js';
 
 const CLIENTS_CACHE_PREFIX = 'clients:';
+const CLIENT_TASK_STATS_CACHE_PREFIX = 'client-task-stats:';
 
 /**
  * Drop cached client list responses after create/update/delete.
  */
 const invalidateClientsCache = () => {
   cache.clearByPrefix(CLIENTS_CACHE_PREFIX);
+  cache.clearByPrefix(CLIENT_TASK_STATS_CACHE_PREFIX);
 };
 
 /**
@@ -1734,325 +1740,161 @@ const getClientActivities = async (clientId, query = {}) => {
  * @param {Object} user - User object with role information
  * @returns {Promise<Object>} - Client task statistics with pagination
  */
+/**
+ * Paginated per-client task status statistics.
+ * Caps page size and aggregates via Timeline→Task (indexed), not full Task scans.
+ * @param {Object} filter
+ * @param {Object} options
+ * @param {Object|null} user
+ * @returns {Promise<Object>}
+ */
 const getClientTaskStatistics = async (filter = {}, options = {}, user = null) => {
-  try {
-    // Create a new filter object to avoid modifying the original
-    const mongoFilter = { ...filter };
-    
-    // Apply branch filtering based on user's access
-    if (user && user.role) {
-      // If specific branch is requested in filter
-      if (mongoFilter.branch) {
-        // Check if user has access to this specific branch
-        if (!hasBranchAccess(user.role, mongoFilter.branch)) {
-          throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
-        }
+  const mongoFilter = { ...filter };
+
+  if (user && user.role) {
+    if (mongoFilter.branch) {
+      if (!hasBranchAccess(user.role, mongoFilter.branch)) {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this branch');
+      }
+    } else {
+      const allowedBranchIds = getUserBranchIds(user.role);
+      if (allowedBranchIds === null) {
+        // all branches
+      } else if (allowedBranchIds.length > 0) {
+        mongoFilter.branch = { $in: allowedBranchIds };
       } else {
-        // Get user's allowed branch IDs
-        const allowedBranchIds = getUserBranchIds(user.role);
-        
-        if (allowedBranchIds === null) {
-          // User has access to all branches, no filtering needed
-        } else if (allowedBranchIds.length > 0) {
-          // Filter by user's allowed branches
-          mongoFilter.branch = { $in: allowedBranchIds };
-        } else {
-          // User has no branch access
-          throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
-        }
+        throw new ApiError(httpStatus.FORBIDDEN, 'No branch access granted');
       }
     }
+  }
 
-    // Handle search parameter (searches across name, email, phone, district, businessType, pan)
-    if (mongoFilter.search) {
-      const searchValue = mongoFilter.search;
-      const searchRegex = { $regex: searchValue, $options: 'i' };
-      
-      // Create an $or condition to search across multiple fields
-      mongoFilter.$or = [
-        { name: searchRegex },
-        { email: searchRegex },
-        { phone: searchRegex },
-        { district: searchRegex },
-        { businessType: searchRegex },
-        { pan: searchRegex }
-      ];
-      
-      // Remove the search parameter as it's now handled by $or
-      delete mongoFilter.search;
-    }
-    // If name filter exists (and no search), convert it to case-insensitive regex
-    else if (mongoFilter.name) {
+  if (mongoFilter.search) {
+    const searchRegex = { $regex: mongoFilter.search, $options: 'i' };
+    mongoFilter.$or = [
+      { name: searchRegex },
+      { email: searchRegex },
+      { phone: searchRegex },
+      { district: searchRegex },
+      { businessType: searchRegex },
+      { pan: searchRegex },
+    ];
+    delete mongoFilter.search;
+  } else {
+    if (mongoFilter.name) {
       mongoFilter.name = { $regex: mongoFilter.name, $options: 'i' };
     }
-
-    // Get pagination options
-    const page = parseInt(options.page) || 1;
-    const limit = parseInt(options.limit) || 50;
-    const skip = (page - 1) * limit;
-
-    // First, get the clients that match the filter
-    const clients = await Client.find(mongoFilter)
-      .select('_id name email branch')
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    // Get total count for pagination
-    const totalClients = await Client.countDocuments(mongoFilter);
-
-    // Check if there are any tasks at all
-    const totalTasks = await Task.countDocuments();
-    
-    if (totalTasks === 0) {
-      return {
-        results: clients.map(client => ({
-          _id: client._id,
-          name: client.name,
-          email: client.email,
-          branch: client.branch,
-          totalTasks: 0,
-          pendingTasks: 0,
-          ongoingTasks: 0,
-          completedTasks: 0,
-          on_holdTasks: 0,
-          cancelledTasks: 0,
-          delayedTasks: 0
-        })),
-        page,
-        limit,
-        totalPages: Math.ceil(totalClients / limit),
-        totalResults: totalClients
-      };
+    if (mongoFilter.email) {
+      mongoFilter.email = { $regex: mongoFilter.email, $options: 'i' };
     }
-
-    // Get all client IDs we're interested in
-    const clientIds = clients.map(c => c._id);
-    
-    // Simplified aggregation pipeline
-    let clientStats = await Task.aggregate([
-      // Match tasks that have timelines
-      {
-        $match: {
-          timeline: { $exists: true, $ne: [] }
-        }
-      },
-      // Unwind timeline array
-      {
-        $unwind: '$timeline'
-      },
-      // Lookup timeline details
-      {
-        $lookup: {
-          from: 'timelines',
-          localField: 'timeline',
-          foreignField: '_id',
-          as: 'timelineDetails'
-        }
-      },
-      // Unwind timeline details
-      {
-        $unwind: '$timelineDetails'
-      },
-      // Lookup client details from timeline
-      {
-        $lookup: {
-          from: 'clients',
-          localField: 'timelineDetails.client',
-          foreignField: '_id',
-          as: 'clientDetails'
-        }
-      },
-      // Unwind client details
-      {
-        $unwind: '$clientDetails'
-      },
-      // Match only the clients we're interested in
-      {
-        $match: {
-          'clientDetails._id': { $in: clientIds }
-        }
-      },
-      // Group by client and status
-      {
-        $group: {
-          _id: {
-            clientId: '$clientDetails._id',
-            clientName: '$clientDetails.name',
-            clientEmail: '$clientDetails.email',
-            status: '$status'
-          },
-          count: { $sum: 1 }
-        }
-      },
-      // Group by client to get all statuses together
-      {
-        $group: {
-          _id: {
-            clientId: '$_id.clientId',
-            clientName: '$_id.clientName',
-            clientEmail: '$_id.clientEmail'
-          },
-          statusCounts: {
-            $push: {
-              status: '$_id.status',
-              count: '$count'
-            }
-          },
-          totalTasks: { $sum: '$count' }
-        }
-      }
-    ]);
-
-    // If no results from timeline-based approach, try direct task-to-client mapping
-    if (clientStats.length === 0) {
-      // Get all tasks for the clients' branches
-      const clientBranchIds = clients.map(c => c.branch);
-      const directTaskStats = await Task.aggregate([
-        // Match tasks in the same branches as our clients
-        {
-          $match: {
-            branch: { $in: clientBranchIds }
-          }
-        },
-        // Group by branch and status to get overall branch statistics
-        {
-          $group: {
-            _id: {
-              branch: '$branch',
-              status: '$status'
-            },
-            count: { $sum: 1 }
-          }
-        },
-        // Group by branch to get all statuses together
-        {
-          $group: {
-            _id: {
-              branch: '$_id.branch'
-            },
-            statusCounts: {
-              $push: {
-                status: '$_id.status',
-                count: '$count'
-              }
-            },
-            totalTasks: { $sum: '$count' }
-          }
-        }
-      ]);
-
-      // Map branch stats to clients
-      const branchStatsMap = new Map();
-      directTaskStats.forEach(stat => {
-        branchStatsMap.set(stat._id.branch.toString(), stat);
-      });
-
-      // Create client stats based on branch statistics
-      clientStats = clients.map(client => {
-        const branchStats = branchStatsMap.get(client.branch.toString());
-        if (branchStats) {
-          return {
-            _id: {
-              clientId: client._id,
-              clientName: client.name,
-              clientEmail: client.email
-            },
-            statusCounts: branchStats.statusCounts,
-            totalTasks: branchStats.totalTasks
-          };
-        } else {
-          return {
-            _id: {
-              clientId: client._id,
-              clientName: client.name,
-              clientEmail: client.email
-            },
-            statusCounts: [],
-            totalTasks: 0
-          };
-        }
-      });
+    if (mongoFilter.phone) {
+      mongoFilter.phone = { $regex: mongoFilter.phone, $options: 'i' };
     }
+    if (mongoFilter.district) {
+      mongoFilter.district = { $regex: mongoFilter.district, $options: 'i' };
+    }
+    if (mongoFilter.pan) {
+      mongoFilter.pan = { $regex: mongoFilter.pan, $options: 'i' };
+    }
+    if (mongoFilter.businessType) {
+      mongoFilter.businessType = { $regex: mongoFilter.businessType, $options: 'i' };
+    }
+    if (mongoFilter.entityType) {
+      mongoFilter.entityType = { $regex: mongoFilter.entityType, $options: 'i' };
+    }
+    if (mongoFilter.category && !['A', 'B', 'C'].includes(mongoFilter.category)) {
+      delete mongoFilter.category;
+    }
+  }
 
-    // Create a map of client stats by client ID
-    const clientStatsMap = new Map();
-    clientStats.forEach(stat => {
-      const clientId = stat._id.clientId.toString();
-      
-      // Initialize stats if not exists
-      if (!clientStatsMap.has(clientId)) {
-        clientStatsMap.set(clientId, {
-          totalTasks: 0,
-          pendingTasks: 0,
-          ongoingTasks: 0,
-          completedTasks: 0,
-          on_holdTasks: 0,
-          cancelledTasks: 0,
-          delayedTasks: 0
-        });
+  if (mongoFilter.gstNumber) {
+    mongoFilter['gstNumbers.gstNumber'] = {
+      $regex: String(mongoFilter.gstNumber).trim(),
+      $options: 'i',
+    };
+    delete mongoFilter.gstNumber;
+  }
+  ['tanNumber', 'cinNumber', 'udyamNumber', 'iecCode'].forEach((field) => {
+    if (mongoFilter[field]) {
+      mongoFilter[field] = { $regex: String(mongoFilter[field]).trim(), $options: 'i' };
+    }
+  });
+
+  const page = parseInt(options.page, 10) || 1;
+  const limit = clampStatsLimit(options.limit);
+  const skip = (page - 1) * limit;
+
+  const cacheKey = cache.generateKey(CLIENT_TASK_STATS_CACHE_PREFIX, {
+    userId: user?._id?.toString?.() || user?.id?.toString?.() || 'anon',
+    page,
+    limit,
+    filter: JSON.stringify(mongoFilter),
+  });
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const [clients, totalClients] = await Promise.all([
+    Client.find(mongoFilter).select('_id name email branch').skip(skip).limit(limit).lean(),
+    Client.countDocuments(mongoFilter),
+  ]);
+
+  const emptyRow = (client) => ({
+    _id: client._id,
+    name: client.name,
+    email: client.email,
+    branch: client.branch,
+    totalTasks: 0,
+    pendingTasks: 0,
+    ongoingTasks: 0,
+    completedTasks: 0,
+    on_holdTasks: 0,
+    cancelledTasks: 0,
+    delayedTasks: 0,
+  });
+
+  if (clients.length === 0) {
+    const emptyPayload = {
+      results: [],
+      page,
+      limit,
+      totalPages: Math.ceil(totalClients / limit) || 0,
+      totalResults: totalClients,
+    };
+    cache.set(cacheKey, emptyPayload, 60 * 1000);
+    return emptyPayload;
+  }
+
+  const clientStatsMap = await aggregateTaskStatsByClientIds(clients.map((c) => c._id));
+
+  const result = {
+    results: clients.map((client) => {
+      const stats = clientStatsMap.get(client._id.toString());
+      if (!stats) {
+        return emptyRow(client);
       }
-      
-      const currentStats = clientStatsMap.get(clientId);
-      currentStats.totalTasks = stat.totalTasks;
-      
-      // Process status counts
-      stat.statusCounts.forEach(statusCount => {
-        switch (statusCount.status) {
-          case 'pending':
-            currentStats.pendingTasks = statusCount.count;
-            break;
-          case 'ongoing':
-            currentStats.ongoingTasks = statusCount.count;
-            break;
-          case 'completed':
-            currentStats.completedTasks = statusCount.count;
-            break;
-          case 'on_hold':
-            currentStats.on_holdTasks = statusCount.count;
-            break;
-          case 'cancelled':
-            currentStats.cancelledTasks = statusCount.count;
-            break;
-          case 'delayed':
-            currentStats.delayedTasks = statusCount.count;
-            break;
-        }
-      });
-    });
-
-    // Merge client info with task statistics
-    const result = clients.map(client => {
-      const stats = clientStatsMap.get(client._id.toString()) || {
-        totalTasks: 0,
-        pendingTasks: 0,
-        ongoingTasks: 0,
-        completedTasks: 0,
-        on_holdTasks: 0,
-        cancelledTasks: 0,
-        delayedTasks: 0
-      };
-
       return {
         _id: client._id,
         name: client.name,
         email: client.email,
         branch: client.branch,
-        ...stats
+        totalTasks: stats.total,
+        pendingTasks: stats.pending,
+        ongoingTasks: stats.ongoing,
+        completedTasks: stats.completed,
+        on_holdTasks: stats.onHold,
+        cancelledTasks: stats.cancelled,
+        delayedTasks: stats.delayed,
       };
-    });
+    }),
+    page,
+    limit,
+    totalPages: Math.ceil(totalClients / limit),
+    totalResults: totalClients,
+  };
 
-    return {
-      results: result,
-      page,
-      limit,
-      totalPages: Math.ceil(totalClients / limit),
-      totalResults: totalClients
-    };
-
-  } catch (error) {
-    throw error;
-  }
+  cache.set(cacheKey, result, 60 * 1000);
+  return result;
 };
 
 /**

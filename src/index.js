@@ -11,20 +11,26 @@ mongoose.connect(config.mongoose.url, config.mongoose.options).then(() => {
   server = app.listen(config.port, '0.0.0.0', () => {
     logger.info(`Listening to port ${config.port}`);
     
-    // Initialize existing cron jobs (email reminders) after server starts
-    try {
-      initializeCronJobs();
-      logger.info('✅ Email reminder cron jobs initialized successfully');
-    } catch (error) {
-      logger.error('❌ Failed to initialize email reminder cron jobs:', error);
-    }
+    // Prod API sets ENABLE_CRON=false; worker sets true. Dev (unset) keeps crons in-process.
+    const enableCron =
+      process.env.ENABLE_CRON === 'true' ||
+      (process.env.ENABLE_CRON !== 'false' && config.env !== 'production');
+    if (enableCron) {
+      try {
+        initializeCronJobs();
+        logger.info('✅ Email reminder cron jobs initialized successfully');
+      } catch (error) {
+        logger.error('❌ Failed to initialize email reminder cron jobs:', error);
+      }
 
-    // Initialize task status cron service after server starts
-    try {
-      taskStatusCronService.start();
-      logger.info('✅ Task status cron service started successfully');
-    } catch (error) {
-      logger.error('❌ Failed to start task status cron service:', error);
+      try {
+        taskStatusCronService.start();
+        logger.info('✅ Task status cron service started successfully');
+      } catch (error) {
+        logger.error('❌ Failed to start task status cron service:', error);
+      }
+    } else {
+      logger.info('⏭️ Cron disabled in API process (ENABLE_CRON!=true). Use PM2 worker.');
     }
   });
 });

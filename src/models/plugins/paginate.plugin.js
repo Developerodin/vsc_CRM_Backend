@@ -1,5 +1,23 @@
 /* eslint-disable no-param-reassign */
 
+/** Default page size when callers omit limit */
+const DEFAULT_LIMIT = 50;
+/** Hard ceiling — never return more than this per page */
+const MAX_LIMIT = 100;
+
+/**
+ * Normalize pagination limit with default + hard cap.
+ * @param {number|string|undefined} rawLimit
+ * @returns {number}
+ */
+const resolveLimit = (rawLimit) => {
+  const parsed = parseInt(rawLimit, 10);
+  if (!parsed || parsed <= 0) {
+    return DEFAULT_LIMIT;
+  }
+  return Math.min(parsed, MAX_LIMIT);
+};
+
 const paginate = (schema) => {
   /**
    * @typedef {Object} QueryResult
@@ -10,16 +28,16 @@ const paginate = (schema) => {
    * @property {number} totalResults - Total number of documents
    */
   /**
-   * Query for documents with pagination
+   * Query for documents with pagination (always bounded).
    * @param {Object} [filter] - Mongo filter
    * @param {Object} [options] - Query options
-   * @param {string} [options.sortBy] - Sorting criteria using the format: sortField:(desc|asc). Multiple sorting criteria should be separated by commas (,)
-   * @param {string} [options.populate] - Populate data fields. Hierarchy of fields should be separated by (.). Multiple populating criteria should be separated by commas (,)
-   * @param {number} [options.limit] - Maximum number of results per page (if not provided, returns all results)
+   * @param {string} [options.sortBy] - Sorting criteria using the format: sortField:(desc|asc)
+   * @param {string|Array} [options.populate] - Populate data fields
+   * @param {number} [options.limit] - Max results per page (default 50, max 100)
    * @param {number} [options.page] - Current page (default = 1)
    * @returns {Promise<QueryResult>}
    */
-  schema.statics.paginate = async function (filter, options) {
+  schema.statics.paginate = async function (filter, options = {}) {
     let sort = '';
     if (options.sortBy) {
       const sortingCriteria = [];
@@ -32,19 +50,12 @@ const paginate = (schema) => {
       sort = 'createdAt';
     }
 
-    // If no limit is provided, return all results (no pagination)
-    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
-    const limit = hasLimit ? parseInt(options.limit, 10) : null;
+    const limit = resolveLimit(options.limit);
     const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-    const skip = hasLimit ? (page - 1) * limit : 0;
+    const skip = (page - 1) * limit;
 
     const countPromise = this.countDocuments(filter).exec();
-    let docsPromise = this.find(filter).sort(sort);
-    
-    // Only apply skip and limit if limit was explicitly provided
-    if (hasLimit) {
-      docsPromise = docsPromise.skip(skip).limit(limit);
-    }
+    let docsPromise = this.find(filter).sort(sort).skip(skip).limit(limit);
 
     if (options.populate && typeof options.populate === 'string') {
       options.populate.split(',').forEach((populateOption) => {
@@ -56,10 +67,9 @@ const paginate = (schema) => {
         );
       });
     } else if (options.populate && Array.isArray(options.populate)) {
-      // If populate is an array, convert it to string format for the plugin
-      const populateString = options.populate.map(p => 
-        typeof p === 'string' ? p : p.path
-      ).join(',');
+      const populateString = options.populate
+        .map((p) => (typeof p === 'string' ? p : p.path))
+        .join(',');
       populateString.split(',').forEach((populateOption) => {
         docsPromise = docsPromise.populate(
           populateOption
@@ -74,18 +84,17 @@ const paginate = (schema) => {
 
     return Promise.all([countPromise, docsPromise]).then((values) => {
       const [totalResults, results] = values;
-      const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
-      const result = {
+      const totalPages = Math.ceil(totalResults / limit) || 0;
+      return {
         results,
         page,
-        limit: limit || totalResults, // If no limit, show totalResults as limit
+        limit,
         totalPages,
         totalResults,
       };
-      return Promise.resolve(result);
     });
   };
 };
 
 export default paginate;
-
+export { DEFAULT_LIMIT, MAX_LIMIT, resolveLimit };

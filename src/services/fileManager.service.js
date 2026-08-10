@@ -6,11 +6,15 @@ import Client from '../models/client.model.js';
 import { deleteFileFromS3 } from '../controllers/common.controller.js';
 import {
   buildRootFolderFilterForUser,
+  claimClientFolderSyncSlot,
   ensureClientFolderForClient,
   ensureRootFoldersForUser,
   getFileManagerBranchIds,
+  shouldScheduleClientFolderSync,
   syncBranchClientFolders,
 } from './branchFileManager.service.js';
+import cache from '../utils/cache.js';
+import logger from '../config/logger.js';
 
 /**
  * Build ownership scope for file manager search queries.
@@ -183,11 +187,25 @@ const getFileById = async (id) => {
 const getFolderContents = async (folderId, options = {}) => {
   const folder = await getFolderById(folderId);
 
+  // Self-heal client folders in the background — never block the contents read.
+  // Client folders are created on client save; this only catches drift/orphans.
+  // When a sync is actually scheduled, surface that so the UI can soft-refetch.
+  let clientSyncScheduled = false;
   if (
     folder.folder.name === 'Clients' &&
     folder.folder.metadata?.branchId
   ) {
-    await syncBranchClientFolders(folder.folder.metadata.branchId);
+    const branchId = folder.folder.metadata.branchId;
+    if (shouldScheduleClientFolderSync(branchId)) {
+      clientSyncScheduled = true;
+      // Claim the throttle window immediately so concurrent/soft-refetch opens don't stampede.
+      claimClientFolderSyncSlot(branchId);
+      setImmediate(() => {
+        syncBranchClientFolders(branchId, { force: true }).catch((err) => {
+          logger.error(`Background client-folder sync failed for branch ${branchId}: ${err.message}`);
+        });
+      });
+    }
   }
   
   const filter = {
@@ -230,6 +248,7 @@ const getFolderContents = async (folderId, options = {}) => {
   const response = {
     folder,
     contents: result,
+    clientSyncScheduled,
   };
 
   return response;
@@ -485,91 +504,90 @@ const searchItems = async (filter, options = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
+/**
+ * Recursive search with DB-level limits (never unbounded find-all).
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
 const searchItemsRecursive = async (filter, options = {}) => {
   try {
+    const limitRaw = parseInt(options.limit, 10);
+    const limit = limitRaw > 0 ? Math.min(limitRaw, 100) : 50;
+    const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
+    const skip = (page - 1) * limit;
+    // Fetch a bounded window per type, then merge (avoids loading entire collection)
+    const fetchCap = skip + limit;
 
-    // First, find all folders that match the search query
     const folderSearchFilter = {
       type: 'folder',
       isDeleted: false,
       $or: [
         { 'folder.name': { $regex: filter.query, $options: 'i' } },
         { 'folder.path': { $regex: filter.query, $options: 'i' } },
-        { 'folder.description': { $regex: filter.query, $options: 'i' } }
-      ]
+        { 'folder.description': { $regex: filter.query, $options: 'i' } },
+      ],
     };
 
     if (filter.userId) {
       folderSearchFilter['folder.createdBy'] = filter.userId;
     }
 
-    // Find matching folders
-    const matchingFolders = await FileManager.find(folderSearchFilter)
-      .populate('folder.createdBy', 'name email')
-      .lean();
-
-    // Find all files that match the search query
     const fileSearchFilter = {
       type: 'file',
       isDeleted: false,
       $or: [
         { 'file.fileName': { $regex: filter.query, $options: 'i' } },
-        { 'file.metadata': { $regex: filter.query, $options: 'i' } }
-      ]
+        { 'file.metadata': { $regex: filter.query, $options: 'i' } },
+      ],
     };
 
     if (filter.userId) {
       fileSearchFilter['file.uploadedBy'] = filter.userId;
     }
 
-    // Find matching files
-    const matchingFiles = await FileManager.find(fileSearchFilter)
-      .populate('file.uploadedBy', 'name email')
-      .lean();
+    const [folderTotal, fileTotal, matchingFolders, matchingFiles] = await Promise.all([
+      FileManager.countDocuments(folderSearchFilter),
+      FileManager.countDocuments(fileSearchFilter),
+      FileManager.find(folderSearchFilter)
+        .sort({ 'folder.name': 1 })
+        .limit(fetchCap)
+        .populate('folder.createdBy', 'name email')
+        .lean(),
+      FileManager.find(fileSearchFilter)
+        .sort({ 'file.fileName': 1 })
+        .limit(fetchCap)
+        .populate('file.uploadedBy', 'name email')
+        .lean(),
+    ]);
 
-    // Combine results
-    const allResults = [...matchingFolders, ...matchingFiles];
-
-    // Apply pagination manually since we're combining results
-    const hasLimit = options.limit && parseInt(options.limit, 10) > 0;
-    const limit = hasLimit ? parseInt(options.limit, 10) : null;
-    const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
-    const skip = hasLimit ? (page - 1) * limit : 0;
-
-    // Sort results
-    let sortedResults = allResults.sort((a, b) => {
+    const sortedResults = [...matchingFolders, ...matchingFiles].sort((a, b) => {
       if (a.type === b.type) {
         if (a.type === 'folder') {
           return a.folder.name.localeCompare(b.folder.name);
-        } else {
-          return a.file.fileName.localeCompare(b.file.fileName);
         }
+        return a.file.fileName.localeCompare(b.file.fileName);
       }
-      return a.type === 'folder' ? -1 : 1; // Folders first
+      return a.type === 'folder' ? -1 : 1;
     });
 
-    // Apply pagination
-    const totalResults = sortedResults.length;
-    const totalPages = hasLimit ? Math.ceil(totalResults / limit) : 1;
-    const paginatedResults = hasLimit ? sortedResults.slice(skip, skip + limit) : sortedResults;
+    const totalResults = folderTotal + fileTotal;
+    const totalPages = Math.ceil(totalResults / limit) || 0;
+    const paginatedResults = sortedResults.slice(skip, skip + limit);
 
-    // Add id field to each result since we're using lean()
-    const resultsWithId = paginatedResults.map(item => ({
+    const resultsWithId = paginatedResults.map((item) => ({
       ...item,
-      id: item._id.toString()
+      id: item._id.toString(),
     }));
 
-    const result = {
+    return {
       results: resultsWithId,
       page,
       limit,
       totalPages,
       totalResults,
     };
-
-    return result;
   } catch (error) {
-
     throw error;
   }
 };
@@ -733,8 +751,21 @@ const searchClientSubfolders = async (query, options = {}) => {
  * @param {ObjectId} rootFolderId
  * @returns {Promise<Object>}
  */
+/**
+ * Get folder tree structure (short-TTL cache).
+ * @param {Object} user - Authenticated user
+ * @param {ObjectId} rootFolderId
+ * @returns {Promise<Object>}
+ */
 const getFolderTree = async (user, rootFolderId = null) => {
   await ensureRootFoldersForUser(user);
+
+  const cacheKey = cache.generateKey('folderTree', {
+    userId: user?._id?.toString() || 'anon',
+    root: rootFolderId ? String(rootFolderId) : 'all',
+  });
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
 
   // Fetch every folder once (lean, minimal fields, no populate) and assemble the
   // tree in memory. This replaces the previous recursive approach which issued one
@@ -766,33 +797,38 @@ const getFolderTree = async (user, rootFolderId = null) => {
     children: (childrenByParent.get(String(f._id)) || []).map(buildNode),
   });
 
+  let tree;
   if (rootFolderId) {
     const root = byId.get(String(rootFolderId));
     if (root) {
-      return [buildNode(root)];
+      tree = [buildNode(root)];
+    } else {
+      // Fallback: load the folder directly if it wasn't in the set.
+      const rootFolder = await getFolderById(rootFolderId);
+      tree = [buildNode({
+        _id: rootFolder._id,
+        folder: rootFolder.folder,
+        createdAt: rootFolder.createdAt,
+        updatedAt: rootFolder.updatedAt,
+      })];
     }
-    // Fallback: load the folder directly if it wasn't in the cached set.
-    const rootFolder = await getFolderById(rootFolderId);
-    return [buildNode({
-      _id: rootFolder._id,
-      folder: rootFolder.folder,
-      createdAt: rootFolder.createdAt,
-      updatedAt: rootFolder.updatedAt,
-    })];
+  } else {
+    // Determine which folders are roots for this user (branch-scoped where applicable),
+    // then attach their pre-grouped descendants from the in-memory map.
+    const rootFilter = await buildRootFolderFilterForUser(user);
+    const rootDocs = await FileManager.find(rootFilter)
+      .select('_id')
+      .sort({ 'folder.name': 1 })
+      .lean();
+
+    tree = rootDocs
+      .map((r) => byId.get(String(r._id)))
+      .filter(Boolean)
+      .map(buildNode);
   }
 
-  // Determine which folders are roots for this user (branch-scoped where applicable),
-  // then attach their pre-grouped descendants from the in-memory map.
-  const rootFilter = await buildRootFolderFilterForUser(user);
-  const rootDocs = await FileManager.find(rootFilter)
-    .select('_id')
-    .sort({ 'folder.name': 1 })
-    .lean();
-
-  return rootDocs
-    .map((r) => byId.get(String(r._id)))
-    .filter(Boolean)
-    .map(buildNode);
+  cache.set(cacheKey, tree, 5 * 60 * 1000);
+  return tree;
 };
 
 /**
